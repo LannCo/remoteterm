@@ -275,24 +275,83 @@ type ConnKeywords struct {
 	CmdInitScriptPwsh string            `json:"cmd:initscript.pwsh,omitempty"`
 	CmdInitScriptFish string            `json:"cmd:initscript.fish,omitempty"`
 
-	SshUser                         *string  `json:"ssh:user,omitempty"`
-	SshHostName                     *string  `json:"ssh:hostname,omitempty"`
-	SshPort                         *string  `json:"ssh:port,omitempty"`
-	SshIdentityFile                 []string `json:"ssh:identityfile,omitempty"`
-	SshPasswordSecretName           *string  `json:"ssh:passwordsecretname,omitempty"`
-	SshBatchMode                    *bool    `json:"ssh:batchmode,omitempty"`
-	SshPubkeyAuthentication         *bool    `json:"ssh:pubkeyauthentication,omitempty"`
-	SshPasswordAuthentication       *bool    `json:"ssh:passwordauthentication,omitempty"`
-	SshKbdInteractiveAuthentication *bool    `json:"ssh:kbdinteractiveauthentication,omitempty"`
-	SshPreferredAuthentications     []string `json:"ssh:preferredauthentications,omitempty"`
-	SshAddKeysToAgent               *bool    `json:"ssh:addkeystoagent,omitempty"`
-	SshIdentityAgent                *string  `json:"ssh:identityagent,omitempty"`
-	SshIdentitiesOnly               *bool    `json:"ssh:identitiesonly,omitempty"`
-	SshProxyJump                    []string `json:"ssh:proxyjump,omitempty"`
-	SshUserKnownHostsFile           []string `json:"ssh:userknownhostsfile,omitempty"`
-	SshGlobalKnownHostsFile         []string `json:"ssh:globalknownhostsfile,omitempty"`
-	SshLocalForward                 []string `json:"ssh:localforward,omitempty"`
-	SshRemoteForward                []string `json:"ssh:remoteforward,omitempty"`
+	SshUser                         *string           `json:"ssh:user,omitempty"`
+	SshHostName                     *string           `json:"ssh:hostname,omitempty"`
+	SshPort                         *string           `json:"ssh:port,omitempty"`
+	SshIdentityFile                 []string          `json:"ssh:identityfile,omitempty"`
+	SshPasswordSecretName           *string           `json:"ssh:passwordsecretname,omitempty"`
+	SshBatchMode                    *bool             `json:"ssh:batchmode,omitempty"`
+	SshPubkeyAuthentication         *bool             `json:"ssh:pubkeyauthentication,omitempty"`
+	SshPasswordAuthentication       *bool             `json:"ssh:passwordauthentication,omitempty"`
+	SshKbdInteractiveAuthentication *bool             `json:"ssh:kbdinteractiveauthentication,omitempty"`
+	SshPreferredAuthentications     []string          `json:"ssh:preferredauthentications,omitempty"`
+	SshAddKeysToAgent               *bool             `json:"ssh:addkeystoagent,omitempty"`
+	SshIdentityAgent                *string           `json:"ssh:identityagent,omitempty"`
+	SshIdentitiesOnly               *bool             `json:"ssh:identitiesonly,omitempty"`
+	SshProxyJump                    []string          `json:"ssh:proxyjump,omitempty"`
+	SshUserKnownHostsFile           []string          `json:"ssh:userknownhostsfile,omitempty"`
+	SshGlobalKnownHostsFile         []string          `json:"ssh:globalknownhostsfile,omitempty"`
+	SshLocalForward                 []PortForwardRule `json:"ssh:localforward,omitempty"`
+	SshRemoteForward                []PortForwardRule `json:"ssh:remoteforward,omitempty"`
+}
+
+// PortForwardRule is a single LocalForward/RemoteForward entry. It supports two
+// JSON shapes for backward compatibility:
+//
+//	"8080 localhost:80"                             (bare string)
+//	{"rule":"8080 localhost:80","note":"...","enabled":true}
+//
+// Source is internal-only (json:"-") and records whether the rule originated in
+// ~/.ssh/config or connections.json; it is populated during config parsing and
+// merge, and never written back to connections.json.
+type PortForwardRule struct {
+	Rule    string `json:"rule"`
+	Note    string `json:"note,omitempty"`
+	Enabled *bool  `json:"enabled,omitempty"` // nil means enabled
+	Source  string `json:"-"`
+}
+
+// PortForwardSource values for PortForwardRule.Source.
+const (
+	PortForwardSourceSshConfig   = "sshconfig"
+	PortForwardSourceConnections = "connections"
+)
+
+// MarshalJSON emits a bare string when the rule carries no note and no explicit
+// enabled flag, preserving the historical compact form. Otherwise it emits the
+// structured object form.
+func (r PortForwardRule) MarshalJSON() ([]byte, error) {
+	if r.Note == "" && r.Enabled == nil {
+		return json.Marshal(r.Rule)
+	}
+	type portForwardRuleAlias PortForwardRule
+	return json.Marshal(portForwardRuleAlias(r))
+}
+
+// UnmarshalJSON accepts either a bare string or the structured object form.
+func (r *PortForwardRule) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 {
+		return fmt.Errorf("empty port forward rule")
+	}
+	if trimmed[0] == '"' {
+		var rule string
+		if err := json.Unmarshal(trimmed, &rule); err != nil {
+			return err
+		}
+		r.Rule = rule
+		r.Note = ""
+		r.Enabled = nil
+		r.Source = ""
+		return nil
+	}
+	type portForwardRuleAlias PortForwardRule
+	var a portForwardRuleAlias
+	if err := json.Unmarshal(trimmed, &a); err != nil {
+		return err
+	}
+	*r = PortForwardRule(a)
+	return nil
 }
 
 func DefaultBoolPtr(arg *bool, def bool) bool {
