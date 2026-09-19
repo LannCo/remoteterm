@@ -521,7 +521,7 @@ function TableRow({ model, row, focusIndex, setFocusIndex, setSearch, idx, handl
     const handleNativeDragEnd = useCallback(
         (e: React.DragEvent) => {
             if (e.dataTransfer.dropEffect === "none" && !dragItem.isDir) {
-                fireAndForget(() => model.downloadFile(dragItem.uri));
+                model.downloadFile(dragItem.uri);
             }
         },
         [dragItem, model]
