@@ -537,9 +537,29 @@ func handleRouteEvent(event *wps.WaveEvent, newStatus string) {
 			sendBlockJobStatusEventByJob(ctx, job)
 
 			if newStatus == JobConnStatus_Connected {
-				health, _ := jobStreamHealth.GetEx(jobId)
-				log.Printf("[job:%s] route up: set Connected via route event (stream active=%v, streamId=%q) — stream NOT restarted here",
-					jobId, health.active, health.streamId)
+				health, healthOk := jobStreamHealth.GetEx(jobId)
+				if !hasActiveStream(health, healthOk) {
+					// Failure mode B (Connected-but-no-stream), Path 2: the job's route
+					// re-registered independently of doReconnectJob (e.g. reconnect handled
+					// elsewhere), so this handler marks the job Connected but previously never
+					// restarted the stream. Trigger a stream restart through the existing
+					// singleflight-guarded ReconnectJobRoute entrypoint so it can't race a
+					// concurrent doReconnectJob for the same job.
+					log.Printf("[job:%s] route up: connected via route event with no active stream (active=%v, streamId=%q), triggering stream restart",
+						jobId, health.active, health.streamId)
+					go func() {
+						defer func() {
+							panichandler.PanicHandler("jobcontroller:handleRouteEvent:ReconnectJobRoute", recover())
+						}()
+						restartCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+						defer cancel()
+						if restartErr := ReconnectJobRoute(restartCtx, jobId, nil); restartErr != nil {
+							log.Printf("[job:%s] route-up triggered stream restart failed: %v", jobId, restartErr)
+						}
+					}()
+				} else {
+					log.Printf("[job:%s] route up: connected via route event, stream already active (streamId=%q)", jobId, health.streamId)
+				}
 			}
 
 			if newStatus == JobConnStatus_Disconnected && job != nil && isJobManagerRunning(job) {
@@ -1427,6 +1447,14 @@ func GetNumJobsConnected() int {
 	return count
 }
 
+// hasActiveStream reports whether a job's jobStreamHealth entry shows a
+// runOutputLoop actively pulling data. Used to distinguish a genuinely
+// healthy Connected job from failure mode B (Connected-but-no-stream), where
+// the job/route is Connected but nothing is draining the remote stream.
+func hasActiveStream(health streamHealthInfo, healthOk bool) bool {
+	return healthOk && health.active
+}
+
 func CheckJobConnected(ctx context.Context, jobId string) (*waveobj.Job, error) {
 	job, err := wstore.DBMustGet[*waveobj.Job](ctx, jobId)
 	if err != nil {
@@ -1937,10 +1965,24 @@ func doReconnectJob(ctx context.Context, jobId string, rtOpts *waveobj.RuntimeOp
 
 	_, err = CheckJobConnected(ctx, jobId)
 	if err == nil {
-		health, _ := jobStreamHealth.GetEx(jobId)
-		log.Printf("[job:%s] already connected, skipping reconnect (stream active=%v, lastRead=%v, streamId=%q, totalBytes=%d)",
-			jobId, health.active, health.lastReadAt.Format(time.RFC3339), health.streamId, health.totalBytes)
-		return nil
+		health, healthOk := jobStreamHealth.GetEx(jobId)
+		if hasActiveStream(health, healthOk) {
+			log.Printf("[job:%s] already connected with active stream, skipping reconnect (lastRead=%v, streamId=%q, totalBytes=%d)",
+				jobId, health.lastReadAt.Format(time.RFC3339), health.streamId, health.totalBytes)
+			return nil
+		}
+		// Failure mode B (Connected-but-no-stream): the job/route is Connected but
+		// runOutputLoop is not pulling data (never started, or exited without the
+		// job transitioning back to Disconnected). Restart the stream instead of
+		// skipping, so a stale "Connected" status can't wedge the terminal forever.
+		log.Printf("[job:%s] connected but stream is not active (active=%v, streamId=%q), restarting stream instead of skipping",
+			jobId, health.active, health.streamId)
+		restartErr := restartStreaming(ctx, jobId, true, rtOpts)
+		if restartErr != nil {
+			log.Printf("[job:%s] stream restart for Connected-but-no-stream failed: %v (marking Disconnected so it is retried)", jobId, restartErr)
+			SetJobConnStatus(jobId, JobConnStatus_Disconnected)
+		}
+		return restartErr
 	}
 	log.Printf("[job:%s] not connected, proceeding with reconnect: %v", jobId, err)
 
@@ -2022,17 +2064,26 @@ func doReconnectJob(ctx context.Context, jobId string, rtOpts *waveobj.RuntimeOp
 	if err != nil {
 		return fmt.Errorf("route did not establish after successful reconnection: %w", err)
 	}
-	SetJobConnStatus(jobId, JobConnStatus_Connected)
-	sendBlockJobStatusEventByJob(ctx, job)
 
+	// Failure mode B (Connected-but-no-stream): JobConnStatus is only set to
+	// Connected once restartStreaming actually succeeds. Marking it Connected
+	// first (as before) meant a failed restartStreaming left the job wedged
+	// Connected-with-no-active-stream forever — every later reconnect attempt
+	// would hit the "already connected" guard and skip, since restartStreaming
+	// doesn't require JobConnStatus to already be Connected (knownConnected=true
+	// bypasses that check).
 	log.Printf("[job:%s] route established, restarting streaming", jobId)
 	reconnectErr := restartStreaming(ctx, jobId, true, rtOpts)
 	if reconnectErr != nil {
-		log.Printf("[job:%s] restartStreaming failed after successful reconnect: %v (job left Connected without active stream)", jobId, reconnectErr)
-	} else {
-		log.Printf("[job:%s] restartStreaming succeeded", jobId)
+		log.Printf("[job:%s] restartStreaming failed after successful reconnect: %v (leaving job Disconnected so it is retried)", jobId, reconnectErr)
+		SetJobConnStatus(jobId, JobConnStatus_Disconnected)
+		sendBlockJobStatusEventByJob(ctx, job)
+		return reconnectErr
 	}
-	return reconnectErr
+	log.Printf("[job:%s] restartStreaming succeeded", jobId)
+	SetJobConnStatus(jobId, JobConnStatus_Connected)
+	sendBlockJobStatusEventByJob(ctx, job)
+	return nil
 }
 
 func ReconnectJobsForConn(ctx context.Context, connName string) error {

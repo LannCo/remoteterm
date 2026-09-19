@@ -540,7 +540,9 @@ func (router *WshRouter) runLinkClientRecvLoop(linkId baseds.LinkId, client Abst
 		linkName = lmForLog.Name()
 	}
 	log.Printf("link recvloop start for %s", linkName)
-	defer log.Printf("link recvloop done for %s (%s)", linkName, exitReason)
+	defer func() {
+		log.Printf("link recvloop done for %s (%s)", linkName, exitReason)
+	}()
 	for {
 		msgBytes, ok := client.RecvRpcMessage()
 		if !ok {
