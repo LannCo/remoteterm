@@ -72,9 +72,7 @@ func filterMetaKeys(meta map[string]interface{}, keys []string) map[string]inter
 	return result
 }
 
-func getMetaRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
+func getMetaRun(cmd *cobra.Command, args []string) error {
 	fullORef, err := resolveBlockArg()
 	if err != nil {
 		return err
@@ -105,7 +103,7 @@ func getMetaRun(cmd *cobra.Command, args []string) (rtnErr error) {
 	if getMetaRawOutput {
 		if str, ok := output.(string); ok {
 			WriteStdout("%s\n", str)
-			return
+			return nil
 		}
 	}
 

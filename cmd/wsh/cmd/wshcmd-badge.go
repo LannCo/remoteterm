@@ -44,10 +44,7 @@ func init() {
 	badgeCmd.Flags().Float64Var(&badgeRotation, "rotation", 0, "icon rotation in degrees (0-360), applied via CSS transform")
 }
 
-func badgeRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func badgeRun(cmd *cobra.Command, args []string) error {
 	if badgePid > 0 && runtime.GOOS == "windows" {
 		return fmt.Errorf("--pid flag is not supported on Windows")
 	}

@@ -88,10 +88,7 @@ func validateColor(color string) error {
 	return nil
 }
 
-func setBgRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func setBgRun(cmd *cobra.Command, args []string) error {
 	borderColorChanged := cmd.Flags().Changed("border-color")
 	activeBorderColorChanged := cmd.Flags().Changed("active-border-color")
 

@@ -33,8 +33,6 @@ export const MagnifyBlocksPage = ({
 
     const handleFireClick = () => {
         setFireClicked(!fireClicked);
-        if (!fireClicked) {
-        }
     };
 
     return (
@@ -84,8 +82,6 @@ export const FilesPage = ({ onFinish, onPrev }: { onFinish: () => void; onPrev?:
 
     const handleFireClick = () => {
         setFireClicked(!fireClicked);
-        if (!fireClicked) {
-        }
     };
 
     const commands = [

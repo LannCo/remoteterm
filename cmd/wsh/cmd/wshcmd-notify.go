@@ -29,9 +29,7 @@ func init() {
 	rootCmd.AddCommand(setNotifyCmd)
 }
 
-func notifyRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
+func notifyRun(cmd *cobra.Command, args []string) error {
 	message := args[0]
 	notificationOptions := &wshrpc.WaveNotificationOptions{
 		Title:  notifyTitle,

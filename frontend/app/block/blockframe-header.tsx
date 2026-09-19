@@ -249,7 +249,6 @@ const BlockFrame_Header = React.memo(
         viewIconUnion = metaFrameIcon ?? viewIconUnion;
 
         React.useEffect(() => {
-            if (magnified && !preview && !prevMagifiedState.current) {        }
             prevMagifiedState.current = magnified;
         }, [magnified]);
 
