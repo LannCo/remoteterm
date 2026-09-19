@@ -96,6 +96,20 @@ func GetAndRemoveTokenSwapEntry(token string) *TokenSwapEntry {
 	return nil
 }
 
+// RedactSecret returns a short marker for a secret value (JWT, swap token, packed token)
+// that is safe to write to a log or debug block: enough to confirm a value was present
+// and roughly identify it across log lines, but not enough to reconstruct or reuse it
+// as a credential.
+func RedactSecret(s string) string {
+	if s == "" {
+		return ""
+	}
+	if len(s) <= 8 {
+		return "<redacted>"
+	}
+	return fmt.Sprintf("%s...<redacted, len=%d>", s[:8], len(s))
+}
+
 func encodeEnvVarsForBash(env map[string]string) (string, error) {
 	var encoded string
 	for k, v := range env {

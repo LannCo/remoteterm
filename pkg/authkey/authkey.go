@@ -4,6 +4,7 @@
 package authkey
 
 import (
+	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"os"
@@ -19,7 +20,7 @@ func ValidateIncomingRequest(r *http.Request) error {
 	if reqAuthKey == "" {
 		return fmt.Errorf("no x-authkey header")
 	}
-	if reqAuthKey != GetAuthKey() {
+	if subtle.ConstantTimeCompare([]byte(reqAuthKey), []byte(GetAuthKey())) != 1 {
 		return fmt.Errorf("x-authkey header is invalid")
 	}
 	return nil

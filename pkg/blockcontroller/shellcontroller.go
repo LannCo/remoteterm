@@ -423,7 +423,7 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 	var shellProc *shellexec.ShellProc
 	swapToken := makeSwapToken(ctx, logCtx, bc.BlockId, blockMeta, remoteName, connUnion.ShellType)
 	cmdOpts.SwapToken = swapToken
-	blocklogger.Debugf(logCtx, "[conndebug] created swaptoken: %s\n", swapToken.Token)
+	blocklogger.Debugf(logCtx, "[conndebug] created swaptoken: %s\n", shellutil.RedactSecret(swapToken.Token))
 	if connUnion.ConnType == ConnType_Wsl {
 		wslConn := connUnion.WslConn
 		if !connUnion.WshEnabled {
