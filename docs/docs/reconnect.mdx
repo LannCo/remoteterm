@@ -40,26 +40,24 @@ The monitor runs as a background goroutine for each active SSH connection. It pe
 
 ### How Detection Works
 
-Every **3 seconds**, the monitor checks when the last SSH activity occurred. If more than **3 seconds** have passed with no activity, it sends a keepalive probe (`keepalive@openssh.com`).
+Every **3 seconds** (default; configurable via `conn:keepaliveinterval`), the monitor checks when the last SSH activity occurred. If more than the configured interval has passed with no activity, it sends a keepalive probe (`keepalive@openssh.com`).
 
-If the keepalive probe receives a response, the connection is confirmed alive. If no response arrives within **3 seconds**, the connection is declared **stalled**.
+If the keepalive probe receives a response, the connection is confirmed alive. If no response arrives within the configured stall threshold (`conn:stallthreshold`, default **3 seconds**), the connection is declared **stalled**.
 
-If the stall persists for **5 seconds** (default), the monitor forces a disconnect and triggers the reconnect scheduler.
+If the stall persists for the configured auto-disconnect threshold (`conn:stalldisconnectthreshold`, default **5 seconds**), the monitor forces a disconnect and triggers the reconnect scheduler.
+
+If the user types in a terminal, the monitor sends an immediate keepalive probe rather than waiting for the next tick, so a drop while actively typing is detected as fast as possible without a separate "urgent" health status.
 
 ### Timing Summary
 
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| Ticker interval | 3s | How often the monitor checks |
-| Keepalive threshold | 3s | Inactivity before sending a keepalive probe |
-| Keepalive threshold (urgent) | 1s | Inactivity before keepalive when user is actively typing |
-| Stall threshold | 3s | Time after keepalive with no response before declaring stalled |
-| Stall threshold (urgent) | 2s | Stall threshold when user is actively typing |
-| Auto-disconnect threshold | 5s | How long a stall persists before forced disconnect |
+| Parameter | Default | Config Field | Description |
+|-----------|---------|--------------|-------------|
+| Ticker interval | 3s (capped at 1s) | — | How often the monitor checks; always at least as fast as the keepalive interval |
+| Keepalive threshold | 3s | `conn:keepaliveinterval` | Inactivity before sending a keepalive probe |
+| Stall threshold | 3s | `conn:stallthreshold` | Time after keepalive with no response before declaring stalled |
+| Auto-disconnect threshold | 5s | `conn:stalldisconnectthreshold` | How long a stall persists before forced disconnect |
 
-### Urgent Mode
-
-When the user types in a terminal, the monitor switches to **urgent mode** for 10 seconds. In urgent mode, keepalive probes and stall detection use shorter thresholds (1s and 2s respectively) to detect problems faster. This ensures that if a connection drops while the user is actively typing, the problem is detected within seconds rather than waiting for the normal 3s thresholds.
+All of these are per-connection settings in `connections.json`; see [Configuration](#configuration) below.
 
 ### Auto-Disconnect
 
@@ -73,14 +71,14 @@ When a connection drops, the reconnect scheduler periodically attempts to re-est
 
 ### Timing
 
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| First attempt | Immediate | No delay before the first reconnect attempt |
-| Connect timeout | 5s | How long each attempt waits for the SSH handshake |
-| Normal interval | 5s | Time between attempts in normal mode |
-| Aggressive interval | 3s | Time between attempts in aggressive mode |
-| Aggressive duration | 2min | How long aggressive mode lasts before reverting to normal |
-| Max duration | 5min | Total scheduler lifetime before giving up |
+| Parameter | Default | Config Field | Description |
+|-----------|---------|--------------|-------------|
+| First attempt | Immediate | — | No delay before the first reconnect attempt |
+| Connect timeout | 5s | `conn:reconnecttimeout` | How long each attempt waits for the SSH handshake |
+| Normal interval | 5s | `conn:reconnectinterval` | Time between attempts in normal mode |
+| Aggressive interval | 3s | `conn:reconnectaggressiveinterval` | Time between attempts in aggressive mode |
+| Aggressive duration | 2min | — | How long aggressive mode lasts before reverting to normal |
+| Max duration | 5min | — | Total scheduler lifetime before giving up |
 
 ### Aggressive Mode
 
@@ -141,7 +139,7 @@ handleConnChangeEvent (wps.Event_ConnChange)
     │       │
     │       └── start scheduleConnectionReconnect
     │               │
-    │               ├── attempt reconnect (5s timeout)
+    │               ├── attempt reconnect (conn:reconnecttimeout, default 5s)
     │               │       │
     │               │       ├── success → stop
     │               │       └── failure → retry after interval
@@ -175,31 +173,53 @@ If `ssh:passwordsecretname` is set, the password is retrieved from the secret st
 
 ## Configuration
 
-### Existing Config Fields
+### Config Fields
 
-These fields can be set per connection in `connections.json`:
+All reconnect and monitor thresholds can be set per connection in `connections.json`. Any field left unset falls back to the default (the same fast values Wave has always used for laptop Wi-Fi switching):
 
 | Field | Default | Description |
 |-------|---------|-------------|
+| `conn:keepaliveinterval` | `3` | Seconds of inactivity before the monitor sends a keepalive probe |
+| `conn:stallthreshold` | `3` | Seconds after a keepalive with no response before declaring the connection stalled |
 | `conn:stallautodisconnect` | `true` | Enable auto-disconnect on stall |
 | `conn:stalldisconnectthreshold` | `5` | Seconds of stall before forced disconnect |
+| `conn:reconnecttimeout` | `5` | Timeout for each reconnect attempt's SSH handshake |
+| `conn:reconnectinterval` | `5` | Seconds between reconnect attempts in normal mode |
+| `conn:reconnectaggressiveinterval` | `3` | Seconds between reconnect attempts in aggressive mode |
 
 ### Example
+
+A slow SSH server or high-latency link (satellite, cellular) benefits from longer, less aggressive thresholds:
 
 ```json
 {
   "connections": {
     "user@high-latency-server": {
+      "conn:keepaliveinterval": 10,
+      "conn:stallthreshold": 10,
       "conn:stallautodisconnect": true,
-      "conn:stalldisconnectthreshold": 30
+      "conn:stalldisconnectthreshold": 30,
+      "conn:reconnecttimeout": 30,
+      "conn:reconnectinterval": 30
     }
   }
 }
 ```
 
-:::note
-All other reconnect thresholds (keepalive interval, stall threshold, reconnect interval, etc.) are currently hardcoded. Issue [#19](https://github.com/whoisjeremylam/waveterm-remote/issues/19) will make them configurable per connection.
-:::
+A connection you know is stable (wired, server room) can be tightened further:
+
+```json
+{
+  "connections": {
+    "user@laptop-target": {
+      "conn:keepaliveinterval": 2,
+      "conn:stallthreshold": 2,
+      "conn:stalldisconnectthreshold": 3,
+      "conn:reconnectinterval": 3
+    }
+  }
+}
+```
 
 ## Connection Health States
 

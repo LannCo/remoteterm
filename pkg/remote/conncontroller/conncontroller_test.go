@@ -344,6 +344,160 @@ func TestStallStartTimeTracking(t *testing.T) {
 	}
 }
 
+// TestGetIntConfigDefaultsWhenUnset verifies getIntConfig falls back to the
+// passed-in default when no connection config exists.
+func TestGetIntConfigDefaultsWhenUnset(t *testing.T) {
+	t.Parallel()
+	conn := makeTestConn(Status_Connected)
+	defer cleanupTestConn(conn)
+	cm := makeTestMonitor(conn)
+
+	if v := cm.getIntConfig("keepaliveinterval", 3); v != 3 {
+		t.Fatalf("expected default 3, got %d", v)
+	}
+	if v := cm.getIntConfig("stallthreshold", 3); v != 3 {
+		t.Fatalf("expected default 3, got %d", v)
+	}
+}
+
+// TestGetIntConfigOverrides verifies getIntConfig reads configured values.
+func TestGetIntConfigOverrides(t *testing.T) {
+	conn := makeTestConn(Status_Connected)
+	defer cleanupTestConn(conn)
+	cm := makeTestMonitor(conn)
+
+	keepalive := 12
+	stall := 8
+	getConnectionConfigTestHook = func(c *SSHConn) (wconfig.ConnKeywords, bool) {
+		return wconfig.ConnKeywords{ConnKeepaliveIntervalSec: &keepalive, ConnStallThresholdSec: &stall}, true
+	}
+	defer func() { getConnectionConfigTestHook = nil }()
+
+	if v := cm.getIntConfig("keepaliveinterval", 3); v != 12 {
+		t.Fatalf("expected 12, got %d", v)
+	}
+	if v := cm.getIntConfig("stallthreshold", 3); v != 8 {
+		t.Fatalf("expected 8, got %d", v)
+	}
+}
+
+// TestGetIntConfigIgnoresNonPositiveOverride verifies a zero/negative
+// configured value is treated as unset and falls back to the default.
+func TestGetIntConfigIgnoresNonPositiveOverride(t *testing.T) {
+	conn := makeTestConn(Status_Connected)
+	defer cleanupTestConn(conn)
+	cm := makeTestMonitor(conn)
+
+	zero := 0
+	getConnectionConfigTestHook = func(c *SSHConn) (wconfig.ConnKeywords, bool) {
+		return wconfig.ConnKeywords{ConnKeepaliveIntervalSec: &zero}, true
+	}
+	defer func() { getConnectionConfigTestHook = nil }()
+
+	if v := cm.getIntConfig("keepaliveinterval", 3); v != 3 {
+		t.Fatalf("expected fallback to default 3 for non-positive override, got %d", v)
+	}
+}
+
+// TestGetTickerIntervalCapsAtOneSecond verifies the monitor ticker never runs
+// slower than 1s, even when the configured keepalive interval is much longer,
+// so checkConnection still evaluates thresholds promptly.
+func TestGetTickerIntervalCapsAtOneSecond(t *testing.T) {
+	conn := makeTestConn(Status_Connected)
+	defer cleanupTestConn(conn)
+	cm := makeTestMonitor(conn)
+
+	if got := cm.getTickerInterval(); got != time.Second {
+		t.Fatalf("expected 1s ticker for default 3s keepalive interval, got %v", got)
+	}
+
+	custom := 30
+	getConnectionConfigTestHook = func(c *SSHConn) (wconfig.ConnKeywords, bool) {
+		return wconfig.ConnKeywords{ConnKeepaliveIntervalSec: &custom}, true
+	}
+	defer func() { getConnectionConfigTestHook = nil }()
+
+	if got := cm.getTickerInterval(); got != time.Second {
+		t.Fatalf("expected ticker capped at 1s even with 30s configured interval, got %v", got)
+	}
+}
+
+// TestCheckConnectionRespectsConfiguredKeepaliveInterval verifies checkConnection
+// uses conn:keepaliveinterval instead of the PR #1 hardcoded 3s value.
+func TestCheckConnectionRespectsConfiguredKeepaliveInterval(t *testing.T) {
+	conn := makeTestConn(Status_Connected)
+	defer cleanupTestConn(conn)
+	cm := makeTestMonitor(conn)
+	client, _ := newMockSSHClient()
+	cm.Client = client
+
+	keepalive := 10
+	getConnectionConfigTestHook = func(c *SSHConn) (wconfig.ConnKeywords, bool) {
+		return wconfig.ConnKeywords{ConnKeepaliveIntervalSec: &keepalive}, true
+	}
+	defer func() { getConnectionConfigTestHook = nil }()
+
+	cm.LastActivityTime.Store(time.Now().UnixMilli() - 5000)
+	cm.checkConnection()
+	if cm.KeepAliveInFlight {
+		t.Fatalf("expected no keepalive at 5s stale with 10s configured interval")
+	}
+
+	cm.LastActivityTime.Store(time.Now().UnixMilli() - 11000)
+	cm.checkConnection()
+	if !cm.KeepAliveInFlight {
+		t.Fatalf("expected keepalive triggered at 11s stale with 10s configured interval")
+	}
+}
+
+// TestCheckConnectionRespectsConfiguredStallThreshold verifies checkConnection
+// uses conn:stallthreshold instead of the PR #1 hardcoded 3s value.
+func TestCheckConnectionRespectsConfiguredStallThreshold(t *testing.T) {
+	conn := makeTestConn(Status_Connected)
+	defer cleanupTestConn(conn)
+	cm := makeTestMonitor(conn)
+	conn.Client = cm.Client
+
+	stallThreshold := 10
+	getConnectionConfigTestHook = func(c *SSHConn) (wconfig.ConnKeywords, bool) {
+		return wconfig.ConnKeywords{ConnStallThresholdSec: &stallThreshold}, true
+	}
+	defer func() { getConnectionConfigTestHook = nil }()
+
+	cm.LastActivityTime.Store(time.Now().UnixMilli() - 20000)
+	cm.KeepAliveInFlight = true
+
+	cm.KeepAliveSentTime.Store(time.Now().UnixMilli() - 5000)
+	cm.checkConnection()
+	if conn.GetConnHealthStatus() == ConnHealthStatus_Stalled {
+		t.Fatalf("expected not stalled at 5s with 10s configured stall threshold")
+	}
+
+	cm.KeepAliveSentTime.Store(time.Now().UnixMilli() - 11000)
+	cm.checkConnection()
+	if conn.GetConnHealthStatus() != ConnHealthStatus_Stalled {
+		t.Fatalf("expected stalled at 11s with 10s configured stall threshold")
+	}
+}
+
+// TestNotifyInputSignalsInputChannel verifies typing still notifies the
+// monitor's input channel, which keepAliveMonitor uses to send an immediate
+// keepalive without setting any "degraded" status.
+func TestNotifyInputSignalsInputChannel(t *testing.T) {
+	t.Parallel()
+	conn := makeTestConn(Status_Connected)
+	defer cleanupTestConn(conn)
+	cm := makeTestMonitor(conn)
+
+	cm.NotifyInput()
+
+	select {
+	case <-cm.inputNotifyCh:
+	default:
+		t.Fatalf("expected NotifyInput to signal inputNotifyCh")
+	}
+}
+
 // mockConn implements ssh.Conn for testing waitForDisconnect.
 // Its Wait() method blocks until closeCh is closed, then returns waitErr.
 type mockConn struct {

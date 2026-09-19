@@ -20,6 +20,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/util/ds"
 	"github.com/wavetermdev/waveterm/pkg/utilds"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wps"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
@@ -835,6 +836,69 @@ func TestOnConnectionUpRetrySkipsDoneJobs(t *testing.T) {
 	count := atomic.LoadInt32(&callCount)
 	if count != 1 {
 		t.Fatalf("expected 1 call (initial pass only, retry skipped Done job), got %d", count)
+	}
+}
+
+// TestGetReconnectConfigDefaults verifies getReconnectConfig falls back to the
+// PR #1 fast defaults (5s timeout, 5s interval, 3s aggressive interval) when
+// the connection has no config.
+func TestGetReconnectConfigDefaults(t *testing.T) {
+	reconnectConfigTestHook = func(string) (wconfig.ConnKeywords, bool) {
+		return wconfig.ConnKeywords{}, false
+	}
+	defer func() { reconnectConfigTestHook = nil }()
+
+	timeout, interval, aggressiveInterval := getReconnectConfig("conn:no-config")
+	if timeout != ConnReconnectTimeout {
+		t.Fatalf("expected default timeout %v, got %v", ConnReconnectTimeout, timeout)
+	}
+	if interval != ConnReconnectInterval {
+		t.Fatalf("expected default interval %v, got %v", ConnReconnectInterval, interval)
+	}
+	if aggressiveInterval != ConnReconnectAggressiveInterval {
+		t.Fatalf("expected default aggressive interval %v, got %v", ConnReconnectAggressiveInterval, aggressiveInterval)
+	}
+}
+
+// TestGetReconnectConfigOverrides verifies getReconnectConfig reads
+// conn:reconnecttimeout / conn:reconnectinterval / conn:reconnectaggressiveinterval.
+func TestGetReconnectConfigOverrides(t *testing.T) {
+	timeoutSec := 30
+	intervalSec := 30
+	aggressiveSec := 15
+	reconnectConfigTestHook = func(string) (wconfig.ConnKeywords, bool) {
+		return wconfig.ConnKeywords{
+			ConnReconnectTimeoutSec:            &timeoutSec,
+			ConnReconnectIntervalSec:           &intervalSec,
+			ConnReconnectAggressiveIntervalSec: &aggressiveSec,
+		}, true
+	}
+	defer func() { reconnectConfigTestHook = nil }()
+
+	timeout, interval, aggressiveInterval := getReconnectConfig("conn:slow-server")
+	if timeout != 30*time.Second {
+		t.Fatalf("expected 30s timeout, got %v", timeout)
+	}
+	if interval != 30*time.Second {
+		t.Fatalf("expected 30s interval, got %v", interval)
+	}
+	if aggressiveInterval != 15*time.Second {
+		t.Fatalf("expected 15s aggressive interval, got %v", aggressiveInterval)
+	}
+}
+
+// TestGetReconnectConfigIgnoresNonPositiveOverride verifies a zero/negative
+// configured value is treated as unset and falls back to the default.
+func TestGetReconnectConfigIgnoresNonPositiveOverride(t *testing.T) {
+	zero := 0
+	reconnectConfigTestHook = func(string) (wconfig.ConnKeywords, bool) {
+		return wconfig.ConnKeywords{ConnReconnectIntervalSec: &zero}, true
+	}
+	defer func() { reconnectConfigTestHook = nil }()
+
+	_, interval, _ := getReconnectConfig("conn:zero-interval")
+	if interval != ConnReconnectInterval {
+		t.Fatalf("expected fallback to default interval %v for non-positive override, got %v", ConnReconnectInterval, interval)
 	}
 }
 
