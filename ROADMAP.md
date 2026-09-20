@@ -1,6 +1,6 @@
-# Wave Terminal Roadmap
+# RemoteTerm Roadmap
 
-This roadmap outlines major upcoming features and improvements for Wave Terminal. As with any roadmap, priorities and timelines may shift as development progresses.
+This roadmap outlines major upcoming features and improvements for RemoteTerm. As with any roadmap, priorities and timelines may shift as development progresses.
 
 Want input on the roadmap? Join the discussion on [Discord](https://discord.gg/XfvZ334gwU).
 
@@ -8,7 +8,7 @@ Legend: ✅ Done | 🔧 In Progress | 🔷 Planned | 🤞 Stretch Goal
 
 ## Current AI Capabilities
 
-Wave Terminal's AI assistant is already powerful and continues to evolve. Here's what works today:
+RemoteTerm's AI assistant is already powerful and continues to evolve. Here's what works today:
 
 ### AI Provider Support
 
@@ -64,10 +64,10 @@ Wave Terminal's AI assistant is already powerful and continues to evolve. Here's
 
 - 🔷 Remote file operations - Read and write files on SSH connections
 - 🔷 Custom AI-powered widgets (Tsunami framework)
-- 🔷 AI Can spawn Wave Blocks
-- 🔷 Drag&Drop from Preview Widgets to Wave AI
+- 🔷 AI Can spawn RemoteTerm Blocks
+- 🔷 Drag&Drop from Preview Widgets to RemoteTerm AI
 
-### Wave AI Widget Builder
+### RemoteTerm AI Widget Builder
 
 - 🔷 Visual builder for creating custom AI-powered widgets
 - 🔷 Template library for common AI workflows
