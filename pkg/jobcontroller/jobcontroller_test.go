@@ -1305,3 +1305,50 @@ func TestWaitForStreamLoopExit(t *testing.T) {
 	waitForStreamLoopExit(jobId, "stream-3", 2*time.Second)
 	// If the helper never returned, the test would time out — reaching here is success.
 }
+
+// TestHasActiveStream covers the decision used by doReconnectJob's "already connected"
+// guard and by handleRouteEvent's route-up handler to distinguish a genuinely healthy
+// Connected job from failure mode B (Connected-but-no-stream): the job/route reports
+// Connected, but no runOutputLoop is actually pulling data from the remote stream.
+// Before this fix, both callers treated "CheckJobConnected succeeds" as sufficient and
+// skipped/no-opped unconditionally, regardless of stream health — so once a job got
+// wedged Connected-with-no-active-stream (e.g. restartStreaming failing after
+// SetJobConnStatus(Connected), or a route-up event marking Connected without
+// restarting the stream), it stayed wedged forever: every later reconnect attempt hit
+// the "already connected" guard and skipped without ever restarting the stream.
+func TestHasActiveStream(t *testing.T) {
+	tests := []struct {
+		name     string
+		health   streamHealthInfo
+		healthOk bool
+		want     bool
+	}{
+		{
+			name:     "no health entry at all",
+			health:   streamHealthInfo{},
+			healthOk: false,
+			want:     false,
+		},
+		{
+			name:     "health entry present but inactive (failure mode B)",
+			health:   streamHealthInfo{active: false, streamId: "stream-1"},
+			healthOk: true,
+			want:     false,
+		},
+		{
+			name:     "health entry present and active",
+			health:   streamHealthInfo{active: true, streamId: "stream-1"},
+			healthOk: true,
+			want:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := hasActiveStream(tt.health, tt.healthOk)
+			if got != tt.want {
+				t.Errorf("hasActiveStream(%+v, healthOk=%v) = %v, want %v", tt.health, tt.healthOk, got, tt.want)
+			}
+		})
+	}
+}
