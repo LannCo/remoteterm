@@ -535,8 +535,7 @@ export class SourceControlViewModel implements ViewModel {
     }
 
     getDiffCacheKey(path: string, staged: boolean, untracked: boolean): string {
-        const cwd = globalStore.get(this.cwd);
-        return `${cwd}|${path}|${staged ? "staged" : "unstaged"}|${untracked ? "untracked" : ""}`;
+        return `${path}|${staged ? "staged" : "unstaged"}|${untracked ? "untracked" : ""}`;
     }
 
     async fetchDiffCached(path: string, staged: boolean, untracked: boolean): Promise<GitDiffResponse | null> {
@@ -608,14 +607,13 @@ export class SourceControlViewModel implements ViewModel {
     }
 
     async revertFileFromReview(path: string, staged: boolean) {
-        this.invalidateDiffCache(path);
         try {
-            const cwd = globalStore.get(this.cwd);
-            const diff = await this.fetchDiff(cwd, path, staged, false);
+            const diff = await this.fetchDiffCached(path, staged, false);
             const hunkCount = diff?.hunks?.length ?? 0;
             for (let i = 0; i < hunkCount; i++) {
                 await this.revertHunk(path, i, staged);
             }
+            this.invalidateDiffCache(path);
             await this.fetchStatus();
             this.updateReviewFilesFromStatus();
         } catch (e) {
