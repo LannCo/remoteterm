@@ -280,7 +280,7 @@ proc.Wait()
    - [`DetectShellTypeAndVersion()`](../pkg/util/shellutil/shellutil.go:486) - Gets shell version info
 
 2. **Shell Integration Files**:
-   - [`InitCustomShellStartupFiles()`](../pkg/util/shellutil/shellutil.go:270) - Creates Wave's shell integration
+   - [`InitCustomShellStartupFiles()`](../pkg/util/shellutil/shellutil.go:270) - Creates RemoteTerm's shell integration
    - Manages startup files for each shell type:
      - Bash: `.bashrc` in `shell/bash/`
      - Zsh: `.zshrc`, `.zprofile`, etc. in `shell/zsh/`
