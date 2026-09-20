@@ -1,10 +1,10 @@
-# Wave Terminal Configuration System
+# RemoteTerm Configuration System
 
-This document explains how Wave Terminal's configuration system works and provides step-by-step instructions for adding new configuration values.
+This document explains how RemoteTerm's configuration system works and provides step-by-step instructions for adding new configuration values.
 
 ## Overview
 
-Wave Terminal uses a hierarchical configuration system with the following components:
+RemoteTerm uses a hierarchical configuration system with the following components:
 
 1. **Go Struct Definitions** - Type-safe configuration structure in Go
 2. **JSON Schema** - Validation schema for configuration files
@@ -14,7 +14,7 @@ Wave Terminal uses a hierarchical configuration system with the following compon
 
 ## Configuration File Structure
 
-Wave Terminal's configuration system is organized into several key directories and files:
+RemoteTerm's configuration system is organized into several key directories and files:
 
 ```
 waveterm/
@@ -59,7 +59,7 @@ Settings cascade from defaults → user settings → block overrides.
 
 ### Block-Level Metadata Override System
 
-Wave Terminal supports block-level configuration overrides through the metadata system. This allows settings to be applied globally, per-connection, or per-block:
+RemoteTerm supports block-level configuration overrides through the metadata system. This allows settings to be applied globally, per-connection, or per-block:
 
 1. **Global Settings** (`~/.config/waveterm/settings.json`) - Apply to all blocks by default
 2. **Connection Settings** (in connections config) - Apply to all blocks using a specific connection
@@ -359,7 +359,7 @@ wsh setmeta --block BLOCK_ID term:bellsound="beep"
 
 ## Testing Your Configuration
 
-1. **Build and run** Wave Terminal with your changes
+1. **Build and run** RemoteTerm with your changes
 2. **Test default behavior** - Ensure the default value works
 3. **Test user override** - Add your setting to `~/.config/waveterm/settings.json`
 4. **Test block override** - Set block-specific metadata

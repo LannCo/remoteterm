@@ -1,4 +1,4 @@
-# Wave Terminal Frontend Connection Architecture
+# RemoteTerm Frontend Connection Architecture
 
 ## Overview
 
@@ -396,7 +396,7 @@ sendDataToController(data: string) {
 
 ### Hierarchical Configuration System
 
-Wave uses a three-level config hierarchy for connections:
+RemoteTerm uses a three-level config hierarchy for connections:
 
 1. **Global Settings** (`settings`)
 2. **Connection-Level Config** (`connections[connName]`)

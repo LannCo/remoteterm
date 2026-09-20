@@ -1,6 +1,6 @@
 ---
 name: waveenv
-description: Guide for creating WaveEnv narrowings in Wave Terminal. Use when writing a named subset type of WaveEnv for a component tree, documenting environmental dependencies, or enabling mock environments for preview/test server usage.
+description: Guide for creating WaveEnv narrowings in RemoteTerm. Use when writing a named subset type of WaveEnv for a component tree, documenting environmental dependencies, or enabling mock environments for preview/test server usage.
 ---
 
 # WaveEnv Narrowing Skill

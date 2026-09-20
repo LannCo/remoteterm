@@ -1,4 +1,4 @@
-# Wave Terminal Layout System - Simplification via Write Cache Pattern
+# RemoteTerm Layout System - Simplification via Write Cache Pattern
 
 ## Executive Summary
 
@@ -681,7 +681,7 @@ This also makes the WaveAI focus integration trivial, eliminating the need for c
 ## Recommendation
 
 Implement this simplification **before** adding WaveAI focus features. The cleaner foundation will make the focus work much easier and the codebase more maintainable long-term.
-# Wave Terminal Layout System - Simplification via Write Cache Pattern
+# RemoteTerm Layout System - Simplification via Write Cache Pattern
 
 ## Risk Assessment: LOW RISK, Well-Contained Change
 

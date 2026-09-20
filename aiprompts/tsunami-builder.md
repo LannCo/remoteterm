@@ -33,7 +33,7 @@ A split-screen builder for creating Tsunami applications: chat interface on left
 ## Version Management
 
 **Draft mode**: Auto-saved on every edit, persists when builder closes
-**Published version**: What runs in main Wave Terminal, only updates on explicit "Publish"
+**Published version**: What runs in main RemoteTerm, only updates on explicit "Publish"
 
 Flow:
 
@@ -257,5 +257,5 @@ These can be added in v2+ based on user feedback.
 - User can create functional Tsunami app through chat in <5 minutes
 - AI successfully fixes its own compilation errors 80%+ of the time
 - Iteration cycle (message → edit → preview) takes <10 seconds
-- Users can publish working apps to Wave Terminal
+- Users can publish working apps to RemoteTerm
 - Draft state persists across sessions
