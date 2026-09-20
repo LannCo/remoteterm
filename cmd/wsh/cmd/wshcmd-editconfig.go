@@ -28,10 +28,7 @@ func init() {
 	rootCmd.AddCommand(editConfigCmd)
 }
 
-func editConfigRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func editConfigRun(cmd *cobra.Command, args []string) error {
 	configFile := "settings.json" // default
 	if len(args) > 0 {
 		configFile = args[0]

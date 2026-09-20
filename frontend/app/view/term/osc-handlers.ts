@@ -5,12 +5,11 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import {
     getApi,
-    getBlockMetaKeyAtom,
-    getBlockTermDurableAtom,
     getOverrideConfigAtom,
-    globalStore,    WOS,
+    globalStore,
+    WOS,
 } from "@/store/global";
-import { base64ToString, fireAndForget, isSshConnName, isWslConnName } from "@/util/util";
+import { base64ToString, fireAndForget } from "@/util/util";
 import debug from "debug";
 import type { TermWrap } from "./termwrap";
 
@@ -91,10 +90,7 @@ function handleShellIntegrationCommandStart(
 ): void {
     rtInfo["shell:state"] = "running-command";
     globalStore.set(termWrap.shellIntegrationStatusAtom, "running-command");
-    const connName = globalStore.get(getBlockMetaKeyAtom(blockId, "connection")) ?? "";
-    const isRemote = isSshConnName(connName);
-    const isWsl = isWslConnName(connName);
-    const isDurable = globalStore.get(getBlockTermDurableAtom(blockId)) ?? false;    if (cmd.data.cmd64) {
+    if (cmd.data.cmd64) {
         const decodedLen = Math.ceil(cmd.data.cmd64.length * 0.75);
         if (decodedLen > 8192) {
             rtInfo["shell:lastcmd"] = `# command too large (${decodedLen} bytes)`;

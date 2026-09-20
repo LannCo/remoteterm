@@ -28,10 +28,7 @@ func init() {
 	rootCmd.AddCommand(wavepathCmd)
 }
 
-func wavepathRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func wavepathRun(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		OutputHelpMessage(cmd)
 		return fmt.Errorf("no arguments. wsh wavepath requires a type argument (config, data, or log)")

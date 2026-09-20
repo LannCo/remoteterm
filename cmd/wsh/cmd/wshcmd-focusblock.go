@@ -24,10 +24,7 @@ func init() {
 	rootCmd.AddCommand(focusBlockCmd)
 }
 
-func focusBlockRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func focusBlockRun(cmd *cobra.Command, args []string) error {
 	tabId := os.Getenv("WAVETERM_TABID")
 	if tabId == "" {
 		return fmt.Errorf("no tab id specified (set WAVETERM_TABID environment variable)")

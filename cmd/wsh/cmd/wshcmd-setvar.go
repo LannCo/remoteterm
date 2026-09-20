@@ -56,10 +56,7 @@ func parseKeyValue(arg string) (key, value string, err error) {
 	return key, parts[1], nil
 }
 
-func setVarRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func setVarRun(cmd *cobra.Command, args []string) error {
 	// Resolve block to get zoneId
 	if blockArg == "" {
 		if getVarLocal {

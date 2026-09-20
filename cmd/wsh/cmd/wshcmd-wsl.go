@@ -28,10 +28,7 @@ func init() {
 	rootCmd.AddCommand(wslCmd)
 }
 
-func wslRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func wslRun(cmd *cobra.Command, args []string) error {
 	var err error
 	if distroName == "" {
 		// get default distro from the host

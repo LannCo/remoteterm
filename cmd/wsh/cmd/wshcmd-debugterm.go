@@ -48,9 +48,7 @@ func init() {
 	debugTermCmd.Flags().StringVar(&debugTermInput, "input", "", "read input from file instead of rpc call")
 }
 
-func debugTermRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
+func debugTermRun(cmd *cobra.Command, args []string) error {
 	mode, err := getDebugTermMode()
 	if err != nil {
 		return err

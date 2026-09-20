@@ -27,7 +27,7 @@ import {
     getOverrideConfigAtom,
     getSettingsKeyAtom,
     globalStore,
-    readAtom,    useBlockAtom,
+    useBlockAtom,
     WOS,
 } from "@/store/global";
 import * as services from "@/store/services";
@@ -563,8 +563,6 @@ export class TermViewModel implements ViewModel {
 
     keyDownHandler(waveEvent: WaveKeyboardEvent): boolean {
         if (keyutil.checkKeyPressed(waveEvent, "Ctrl:r")) {
-            const shellIntegrationStatus = readAtom(this.termRef?.current?.shellIntegrationStatusAtom);
-            if (shellIntegrationStatus === "ready") {            }
             // just for telemetry, we allow this keybinding through, back to the terminal
             return false;
         }

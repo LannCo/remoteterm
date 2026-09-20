@@ -37,10 +37,7 @@ func init() {
 	rootCmd.AddCommand(sshCmd)
 }
 
-func sshRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func sshRun(cmd *cobra.Command, args []string) error {
 	sshArg := args[0]
 	var err error
 	sshArg, err = applySSHOverrides(sshArg, sshLogin, sshPort)
