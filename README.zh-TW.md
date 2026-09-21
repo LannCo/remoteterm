@@ -21,27 +21,13 @@
 
 > 本文件為社群繁體中文翻譯版本。最新原文請參閱 [README.md](README.md)。
 
-RemoteTerm 是一款開源、整合 AI 的終端機應用程式，支援 macOS、Linux 與 Windows。它可以搭配任何 AI 模型使用——自行提供 OpenAI、Claude 或 Gemini 的 API 金鑰，或透過 Ollama 與 LM Studio 執行本地模型，完全不需要註冊帳號。
+RemoteTerm 是一款開源終端機應用程式，支援 macOS、Linux 與 Windows。完全不需要註冊帳號。
 
 RemoteTerm 同時支援**持久化 SSH 連線**，即使網路中斷或應用程式重新啟動，連線也會自動恢復。你可以使用內建的圖形化編輯器直接編輯遠端檔案，也能在不離開終端機的情況下即時預覽檔案內容。
 
 ![RemoteTerm Screenshot](./assets/wave-screenshot.webp)
 
 ## 主要功能
-
-### 🤖 RemoteTerm AI — 情境感知終端機助手
-
-RemoteTerm AI 不只是一個聊天機器人——它能直接讀取你的終端機輸出、分析目前開啟的小工具（Widget），還能執行檔案操作。當你在 Debug 時，AI 能看到你的錯誤訊息並給予針對性的建議，而不是泛泛的回答。
-
-- **終端機情境感知**：自動讀取終端機輸出與捲動緩衝區（Scrollback），用於除錯與分析
-- **檔案操作**：可讀取、寫入、編輯檔案，搭配自動備份機制與使用者審核確認
-- **CLI 整合**：透過 `wsh ai` 命令，直接在命令列中將輸出導入 AI 或附加檔案
-- **BYOK（自帶金鑰）**：支援 OpenAI、Claude、Gemini、Azure 等多家供應商的 API 金鑰
-- **本地模型**：透過 Ollama、LM Studio 及其他 OpenAI 相容供應商執行本地模型，資料完全不離開你的電腦
-- **免費 Beta**：體驗優化期間提供免費 AI 額度
-- **即將推出**：命令執行功能（需使用者核准）
-
-詳細說明請參閱 [RemoteTerm AI 文件](https://docs.waveterm.dev/waveai) 與 [RemoteTerm AI Modes 文件](https://docs.waveterm.dev/waveai-modes)。
 
 ### 🔗 持久化 SSH 連線
 
@@ -53,7 +39,7 @@ RemoteTerm AI 不只是一個聊天機器人——它能直接讀取你的終端
 
 ### 🧩 彈性拖放介面
 
-RemoteTerm 的介面由可自由排列的「區塊（Block）」組成。你可以將終端機、編輯器、網頁瀏覽器、AI 助手像拼圖一樣排列在同一個畫面中，打造最適合你工作流程的佈局。每個區塊都能一鍵切換全螢幕，放大查看後立即回到多區塊視圖。
+RemoteTerm 的介面由可自由排列的「區塊（Block）」組成。你可以將終端機、編輯器、網頁瀏覽器像拼圖一樣排列在同一個畫面中，打造最適合你工作流程的佈局。每個區塊都能一鍵切換全螢幕，放大查看後立即回到多區塊視圖。
 
 ### ✏️ 內建編輯器
 
@@ -68,16 +54,6 @@ RemoteTerm 的介面由可自由排列的「區塊（Block）」組成。你可�
 - PDF 文件
 - CSV 試算表
 - 目錄結構
-
-### 💬 AI 聊天小工具
-
-支援多種 AI 模型的聊天介面，可同時開啟多個 AI 對話視窗：
-
-- OpenAI（GPT 系列）
-- Anthropic Claude
-- Azure OpenAI
-- Perplexity
-- Ollama（本地模型）
 
 ### 📦 Command Blocks（命令區塊）
 
