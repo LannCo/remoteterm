@@ -1,6 +1,6 @@
 {
     "app:defaultnewblock": "term",
-    "app:tabbar": "left",
+    "app:tabbar": "top",
     "app:confirmquit": true,
     "term:showsplitbuttons": false,
     "app:disablectrlshiftarrows": false,
