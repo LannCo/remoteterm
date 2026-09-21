@@ -22,7 +22,6 @@ import {
 } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { uxCloseBlock } from "@/app/store/keymodel";
-import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { useWaveEnv } from "@/app/waveenv/waveenv";
 import { IconButton } from "@/element/iconbutton";
 import { NodeModel } from "@/layout/index";
@@ -297,7 +296,10 @@ const BlockFrame_Header = React.memo(
                     />
                 )}
                 {useTermHeader && badge && (
-                    <div className="pointer-events-none flex items-center px-1" style={{ color: badge.color || "#fbbf24" }}>
+                    <div
+                        className="pointer-events-none flex items-center px-1"
+                        style={{ color: badge.color || "#fbbf24" }}
+                    >
                         <i
                             className={makeIconClass(badge.icon, true, { defaultIcon: "circle-small" })}
                             style={

@@ -42,7 +42,8 @@ interface StandardSessionContentProps {
 }
 
 function StandardSessionContent({ viewModel, onClose }: StandardSessionContentProps) {
-    const handleRestartAsDurable = () => {        onClose();
+    const handleRestartAsDurable = () => {
+        onClose();
         util.fireAndForget(() => viewModel.restartSessionWithDurability(true));
     };
 

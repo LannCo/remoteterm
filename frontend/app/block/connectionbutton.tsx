@@ -28,7 +28,8 @@ export const ConnectionButton = React.memo(
             let connIconElem: React.ReactNode = null;
             const connColorNum = computeConnColorNum(connStatus);
             let color = `var(--conn-icon-color-${connColorNum})`;
-            const clickHandler = function () {                setConnModalOpen(true);
+            const clickHandler = function () {
+                setConnModalOpen(true);
             };
             let titleText = null;
             let shouldSpin = false;

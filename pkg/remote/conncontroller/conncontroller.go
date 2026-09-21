@@ -140,7 +140,7 @@ type SSHConn struct {
 	ReconnectError       string
 	ReconnectGaveUp      bool   // true when scheduler exhausted retries (max duration, auth-failed, etc.)
 	ReconnectStopReason  string // reason: "max-duration", "auth-failed", "connection-refused", "no-jobs"
-	FlappingMode         bool // ≥3 reconnect attempts in last 30s (UX-2.2)
+	FlappingMode         bool   // ≥3 reconnect attempts in last 30s (UX-2.2)
 
 	LocalForwardListeners  []ForwardingRule
 	RemoteForwardListeners []ForwardingRule
@@ -374,9 +374,9 @@ func (conn *SSHConn) DeriveConnStatus() wshrpc.ConnStatus {
 		ReconnectStopReason:           conn.ReconnectStopReason,
 		ForwardingRules:               forwardingRules,
 		CanAutoReconnect:              canAutoReconnect,
-		SuppressAutoReconnect: conn.SuppressAutoReconnect,
-		FlappingMode:          conn.FlappingMode,
-		AuthQueueWaiting:      conn.AuthQueueWaiting,
+		SuppressAutoReconnect:         conn.SuppressAutoReconnect,
+		FlappingMode:                  conn.FlappingMode,
+		AuthQueueWaiting:              conn.AuthQueueWaiting,
 	}
 }
 
