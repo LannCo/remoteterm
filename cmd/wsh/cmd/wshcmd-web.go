@@ -113,7 +113,7 @@ func webOpenRun(cmd *cobra.Command, args []string) (rtnErr error) {
 
 	tabId := getTabIdFromEnv()
 	if tabId == "" {
-		return fmt.Errorf("no WAVETERM_TABID env var set")
+		return fmt.Errorf("no REMOTETERM_TABID env var set")
 	}
 
 	wshCmd := wshrpc.CommandCreateBlockData{

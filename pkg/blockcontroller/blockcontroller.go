@@ -612,25 +612,25 @@ func makeSwapToken(ctx context.Context, logCtx context.Context, blockId string, 
 		Exp:   time.Now().Add(5 * time.Minute),
 	}
 	token.Env["TERM_PROGRAM"] = "waveterm"
-	token.Env["WAVETERM_BLOCKID"] = blockId
-	token.Env["WAVETERM_VERSION"] = wavebase.WaveVersion
-	token.Env["WAVETERM"] = "1"
+	wavebase.SetDualEnv(token.Env, wavebase.WaveBlockIdVarName, wavebase.LegacyWaveBlockIdVarName, blockId)
+	token.Env[wavebase.WaveVersionVarName] = wavebase.WaveVersion
+	wavebase.SetDualEnv(token.Env, wavebase.WaveFlagVarName, wavebase.LegacyWaveFlagVarName, "1")
 	tabId, err := wstore.DBFindTabForBlockId(ctx, blockId)
 	if err != nil {
 		log.Printf("error finding tab for block: %v\n", err)
 	} else {
-		token.Env["WAVETERM_TABID"] = tabId
+		wavebase.SetDualEnv(token.Env, wavebase.WaveTabIdVarName, wavebase.LegacyWaveTabIdVarName, tabId)
 	}
 	if tabId != "" {
 		wsId, err := wstore.DBFindWorkspaceForTabId(ctx, tabId)
 		if err != nil {
 			log.Printf("error finding workspace for tab: %v\n", err)
 		} else {
-			token.Env["WAVETERM_WORKSPACEID"] = wsId
+			wavebase.SetDualEnv(token.Env, wavebase.WaveWorkspaceIdVarName, wavebase.LegacyWaveWorkspaceIdVarName, wsId)
 		}
 	}
-	token.Env["WAVETERM_CLIENTID"] = wstore.GetClientId()
-	token.Env["WAVETERM_CONN"] = remoteName
+	wavebase.SetDualEnv(token.Env, wavebase.WaveClientIdVarName, wavebase.LegacyWaveClientIdVarName, wstore.GetClientId())
+	wavebase.SetDualEnv(token.Env, wavebase.WaveConnVarName, wavebase.LegacyWaveConnVarName, remoteName)
 	envMap, err := resolveEnvMap(blockId, blockMeta, remoteName)
 	if err != nil {
 		log.Printf("error resolving env map: %v\n", err)

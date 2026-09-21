@@ -29,11 +29,11 @@ tasks:
             - build:backend
             - build:tsunamiscaffold
         env:
-            WAVETERM_ENVFILE: "{{.ROOT_DIR}}/.env"
+            REMOTETERM_ENVFILE: "{{.ROOT_DIR}}/.env"
             WCLOUD_PING_ENDPOINT: "https://ping-dev.waveterm.dev/central"
             WCLOUD_ENDPOINT: "https://api-dev.waveterm.dev/central"
             WCLOUD_WS_ENDPOINT: "wss://wsapi-dev.waveterm.dev"
-            WAVETERM_NOCONFIRMQUIT: "1"
+            REMOTETERM_NOCONFIRMQUIT: "1"
 
     electron:start:
         desc: Run the Electron application directly.
@@ -44,7 +44,7 @@ tasks:
             - npm:install
             - build:backend
         env:
-            WAVETERM_ENVFILE: "{{.ROOT_DIR}}/.env"
+            REMOTETERM_ENVFILE: "{{.ROOT_DIR}}/.env"
             WCLOUD_PING_ENDPOINT: "https://ping-dev.waveterm.dev/central"
             WCLOUD_ENDPOINT: "https://api-dev.waveterm.dev/central"
             WCLOUD_WS_ENDPOINT: "wss://wsapi-dev.waveterm.dev"
@@ -56,11 +56,11 @@ tasks:
             - npm:install
             - build:backend:quickdev
         env:
-            WAVETERM_ENVFILE: "{{.ROOT_DIR}}/.env"
+            REMOTETERM_ENVFILE: "{{.ROOT_DIR}}/.env"
             WCLOUD_PING_ENDPOINT: "https://ping-dev.waveterm.dev/central"
             WCLOUD_ENDPOINT: "https://api-dev.waveterm.dev/central"
             WCLOUD_WS_ENDPOINT: "wss://wsapi-dev.waveterm.dev/"
-            WAVETERM_NOCONFIRMQUIT: "1"
+            REMOTETERM_NOCONFIRMQUIT: "1"
 
     preview:
         desc: Run the standalone component preview server with HMR (no Electron, no backend).
@@ -83,7 +83,7 @@ tasks:
             - npm:install
             - build:backend:quickdev:windows
         env:
-            WAVETERM_ENVFILE: "{{.ROOT_DIR}}/.env"
+            REMOTETERM_ENVFILE: "{{.ROOT_DIR}}/.env"
             WCLOUD_PING_ENDPOINT: "https://ping-dev.waveterm.dev/central"
             WCLOUD_ENDPOINT: "https://api-dev.waveterm.dev/central"
             WCLOUD_WS_ENDPOINT: "wss://wsapi-dev.waveterm.dev/"

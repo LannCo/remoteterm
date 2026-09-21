@@ -4,8 +4,8 @@
 import { getEnv } from "./getenv";
 import { lazy } from "./util";
 
-export const WaveDevVarName = "WAVETERM_DEV";
-export const WaveDevViteVarName = "WAVETERM_DEV_VITE";
+export const WaveDevVarName = "REMOTETERM_DEV";
+export const WaveDevViteVarName = "REMOTETERM_DEV_VITE";
 
 /**
  * Determines whether the current app instance is a development build.

@@ -11,10 +11,10 @@ import { WaveDevVarName, WaveDevViteVarName } from "../frontend/util/isdev";
 import * as keyutil from "../frontend/util/keyutil";
 
 // This is a little trick to ensure that Electron puts all its runtime data into a subdirectory to avoid conflicts with our own data.
-// On macOS, it will store to ~/Library/Application \Support/waveterm/electron
-// On Linux, it will store to ~/.config/waveterm/electron
-// On Windows, it will store to %LOCALAPPDATA%/waveterm/electron
-app.setName("waveterm/electron");
+// On macOS, it will store to ~/Library/Application \Support/remoteterm/electron
+// On Linux, it will store to ~/.config/remoteterm/electron
+// On Windows, it will store to %LOCALAPPDATA%/remoteterm/electron
+app.setName("remoteterm/electron");
 
 const isDev = !app.isPackaged;
 const isDevVite = isDev && process.env.ELECTRON_RENDERER_URL;
@@ -26,20 +26,50 @@ if (isDevVite) {
     process.env[WaveDevViteVarName] = "1";
 }
 
-const waveDirNamePrefix = "waveterm";
+const waveDirNamePrefix = "remoteterm";
 const waveDirNameSuffix = isDev ? "dev" : "";
 const waveDirName = `${waveDirNamePrefix}${waveDirNameSuffix ? `-${waveDirNameSuffix}` : ""}`;
 
-const paths = envPaths("waveterm", { suffix: waveDirNameSuffix });
+// Frozen forever: this is the real pre-v0.8 legacy directory name/prefix on disk, independent of
+// whatever the product is branded as today. Never derive this from waveDirNamePrefix.
+const LegacyWaveHomeDirName = ".waveterm";
+
+const paths = envPaths("remoteterm", { suffix: waveDirNameSuffix });
 
 app.setName(isDev ? "RemoteTerm (Dev)" : "RemoteTerm");
 const unamePlatform = process.platform;
 const unameArch: string = process.arch;
 keyutil.setKeyUtilPlatform(unamePlatform);
 
-const WaveConfigHomeVarName = "WAVETERM_CONFIG_HOME";
-const WaveDataHomeVarName = "WAVETERM_DATA_HOME";
-const WaveHomeVarName = "WAVETERM_HOME";
+const WaveConfigHomeVarName = "REMOTETERM_CONFIG_HOME";
+const LegacyWaveConfigHomeVarName = "WAVETERM_CONFIG_HOME";
+const WaveDataHomeVarName = "REMOTETERM_DATA_HOME";
+const LegacyWaveDataHomeVarName = "WAVETERM_DATA_HOME";
+const WaveHomeVarName = "REMOTETERM_HOME";
+const LegacyWaveHomeVarName = "WAVETERM_HOME";
+
+const alreadyWarnedLegacyVars = new Set<string>();
+
+/**
+ * Reads a user-settable override var, preferring the new name but falling back to the
+ * deprecated old name (with a one-time warning) so existing shell-profile overrides don't
+ * silently stop working when this var is renamed.
+ */
+function readOverrideEnvVar(newName: string, legacyName: string): string {
+    const newVal = process.env[newName];
+    if (newVal) {
+        return newVal;
+    }
+    const legacyVal = process.env[legacyName];
+    if (legacyVal) {
+        if (!alreadyWarnedLegacyVars.has(legacyName)) {
+            alreadyWarnedLegacyVars.add(legacyName);
+            console.log(`${legacyName} is deprecated, please use ${newName} instead`);
+        }
+        return legacyVal;
+    }
+    return null;
+}
 
 export function checkIfRunningUnderARM64Translation(fullConfig: FullConfigType) {
     if (!fullConfig.settings["app:dismissarchitecturewarning"] && app.runningUnderARM64Translation) {
@@ -68,15 +98,20 @@ export function checkIfRunningUnderARM64Translation(fullConfig: FullConfigType) 
 }
 
 /**
- * Gets the path to the old Wave home directory (defaults to `~/.waveterm`).
+ * Gets the path to the combined Wave home directory (defaults to `~/.remoteterm`, falling back
+ * to the frozen pre-v0.8 legacy path `~/.waveterm` if that's what has valid data).
  * @returns The path to the directory if it exists and contains valid data for the current app, otherwise null.
  */
 function getWaveHomeDir(): string {
-    let home = process.env[WaveHomeVarName];
+    let home = readOverrideEnvVar(WaveHomeVarName, LegacyWaveHomeVarName);
     if (!home) {
         const homeDir = app.getPath("home");
         if (homeDir) {
-            home = path.join(homeDir, `.${waveDirName}`);
+            const migratedHome = path.join(homeDir, `.${waveDirName}`);
+            if (existsSync(migratedHome) && existsSync(path.join(migratedHome, "wave.lock"))) {
+                return migratedHome;
+            }
+            home = path.join(homeDir, LegacyWaveHomeDirName);
         }
     }
     // If home exists and it has `wave.lock` in it, we know it has valid data from Wave >=v0.8. Otherwise, it could be for WaveLegacy (<v0.8)
@@ -110,7 +145,7 @@ function getWaveConfigDir(): string {
         return path.join(waveHomeDir, "config");
     }
 
-    const override = process.env[WaveConfigHomeVarName];
+    const override = readOverrideEnvVar(WaveConfigHomeVarName, LegacyWaveConfigHomeVarName);
     const xdgConfigHome = process.env.XDG_CONFIG_HOME;
     let retVal: string;
     if (override) {
@@ -135,7 +170,7 @@ function getWaveDataDir(): string {
         return waveHomeDir;
     }
 
-    const override = process.env[WaveDataHomeVarName];
+    const override = readOverrideEnvVar(WaveDataHomeVarName, LegacyWaveDataHomeVarName);
     const xdgDataHome = process.env.XDG_DATA_HOME;
     let retVal: string;
     if (override) {

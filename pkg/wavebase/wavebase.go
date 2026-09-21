@@ -26,19 +26,75 @@ var WaveVersion = "0.0.0"
 var BuildTime = "0"
 
 const (
-	WaveConfigHomeEnvVar           = "WAVETERM_CONFIG_HOME"
-	WaveDataHomeEnvVar             = "WAVETERM_DATA_HOME"
-	WaveAppPathVarName             = "WAVETERM_APP_PATH"
-	WaveAppResourcesPathVarName    = "WAVETERM_RESOURCES_PATH"
-	WaveAppElectronExecPathVarName = "WAVETERM_ELECTRONEXECPATH"
-	WaveDevVarName                 = "WAVETERM_DEV"
-	WaveDevViteVarName             = "WAVETERM_DEV_VITE"
-	WaveWshForceUpdateVarName      = "WAVETERM_WSHFORCEUPDATE"
-	WaveNoConfirmQuitVarName       = "WAVETERM_NOCONFIRMQUIT"
+	WaveConfigHomeEnvVar           = "REMOTETERM_CONFIG_HOME"
+	WaveDataHomeEnvVar             = "REMOTETERM_DATA_HOME"
+	WaveAppPathVarName             = "REMOTETERM_APP_PATH"
+	WaveAppResourcesPathVarName    = "REMOTETERM_RESOURCES_PATH"
+	WaveAppElectronExecPathVarName = "REMOTETERM_ELECTRONEXECPATH"
+	WaveDevVarName                 = "REMOTETERM_DEV"
+	WaveDevViteVarName             = "REMOTETERM_DEV_VITE"
+	WaveWshForceUpdateVarName      = "REMOTETERM_WSHFORCEUPDATE"
+	WaveNoConfirmQuitVarName       = "REMOTETERM_NOCONFIRMQUIT"
 
-	WaveJwtTokenVarName  = "WAVETERM_JWT"
-	WaveSwapTokenVarName = "WAVETERM_SWAPTOKEN"
+	// JWT and swap tokens are packed/unpacked entirely within a single wsh<->wavesrv round
+	// trip of the same app version (the client reads whatever key the server packed, via a
+	// generic map, not a hardcoded lookup), so unlike the session-scoped vars below, these
+	// don't need a legacy-name fallback.
+	WaveJwtTokenVarName  = "REMOTETERM_JWT"
+	WaveSwapTokenVarName = "REMOTETERM_SWAPTOKEN"
 )
+
+// Session-scoped vars the app writes into every spawned shell's environment (directly, or via
+// a swap-token exchange). Unlike the override vars above, a read-side fallback alone doesn't
+// protect these: a shell/tmux pane spawned by an already-running pre-rename app instance has
+// the old name baked into its inherited environment for the rest of its life. Write both names
+// for one deprecation-window release with SetDualEnv, and read new-first via GetEnvNewOrLegacy.
+const (
+	WaveTabIdVarName       = "REMOTETERM_TABID"
+	LegacyWaveTabIdVarName = "WAVETERM_TABID"
+
+	WaveBlockIdVarName       = "REMOTETERM_BLOCKID"
+	LegacyWaveBlockIdVarName = "WAVETERM_BLOCKID"
+
+	WaveWorkspaceIdVarName       = "REMOTETERM_WORKSPACEID"
+	LegacyWaveWorkspaceIdVarName = "WAVETERM_WORKSPACEID"
+
+	WaveClientIdVarName       = "REMOTETERM_CLIENTID"
+	LegacyWaveClientIdVarName = "WAVETERM_CLIENTID"
+
+	WaveConnVarName       = "REMOTETERM_CONN"
+	LegacyWaveConnVarName = "WAVETERM_CONN"
+
+	WaveJobIdVarName       = "REMOTETERM_JOBID"
+	LegacyWaveJobIdVarName = "WAVETERM_JOBID"
+
+	WavePublicKeyVarName       = "REMOTETERM_PUBLICKEY"
+	LegacyWavePublicKeyVarName = "WAVETERM_PUBLICKEY"
+
+	// bare flag var (no trailing underscore) signaling "this shell is Wave-managed"; also
+	// carries the wsh executable path in WaveshellLocalEnvVars
+	WaveFlagVarName       = "REMOTETERM"
+	LegacyWaveFlagVarName = "WAVETERM"
+
+	WaveVersionVarName = "REMOTETERM_VERSION"
+)
+
+// SetDualEnv writes both the new and legacy names of a session-scoped env var for the
+// deprecation window (see the const block above).
+func SetDualEnv(env map[string]string, newName string, legacyName string, val string) {
+	env[newName] = val
+	env[legacyName] = val
+}
+
+// GetEnvNewOrLegacy reads a session-scoped env var, preferring the new name but falling back
+// to the legacy name so wsh keeps working inside a shell pane spawned by a pre-rename app
+// instance (see the const block above).
+func GetEnvNewOrLegacy(newName string, legacyName string) string {
+	if val := os.Getenv(newName); val != "" {
+		return val
+	}
+	return os.Getenv(legacyName)
+}
 
 const (
 	BlockFile_Term  = "term"            // used for main pty output
@@ -49,12 +105,12 @@ const (
 
 const NeedJwtConst = "NEED-JWT"
 
-var ConfigHome_VarCache string          // caches WAVETERM_CONFIG_HOME
-var DataHome_VarCache string            // caches WAVETERM_DATA_HOME
-var AppPath_VarCache string             // caches WAVETERM_APP_PATH
-var AppResourcesPath_VarCache string    // caches WAVETERM_RESOURCES_PATH
-var AppElectronExecPath_VarCache string // caches WAVETERM_ELECTRONEXECPATH
-var Dev_VarCache string                 // caches WAVETERM_DEV
+var ConfigHome_VarCache string          // caches REMOTETERM_CONFIG_HOME
+var DataHome_VarCache string            // caches REMOTETERM_DATA_HOME
+var AppPath_VarCache string             // caches REMOTETERM_APP_PATH
+var AppResourcesPath_VarCache string    // caches REMOTETERM_RESOURCES_PATH
+var AppElectronExecPath_VarCache string // caches REMOTETERM_ELECTRONEXECPATH
+var Dev_VarCache string                 // caches REMOTETERM_DEV
 
 const WaveLockFile = "wave.lock"
 const DomainSocketBaseName = "wave.sock"

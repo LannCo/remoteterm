@@ -36,7 +36,7 @@ func createBlockRun(cmd *cobra.Command, args []string) error {
 	}
 	tabId := getTabIdFromEnv()
 	if tabId == "" {
-		return fmt.Errorf("no WAVETERM_TABID env var set")
+		return fmt.Errorf("no REMOTETERM_TABID env var set")
 	}
 	meta, err := parseMetaSets(metaSetStrs)
 	if err != nil {

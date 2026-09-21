@@ -34,7 +34,7 @@ var (
 
 func init() {
 	rootCmd.AddCommand(tabIndicatorCmd)
-	tabIndicatorCmd.Flags().StringVar(&tabIndicatorTabId, "tabid", "", "tab id (defaults to WAVETERM_TABID)")
+	tabIndicatorCmd.Flags().StringVar(&tabIndicatorTabId, "tabid", "", "tab id (defaults to REMOTETERM_TABID)")
 	tabIndicatorCmd.Flags().StringVar(&tabIndicatorColor, "color", "", "indicator color")
 	tabIndicatorCmd.Flags().Float64Var(&tabIndicatorPriority, "priority", 10, "indicator priority")
 	tabIndicatorCmd.Flags().BoolVar(&tabIndicatorClear, "clear", false, "clear the indicator")
@@ -49,10 +49,10 @@ func tabIndicatorRun(cmd *cobra.Command, args []string) (rtnErr error) {
 
 	tabId := tabIndicatorTabId
 	if tabId == "" {
-		tabId = os.Getenv("WAVETERM_TABID")
+		tabId = getEnvNewOrLegacy("REMOTETERM_TABID", "WAVETERM_TABID")
 	}
 	if tabId == "" {
-		return fmt.Errorf("no tab id specified (use --tabid or set WAVETERM_TABID)")
+		return fmt.Errorf("no tab id specified (use --tabid or set REMOTETERM_TABID)")
 	}
 
 	oref := waveobj.MakeORef(waveobj.OType_Tab, tabId)

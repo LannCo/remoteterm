@@ -53,7 +53,7 @@ const BackupCleanupInterval = 4 * time.Hour
 var shutdownOnce sync.Once
 
 func init() {
-	envFilePath := os.Getenv("WAVETERM_ENVFILE")
+	envFilePath := os.Getenv("REMOTETERM_ENVFILE")
 	if envFilePath != "" {
 		log.Printf("applying env file: %s\n", envFilePath)
 		_ = godotenv.Load(envFilePath)
@@ -141,14 +141,21 @@ func grabAndRemoveEnvVars() error {
 	if err != nil {
 		return err
 	}
-	// Remove WAVETERM env vars that leak from prod => dev
-	os.Unsetenv("WAVETERM_CLIENTID")
-	os.Unsetenv("WAVETERM_WORKSPACEID")
-	os.Unsetenv("WAVETERM_TABID")
-	os.Unsetenv("WAVETERM_BLOCKID")
-	os.Unsetenv("WAVETERM_CONN")
-	os.Unsetenv("WAVETERM_JWT")
-	os.Unsetenv("WAVETERM_VERSION")
+	// Remove WAVETERM/REMOTETERM env vars that leak from prod => dev. Unset both names of each
+	// dual-written session-scoped var (see wavebase.SetDualEnv) since a leaked pre-rename
+	// process could still have the old name set.
+	os.Unsetenv(wavebase.WaveClientIdVarName)
+	os.Unsetenv(wavebase.LegacyWaveClientIdVarName)
+	os.Unsetenv(wavebase.WaveWorkspaceIdVarName)
+	os.Unsetenv(wavebase.LegacyWaveWorkspaceIdVarName)
+	os.Unsetenv(wavebase.WaveTabIdVarName)
+	os.Unsetenv(wavebase.LegacyWaveTabIdVarName)
+	os.Unsetenv(wavebase.WaveBlockIdVarName)
+	os.Unsetenv(wavebase.LegacyWaveBlockIdVarName)
+	os.Unsetenv(wavebase.WaveConnVarName)
+	os.Unsetenv(wavebase.LegacyWaveConnVarName)
+	os.Unsetenv(wavebase.WaveJwtTokenVarName)
+	os.Unsetenv(wavebase.WaveVersionVarName)
 
 	return nil
 }
