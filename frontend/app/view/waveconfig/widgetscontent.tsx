@@ -55,7 +55,7 @@ interface WidgetOrderRowProps {
     widget: WidgetConfigType;
     index: number;
     moveRow: (dragIndex: number, hoverIndex: number) => void;
-    onDragFinished: () => void;
+    onDragFinished: (key: string) => void;
     onToggleHidden: (key: string) => void;
 }
 
@@ -92,7 +92,7 @@ const WidgetOrderRow = memo(({ widgetKey, widget, index, moveRow, onDragFinished
         type: WidgetDragType,
         item: (): DragItem => ({ key: widgetKey, index }),
         collect: (monitor) => ({ isDragging: monitor.isDragging() }),
-        end: onDragFinished,
+        end: (item) => onDragFinished(item.key),
     });
 
     drag(drop(rowRef));
@@ -154,10 +154,18 @@ const WidgetOrderPanel = memo(({ model }: WidgetOrderPanelProps) => {
         });
     }, []);
 
-    const onDragFinished = useCallback(() => {
-        isDraggingRef.current = false;
-        model.reorderWidgets(localKeysRef.current);
-    }, [model]);
+    const onDragFinished = useCallback(
+        (movedKey: string) => {
+            isDraggingRef.current = false;
+            const finalKeys = localKeysRef.current;
+            const finalIndex = finalKeys.indexOf(movedKey);
+            if (finalIndex === -1) {
+                return;
+            }
+            model.reorderWidget(movedKey, finalIndex, finalKeys);
+        },
+        [model]
+    );
 
     const onToggleHidden = useCallback(
         (key: string) => {

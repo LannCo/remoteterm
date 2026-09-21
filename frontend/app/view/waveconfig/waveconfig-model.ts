@@ -613,46 +613,86 @@ export class WaveConfigViewModel implements ViewModel {
         this.closeConnectionQuickAdd();
     }
 
-    // Persists the full effective widget map (including entries inherited from the
-    // app's built-in defaultconfig/widgets.json) since Wave's config merge is a
-    // whole-key replace, not a per-field merge — a partial write would drop fields
-    // on any default widget being overridden for the first time.
-    async persistWidgets(updated: { [key: string]: WidgetConfigType }) {
+    // Reads the user's own widgets.json exactly as the Raw JSON tab does (unmerged —
+    // no built-in defaultconfig/widgets.json entries). Writes must be computed against
+    // this, not against fullConfig.widgets, or every touched edit would silently fork
+    // every currently-effective default widget into the user's file.
+    async readRawWidgetsFile(): Promise<{ [key: string]: WidgetConfigType }> {
+        const fullPath = `${this.configDir}/widgets.json`;
+        try {
+            const fileData = await this.env.rpc.FileReadCommand(TabRpcClient, {
+                info: { path: fullPath },
+            });
+            const content = fileData?.data64 ? base64ToString(fileData.data64) : "";
+            if (content.trim() === "") {
+                return {};
+            }
+            const parsed = JSON.parse(content);
+            return typeof parsed === "object" && parsed != null && !Array.isArray(parsed) ? parsed : {};
+        } catch {
+            return {};
+        }
+    }
+
+    // Merges only the touched widget key(s) into the raw file (each written in full,
+    // per Wave's whole-key-replace merge semantics for the widgets map) and leaves
+    // every other key exactly as it already is on disk.
+    async persistWidgetPatch(updates: { [key: string]: WidgetConfigType }) {
+        if (Object.keys(updates).length === 0) {
+            return;
+        }
         globalStore.set(this.errorMessageAtom, null);
         try {
+            const rawContent = await this.readRawWidgetsFile();
+            const merged = { ...rawContent, ...updates };
             const fullPath = `${this.configDir}/widgets.json`;
-            const formatted = JSON.stringify(updated, null, 2);
+            const formatted = JSON.stringify(merged, null, 2);
             await this.env.rpc.FileWriteCommand(TabRpcClient, {
                 info: { path: fullPath },
                 data64: stringToBase64(formatted),
             });
+            const selectedFile = globalStore.get(this.selectedFileAtom);
+            if (selectedFile?.path === "widgets.json") {
+                globalStore.set(this.originalContentAtom, formatted);
+                globalStore.set(this.fileContentAtom, formatted);
+            }
         } catch (err) {
             globalStore.set(this.errorMessageAtom, `Failed to save widgets.json: ${err.message || String(err)}`);
         }
     }
 
-    async reorderWidgets(orderedKeys: string[]) {
+    // Assigns the moved widget a display:order strictly between its new neighbors'
+    // existing values (fractional indexing) so a drag only ever touches the one
+    // widget that moved — neighbors keep their current order untouched.
+    async reorderWidget(movedKey: string, newIndex: number, orderedKeys: string[]) {
         const widgetsMap = globalStore.get(this.widgetsMapAtom);
-        const updated: { [key: string]: WidgetConfigType } = {};
-        orderedKeys.forEach((key, idx) => {
-            const widget = widgetsMap[key];
-            if (widget == null) return;
-            updated[key] = { ...widget, "display:order": idx };
-        });
-        for (const key of Object.keys(widgetsMap)) {
-            if (!(key in updated)) {
-                updated[key] = widgetsMap[key];
-            }
+        const widget = widgetsMap[movedKey];
+        if (widget == null) return;
+
+        const prevKey = orderedKeys[newIndex - 1];
+        const nextKey = orderedKeys[newIndex + 1];
+        const prevOrder = prevKey != null ? (widgetsMap[prevKey]?.["display:order"] ?? 0) : null;
+        const nextOrder = nextKey != null ? (widgetsMap[nextKey]?.["display:order"] ?? 0) : null;
+
+        let newOrder: number;
+        if (prevOrder != null && nextOrder != null) {
+            newOrder = (prevOrder + nextOrder) / 2;
+        } else if (prevOrder != null) {
+            newOrder = prevOrder + 1;
+        } else if (nextOrder != null) {
+            newOrder = nextOrder - 1;
+        } else {
+            newOrder = 0;
         }
-        await this.persistWidgets(updated);
+
+        await this.persistWidgetPatch({ [movedKey]: { ...widget, "display:order": newOrder } });
     }
 
     async toggleWidgetHidden(key: string) {
         const widgetsMap = globalStore.get(this.widgetsMapAtom);
         const widget = widgetsMap[key];
         if (widget == null) return;
-        const updated = { ...widgetsMap, [key]: { ...widget, "display:hidden": !widget["display:hidden"] } };
-        await this.persistWidgets(updated);
+        await this.persistWidgetPatch({ [key]: { ...widget, "display:hidden": !widget["display:hidden"] } });
     }
 
     giveFocus(): boolean {
