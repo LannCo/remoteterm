@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import LogoTile from "@/app/asset/logo-tile.svg";
 import { Tooltip } from "@/app/element/tooltip";
 import {
     getBlockComponentModel,
@@ -11,8 +12,8 @@ import {
     removeHiddenBlockModel,
 } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
-import { TabRpcClient } from "@/app/store/wshrpcutil";
 import * as WOS from "@/app/store/wos";
+import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { useWaveEnv, WaveEnv, WaveEnvSubset } from "@/app/waveenv/waveenv";
 import { shouldIncludeWidgetForWorkspace } from "@/app/workspace/widgetfilter";
 import { getLayoutModelForStaticTab } from "@/layout/index";
@@ -64,8 +65,6 @@ type WidgetPropsType = {
     mode: "normal" | "compact" | "supercompact";
     env: WidgetsEnv;
 };
-
-
 
 function toggleWidgetVisibility(viewType: string): boolean {
     const layoutModel = getLayoutModelForStaticTab();
@@ -629,11 +628,8 @@ const Widgets = memo(() => {
                     </>
                 )}
                 {env.isDev() ? (
-                    <div
-                        className="flex justify-center items-center w-full py-1 text-accent text-[30px]"
-                        title="Running Wave Dev Build"
-                    >
-                        <i className="fa fa-brands fa-dev fa-fw" />
+                    <div className="flex justify-center items-center w-full py-1" title="Running Wave Dev Build">
+                        <LogoTile />
                     </div>
                 ) : null}
             </div>
@@ -676,11 +672,8 @@ const Widgets = memo(() => {
                     </div>
                 ) : null}
                 {env.isDev() ? (
-                    <div
-                        className="flex justify-center items-center w-full py-1 text-accent text-[30px]"
-                        title="Running Wave Dev Build"
-                    >
-                        <i className="fa fa-brands fa-dev fa-fw" />
+                    <div className="flex justify-center items-center w-full py-1" title="Running Wave Dev Build">
+                        <LogoTile />
                     </div>
                 ) : null}
             </div>
