@@ -6,6 +6,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import type { TabModel } from "@/app/store/tab-model";
 import { makeORef } from "@/app/store/wos";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { ConnectionsContent } from "@/app/view/waveconfig/connectionscontent";
 import { SecretsContent } from "@/app/view/waveconfig/secretscontent";
 import { WaveConfigView } from "@/app/view/waveconfig/waveconfig";
 import type { WaveConfigEnv } from "@/app/view/waveconfig/waveconfigenv";
@@ -32,6 +33,10 @@ export type ConfigFile = {
 
 export const SecretNameRegex = /^[A-Za-z][A-Za-z0-9_]*$/;
 
+// Mirrors the Go userHostRe in pkg/remote/connutil.go ParseOpts() — keep in sync.
+export const ConnectionQuickAddRegex =
+    /^([a-zA-Z0-9][a-zA-Z0-9._@-]*@)?([a-zA-Z0-9][a-zA-Z0-9.-]*)(?::([0-9]+))?$/;
+
 function makeConfigFiles(isWindows: boolean): ConfigFile[] {
     return [
         {
@@ -48,6 +53,7 @@ function makeConfigFiles(isWindows: boolean): ConfigFile[] {
             docsUrl: "https://docs.waveterm.dev/connections",
             description: isWindows ? "SSH hosts and WSL distros" : "SSH hosts",
             hasJsonView: true,
+            visualComponent: ConnectionsContent,
         },
         {
             name: "Sidebar Widgets",
@@ -120,6 +126,14 @@ export class WaveConfigViewModel implements ViewModel {
     storageBackendErrorAtom: PrimitiveAtom<string | null>;
     secretValueRef: HTMLTextAreaElement | null = null;
 
+    connectionsViewAtom: PrimitiveAtom<"hosts" | "keychain">;
+    connectionsSearchAtom: PrimitiveAtom<string>;
+    connectionsQuickAddOpenAtom: PrimitiveAtom<boolean>;
+    connectionsQuickAddValueAtom: PrimitiveAtom<string>;
+    connectionsQuickAddErrorAtom: PrimitiveAtom<string | null>;
+    connectionNamesAtom: Atom<string[]>;
+    connStatusMapAtom: Atom<Map<string, ConnStatus>>;
+
     constructor({ blockId, nodeModel, tabModel, waveEnv }: ViewModelInitType) {
         this.blockId = blockId;
         this.nodeModel = nodeModel;
@@ -158,6 +172,24 @@ export class WaveConfigViewModel implements ViewModel {
         this.newSecretNameAtom = atom<string>("");
         this.newSecretValueAtom = atom<string>("");
         this.storageBackendErrorAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+
+        this.connectionsViewAtom = atom<"hosts" | "keychain">("hosts");
+        this.connectionsSearchAtom = atom<string>("");
+        this.connectionsQuickAddOpenAtom = atom<boolean>(false);
+        this.connectionsQuickAddValueAtom = atom<string>("");
+        this.connectionsQuickAddErrorAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+        this.connectionNamesAtom = atom((get) => {
+            const fullConfig = get(this.env.atoms.fullConfigAtom);
+            return Object.keys(fullConfig?.connections ?? {}).filter((name) => name !== "");
+        });
+        this.connStatusMapAtom = atom((get) => {
+            const statuses = get(this.env.atoms.allConnStatus);
+            const map = new Map<string, ConnStatus>();
+            for (const status of statuses ?? []) {
+                map.set(status.connection, status);
+            }
+            return map;
+        });
 
         this.checkPresetsJsonExists();
         this.initialize();
@@ -525,6 +557,34 @@ export class WaveConfigViewModel implements ViewModel {
         } finally {
             globalStore.set(this.isLoadingAtom, false);
         }
+    }
+
+    openConnectionQuickAdd() {
+        globalStore.set(this.connectionsQuickAddOpenAtom, true);
+        globalStore.set(this.connectionsQuickAddValueAtom, "");
+        globalStore.set(this.connectionsQuickAddErrorAtom, null);
+    }
+
+    closeConnectionQuickAdd() {
+        globalStore.set(this.connectionsQuickAddOpenAtom, false);
+        globalStore.set(this.connectionsQuickAddValueAtom, "");
+        globalStore.set(this.connectionsQuickAddErrorAtom, null);
+    }
+
+    submitConnectionQuickAdd() {
+        const value = globalStore.get(this.connectionsQuickAddValueAtom).trim();
+        if (!value) {
+            return;
+        }
+        if (!ConnectionQuickAddRegex.test(value)) {
+            globalStore.set(
+                this.connectionsQuickAddErrorAtom,
+                "Invalid format: expected user@host or user@host:port"
+            );
+            return;
+        }
+        this.env.electron.createTab(value);
+        this.closeConnectionQuickAdd();
     }
 
     giveFocus(): boolean {

@@ -7,6 +7,7 @@ export type WaveConfigEnv = WaveEnvSubset<{
     electron: {
         getConfigDir: WaveEnv["electron"]["getConfigDir"];
         getPlatform: WaveEnv["electron"]["getPlatform"];
+        createTab: WaveEnv["electron"]["createTab"];
     };
     rpc: {
         FileInfoCommand: WaveEnv["rpc"]["FileInfoCommand"];
@@ -19,6 +20,7 @@ export type WaveConfigEnv = WaveEnvSubset<{
         SetSecretsCommand: WaveEnv["rpc"]["SetSecretsCommand"];    };
     atoms: {
         fullConfigAtom: WaveEnv["atoms"]["fullConfigAtom"];
+        allConnStatus: WaveEnv["atoms"]["allConnStatus"];
     };
     getBlockMetaKeyAtom: MetaKeyAtomFnType<"file">;
     isWindows: WaveEnv["isWindows"];
