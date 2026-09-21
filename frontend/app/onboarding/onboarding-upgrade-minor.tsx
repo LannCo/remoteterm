@@ -30,7 +30,7 @@ const UpgradeMinorWelcomePage = ({ onStarClick, onAlreadyStarred, onMaybeLater }
                 <div className="flex justify-center">
                     <Logo />
                 </div>
-                <div className="text-center text-[25px] font-normal text-foreground">Welcome to Wave v0.14!</div>
+                <div className="text-center text-[25px] font-normal text-foreground">Welcome to RemoteTerm v0.14!</div>
             </header>
             <OverlayScrollbarsComponent
                 className="flex-1 overflow-y-auto min-h-0"
@@ -41,7 +41,7 @@ const UpgradeMinorWelcomePage = ({ onStarClick, onAlreadyStarred, onMaybeLater }
                         <div className="flex flex-row gap-4 items-center">
                             <div className="flex h-[52px] px-3 items-center rounded-lg bg-hover text-accent text-[24px]">
                                 <i className="fa fa-sparkles" />
-                                <span className="font-bold ml-2 font-mono">Wave AI</span>
+                                <span className="font-bold ml-2 font-mono">RemoteTerm AI</span>
                             </div>
                             <div className="flex h-[52px] px-3 items-center rounded-lg bg-hover text-[18px]">
                                 <i className="fa-sharp fa-solid fa-shield text-sky-500" />
@@ -50,11 +50,11 @@ const UpgradeMinorWelcomePage = ({ onStarClick, onAlreadyStarred, onMaybeLater }
                         </div>
                         <div className="text-secondary leading-relaxed max-w-[600px] text-left">
                             <p className="mb-4">
-                                Wave AI is your terminal assistant with full context. It can read your terminal output,
+                                RemoteTerm AI is your terminal assistant with full context. It can read your terminal output,
                                 analyze widgets, read and write files, and help you solve problems&nbsp;faster.
                             </p>
                             <p className="mb-4">
-                                <span className="font-semibold text-foreground">New in v0.13:</span> Wave AI now
+                                <span className="font-semibold text-foreground">New in v0.13:</span> RemoteTerm AI now
                                 supports local models and bring-your-own-key! Use Ollama, LM Studio, vLLM, OpenRouter,
                                 or any OpenAI-compatible provider.
                             </p>
@@ -68,9 +68,9 @@ const UpgradeMinorWelcomePage = ({ onStarClick, onAlreadyStarred, onMaybeLater }
                     <div className="w-full max-w-[550px] border-t border-border my-2"></div>
 
                     <div className="flex flex-col items-center gap-3 text-center max-w-[550px]">
-                        <div className="text-foreground text-base">Thanks for being an early Wave adopter! ⭐</div>
+                        <div className="text-foreground text-base">Thanks for being an early RemoteTerm adopter! ⭐</div>
                         <div className="text-secondary text-sm text-left">
-                            A GitHub star shows your support for Wave (and open-source) and helps us reach more
+                            A GitHub star shows your support for RemoteTerm (and open-source) and helps us reach more
                             developers.
                         </div>
                     </div>
@@ -135,7 +135,7 @@ const UpgradeOnboardingMinor = () => {
             oref: WOS.makeORef("client", clientId),
             meta: { "onboarding:githubstar": true },
         });
-        window.open("https://github.com/wavetermdev/waveterm?ref=upgrade", "_blank");
+        window.open("https://github.com/LannCo/remoteterm?ref=upgrade", "_blank");
         setPageName("features");
     };
 

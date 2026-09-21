@@ -1,8 +1,8 @@
-# Spec: Remote File Transfer for WaveTerm
+# Spec: Remote File Transfer for RemoteTerm
 
 ## Problem
 
-When a user pastes an image or drag-drops files into a WaveTerm terminal connected to a remote machine via SSH, the files are saved to **local** temp files and local paths are pasted into the terminal. These paths don't exist on the remote machine, so tools like Pi (and any other terminal application) can't access them.
+When a user pastes an image or drag-drops files into a RemoteTerm terminal connected to a remote machine via SSH, the files are saved to **local** temp files and local paths are pasted into the terminal. These paths don't exist on the remote machine, so tools like Pi (and any other terminal application) can't access them.
 
 **Current flow:**
 1. User pastes image → `termwrap.ts:677` `pasteHandler()` extracts image
@@ -542,7 +542,7 @@ Imported from `@/util/util`, this quotes file paths for safe use in POSIX shells
 ## Verification
 
 1. `./node_modules/.bin/task init && ./node_modules/.bin/task dev` to build
-2. Connect to a remote machine via SSH in WaveTerm
+2. Connect to a remote machine via SSH in RemoteTerm
 3. Copy an image to clipboard (screenshot)
 4. **Image paste test:** Cmd+V into the terminal → verify upload overlay appears → verify path starts with remote temp dir (e.g., `/tmp/waveterm-XXXX/...`) → verify overlay disappears
 5. On the remote: `file <path>` → should show image type

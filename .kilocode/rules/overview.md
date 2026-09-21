@@ -1,8 +1,8 @@
-# Wave Terminal - High Level Architecture Overview
+# RemoteTerm - High Level Architecture Overview
 
 ## Project Description
 
-Wave Terminal is an open-source AI-native terminal built for seamless workflows. It's an Electron application that serves as a command line terminal host (it hosts CLI applications rather than running inside a CLI). The application combines a React frontend with a Go backend server to provide a modern terminal experience with advanced features.
+RemoteTerm is an open-source AI-native terminal built for seamless workflows. It's an Electron application that serves as a command line terminal host (it hosts CLI applications rather than running inside a CLI). The application combines a React frontend with a Go backend server to provide a modern terminal experience with advanced features.
 
 ## Top-Level Directory Structure
 
@@ -133,7 +133,7 @@ The core communication system is built around the **WSH RPC (Wave Shell RPC)** s
 
 ### WSH RPC System (`pkg/wshrpc/`)
 
-The WSH RPC system is the backbone of Wave Terminal's communication architecture:
+The WSH RPC system is the backbone of RemoteTerm's communication architecture:
 
 **Key Components:**
 
