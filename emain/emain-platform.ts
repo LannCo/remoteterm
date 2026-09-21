@@ -4,7 +4,7 @@
 import { fireAndForget } from "@/util/util";
 import { app, dialog, ipcMain, shell } from "electron";
 import envPaths from "env-paths";
-import { existsSync, mkdirSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmdirSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import { WaveDevVarName, WaveDevViteVarName } from "../frontend/util/isdev";
@@ -33,8 +33,11 @@ const waveDirName = `${waveDirNamePrefix}${waveDirNameSuffix ? `-${waveDirNameSu
 // Frozen forever: this is the real pre-v0.8 legacy directory name/prefix on disk, independent of
 // whatever the product is branded as today. Never derive this from waveDirNamePrefix.
 const LegacyWaveHomeDirName = ".waveterm";
+const legacyWaveDirNamePrefix = "waveterm";
+const legacyWaveDirName = `${legacyWaveDirNamePrefix}${waveDirNameSuffix ? `-${waveDirNameSuffix}` : ""}`;
 
 const paths = envPaths("remoteterm", { suffix: waveDirNameSuffix });
+const legacyPaths = envPaths("waveterm", { suffix: waveDirNameSuffix });
 
 app.setName(isDev ? "RemoteTerm (Dev)" : "RemoteTerm");
 const unamePlatform = process.platform;
@@ -70,6 +73,152 @@ function readOverrideEnvVar(newName: string, legacyName: string): string {
     }
     return null;
 }
+
+/**
+ * One-time, synchronous local data-dir migration from the old "waveterm"-prefixed paths to the
+ * new "remoteterm"-prefixed paths. Must run as a top-level statement in this module (not
+ * exported/called from elsewhere) so it completes before any importer of this module's getters
+ * (getWaveConfigDir/getWaveDataDir) can call them and side-effect-create the new directories
+ * first. See RENAME_PLAN.md Phase 2 step 7 for why this exact placement is required.
+ */
+type MigrationRootSpec = {
+    name: string;
+    source: string;
+    dest: string;
+    overridden: boolean;
+    validateSource?: () => boolean;
+};
+
+const MigrationMarkerFileName = ".migrated-from-waveterm";
+
+function migrateDataRoot(spec: MigrationRootSpec) {
+    const markerFile = path.join(spec.dest, MigrationMarkerFileName);
+    if (spec.overridden) {
+        if (existsSync(markerFile)) {
+            return;
+        }
+        try {
+            mkdirSync(spec.dest, { recursive: true });
+            writeFileSync(markerFile, `no-migration-needed:override\n${new Date().toISOString()}\n`);
+        } catch (e) {
+            console.log(`[migration] failed to write override marker for ${spec.name} root:`, e);
+        }
+        return;
+    }
+    if (existsSync(markerFile)) {
+        return;
+    }
+    if (!existsSync(spec.source) || (spec.validateSource && !spec.validateSource())) {
+        return;
+    }
+    if (existsSync(spec.dest)) {
+        let destEntries: string[];
+        try {
+            destEntries = readdirSync(spec.dest);
+        } catch (e) {
+            console.log(`[migration] could not inspect existing destination ${spec.dest} for ${spec.name} root:`, e);
+            return;
+        }
+        if (destEntries.length === 0) {
+            try {
+                rmdirSync(spec.dest);
+            } catch (e) {
+                console.log(`[migration] could not remove empty destination ${spec.dest} for ${spec.name} root:`, e);
+                return;
+            }
+        } else {
+            console.error(
+                `[migration] ${spec.name} root migration aborted: ${spec.dest} already exists and is not empty. Please merge ${spec.source} into ${spec.dest} manually.`
+            );
+            return;
+        }
+    }
+    try {
+        mkdirSync(path.dirname(spec.dest), { recursive: true });
+        renameSync(spec.source, spec.dest);
+        writeFileSync(path.join(spec.dest, MigrationMarkerFileName), `moved-from:${spec.source}\n${new Date().toISOString()}\n`);
+        console.log(`[migration] migrated ${spec.name} root from ${spec.source} to ${spec.dest}`);
+    } catch (e) {
+        if (e && e.code === "ENOENT") {
+            if (existsSync(markerFile)) {
+                // another process already completed this root's migration
+                return;
+            }
+            console.log(
+                `[migration] ${spec.name} root move failed with ENOENT and no completion marker was found (source: ${spec.source}):`,
+                e
+            );
+            return;
+        }
+        console.log(`[migration] error migrating ${spec.name} root from ${spec.source} to ${spec.dest}:`, e);
+    }
+}
+
+function performDataDirMigration() {
+    try {
+        const homeDir = app.getPath("home");
+        const xdgConfigHome = process.env.XDG_CONFIG_HOME;
+        const xdgDataHome = process.env.XDG_DATA_HOME;
+
+        const configOverride = readOverrideEnvVar(WaveConfigHomeVarName, LegacyWaveConfigHomeVarName);
+        const configSource = xdgConfigHome
+            ? path.join(xdgConfigHome, legacyWaveDirName)
+            : path.join(homeDir, ".config", legacyWaveDirName);
+        const configDest = xdgConfigHome
+            ? path.join(xdgConfigHome, waveDirName)
+            : path.join(homeDir, ".config", waveDirName);
+        migrateDataRoot({
+            name: "config",
+            source: configOverride ?? configSource,
+            dest: configOverride ?? configDest,
+            overridden: configOverride != null,
+            validateSource: () => existsSync(path.join(configSource, "settings.json")),
+        });
+
+        const dataOverride = readOverrideEnvVar(WaveDataHomeVarName, LegacyWaveDataHomeVarName);
+        const dataSource = xdgDataHome ? path.join(xdgDataHome, legacyWaveDirName) : legacyPaths.data;
+        const dataDest = xdgDataHome ? path.join(xdgDataHome, waveDirName) : paths.data;
+        migrateDataRoot({
+            name: "data",
+            source: dataOverride ?? dataSource,
+            dest: dataOverride ?? dataDest,
+            overridden: dataOverride != null,
+            validateSource: () => existsSync(path.join(dataSource, "wave.lock")),
+        });
+
+        const homeOverride = readOverrideEnvVar(WaveHomeVarName, LegacyWaveHomeVarName);
+        const legacyHomeSource = path.join(homeDir, LegacyWaveHomeDirName);
+        const legacyHomeDest = path.join(homeDir, `.${waveDirName}`);
+        migrateDataRoot({
+            name: "legacy-home",
+            source: homeOverride ?? legacyHomeSource,
+            dest: homeOverride ?? legacyHomeDest,
+            overridden: homeOverride != null,
+            validateSource: () => existsSync(path.join(legacyHomeSource, "wave.lock")),
+        });
+
+        // Best-effort fourth root: on Windows, Electron's own userData subtree (cookies, cache,
+        // window state) resolves under %APPDATA% as a *sibling* of the config root, not a child
+        // of any of the three roots above, so it needs its own explicit move. Unlike the roots
+        // above, there is no per-root override var and no natural marker file inside Electron's
+        // userData dir to validate against, so we validate on directory existence alone.
+        if (process.platform === "win32" && process.env.APPDATA) {
+            const winSource = path.join(process.env.APPDATA, "waveterm", "electron");
+            const winDest = path.join(process.env.APPDATA, "remoteterm", "electron");
+            migrateDataRoot({
+                name: "windows-userdata",
+                source: winSource,
+                dest: winDest,
+                overridden: false,
+                validateSource: () => existsSync(winSource),
+            });
+        }
+    } catch (e) {
+        console.log("[migration] unexpected error during data-dir migration, continuing startup:", e);
+    }
+}
+
+performDataDirMigration();
 
 export function checkIfRunningUnderARM64Translation(fullConfig: FullConfigType) {
     if (!fullConfig.settings["app:dismissarchitecturewarning"] && app.runningUnderARM64Translation) {
@@ -107,6 +256,11 @@ function getWaveHomeDir(): string {
     if (!home) {
         const homeDir = app.getPath("home");
         if (homeDir) {
+            // Check the current (post-migration) default combined-home location first, then
+            // fall back to the frozen pre-v0.8 legacy location. The migration shim above moves
+            // a valid legacy home dir from the latter to the former, but this function may be
+            // called before that migration has a chance to run for a given process, or the
+            // migration may have been skipped/failed, so both locations must be checked.
             const migratedHome = path.join(homeDir, `.${waveDirName}`);
             if (existsSync(migratedHome) && existsSync(path.join(migratedHome, "wave.lock"))) {
                 return migratedHome;
