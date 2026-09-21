@@ -14,7 +14,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import * as WOS from "@/app/store/wos";
 import { useWaveEnv, WaveEnv, WaveEnvSubset } from "@/app/waveenv/waveenv";
-import { shouldIncludeWidgetForWorkspace } from "@/app/workspace/widgetfilter";
+import { shouldIncludeWidgetForWorkspace, sortByDisplayOrder } from "@/app/workspace/widgetfilter";
 import { getLayoutModelForStaticTab } from "@/layout/index";
 import { modalsModel } from "@/store/modalmodel";
 import { fireAndForget, isBlank, makeIconClass } from "@/util/util";
@@ -47,17 +47,6 @@ export type WidgetsEnv = WaveEnvSubset<{
     createBlock: WaveEnv["createBlock"];
     showContextMenu: WaveEnv["showContextMenu"];
 }>;
-
-function sortByDisplayOrder(wmap: { [key: string]: WidgetConfigType }): WidgetConfigType[] {
-    if (wmap == null) {
-        return [];
-    }
-    const wlist = Object.values(wmap);
-    wlist.sort((a, b) => {
-        return (a["display:order"] ?? 0) - (b["display:order"] ?? 0);
-    });
-    return wlist;
-}
 
 type WidgetPropsType = {
     widget: WidgetConfigType;

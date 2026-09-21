@@ -10,6 +10,8 @@ import { ConnectionsContent } from "@/app/view/waveconfig/connectionscontent";
 import { SecretsContent } from "@/app/view/waveconfig/secretscontent";
 import { WaveConfigView } from "@/app/view/waveconfig/waveconfig";
 import type { WaveConfigEnv } from "@/app/view/waveconfig/waveconfigenv";
+import { WidgetsContent } from "@/app/view/waveconfig/widgetscontent";
+import { shouldIncludeWidgetForWorkspace, sortByDisplayOrder } from "@/app/workspace/widgetfilter";
 import { base64ToString, stringToBase64 } from "@/util/util";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
 import type * as MonacoTypes from "monaco-editor";
@@ -61,6 +63,7 @@ function makeConfigFiles(isWindows: boolean): ConfigFile[] {
             language: "json",
             docsUrl: "https://docs.waveterm.dev/customwidgets",
             hasJsonView: true,
+            visualComponent: WidgetsContent,
         },
         {
             name: "Tab Backgrounds",
@@ -134,6 +137,10 @@ export class WaveConfigViewModel implements ViewModel {
     connectionNamesAtom: Atom<string[]>;
     connStatusMapAtom: Atom<Map<string, ConnStatus>>;
 
+    widgetsMapAtom: Atom<{ [key: string]: WidgetConfigType }>;
+    widgetsOrderedAtom: Atom<[string, WidgetConfigType][]>;
+    widgetsPreviewAtom: Atom<WidgetConfigType[]>;
+
     constructor({ blockId, nodeModel, tabModel, waveEnv }: ViewModelInitType) {
         this.blockId = blockId;
         this.nodeModel = nodeModel;
@@ -189,6 +196,25 @@ export class WaveConfigViewModel implements ViewModel {
                 map.set(status.connection, status);
             }
             return map;
+        });
+
+        this.widgetsMapAtom = atom((get) => {
+            const fullConfig = get(this.env.atoms.fullConfigAtom);
+            return fullConfig?.widgets ?? {};
+        });
+        this.widgetsOrderedAtom = atom((get) => {
+            const widgetsMap = get(this.widgetsMapAtom);
+            const sorted = sortByDisplayOrder(widgetsMap);
+            const keyByWidget = new Map(Object.entries(widgetsMap).map(([key, widget]) => [widget, key] as const));
+            return sorted.map((widget) => [keyByWidget.get(widget), widget] as [string, WidgetConfigType]);
+        });
+        this.widgetsPreviewAtom = atom((get) => {
+            const widgetsMap = get(this.widgetsMapAtom);
+            const workspaceId = get(this.env.atoms.workspaceId);
+            const filtered = Object.fromEntries(
+                Object.entries(widgetsMap).filter(([, widget]) => shouldIncludeWidgetForWorkspace(widget, workspaceId))
+            );
+            return sortByDisplayOrder(filtered);
         });
 
         this.checkPresetsJsonExists();
@@ -585,6 +611,48 @@ export class WaveConfigViewModel implements ViewModel {
         }
         this.env.electron.createTab(value);
         this.closeConnectionQuickAdd();
+    }
+
+    // Persists the full effective widget map (including entries inherited from the
+    // app's built-in defaultconfig/widgets.json) since Wave's config merge is a
+    // whole-key replace, not a per-field merge — a partial write would drop fields
+    // on any default widget being overridden for the first time.
+    async persistWidgets(updated: { [key: string]: WidgetConfigType }) {
+        globalStore.set(this.errorMessageAtom, null);
+        try {
+            const fullPath = `${this.configDir}/widgets.json`;
+            const formatted = JSON.stringify(updated, null, 2);
+            await this.env.rpc.FileWriteCommand(TabRpcClient, {
+                info: { path: fullPath },
+                data64: stringToBase64(formatted),
+            });
+        } catch (err) {
+            globalStore.set(this.errorMessageAtom, `Failed to save widgets.json: ${err.message || String(err)}`);
+        }
+    }
+
+    async reorderWidgets(orderedKeys: string[]) {
+        const widgetsMap = globalStore.get(this.widgetsMapAtom);
+        const updated: { [key: string]: WidgetConfigType } = {};
+        orderedKeys.forEach((key, idx) => {
+            const widget = widgetsMap[key];
+            if (widget == null) return;
+            updated[key] = { ...widget, "display:order": idx };
+        });
+        for (const key of Object.keys(widgetsMap)) {
+            if (!(key in updated)) {
+                updated[key] = widgetsMap[key];
+            }
+        }
+        await this.persistWidgets(updated);
+    }
+
+    async toggleWidgetHidden(key: string) {
+        const widgetsMap = globalStore.get(this.widgetsMapAtom);
+        const widget = widgetsMap[key];
+        if (widget == null) return;
+        const updated = { ...widgetsMap, [key]: { ...widget, "display:hidden": !widget["display:hidden"] } };
+        await this.persistWidgets(updated);
     }
 
     giveFocus(): boolean {
