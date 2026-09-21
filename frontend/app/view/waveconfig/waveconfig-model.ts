@@ -140,6 +140,7 @@ export class WaveConfigViewModel implements ViewModel {
     widgetsMapAtom: Atom<{ [key: string]: WidgetConfigType }>;
     widgetsOrderedAtom: Atom<[string, WidgetConfigType][]>;
     widgetsPreviewAtom: Atom<WidgetConfigType[]>;
+    widgetsWriteQueueAtom: PrimitiveAtom<Promise<void>>;
 
     constructor({ blockId, nodeModel, tabModel, waveEnv }: ViewModelInitType) {
         this.blockId = blockId;
@@ -216,6 +217,7 @@ export class WaveConfigViewModel implements ViewModel {
             );
             return sortByDisplayOrder(filtered);
         });
+        this.widgetsWriteQueueAtom = atom<Promise<void>>(Promise.resolve());
 
         this.checkPresetsJsonExists();
         this.initialize();
@@ -617,8 +619,26 @@ export class WaveConfigViewModel implements ViewModel {
     // no built-in defaultconfig/widgets.json entries). Writes must be computed against
     // this, not against fullConfig.widgets, or every touched edit would silently fork
     // every currently-effective default widget into the user's file.
-    async readRawWidgetsFile(): Promise<{ [key: string]: WidgetConfigType }> {
+    //
+    // Returns {} for a genuinely-missing file (first-ever widget edit — empty base is
+    // correct), or null if the check/read/parse failed for any other reason (RPC
+    // hiccup, permissions, malformed existing JSON) — callers must treat null as
+    // "abort the write", never as "empty file", or a transient failure on a populated
+    // file would silently wipe every other customized widget.
+    async readRawWidgetsFile(): Promise<{ [key: string]: WidgetConfigType } | null> {
         const fullPath = `${this.configDir}/widgets.json`;
+        try {
+            const fileInfo = await this.env.rpc.FileInfoCommand(TabRpcClient, {
+                info: { path: fullPath },
+            });
+            if (fileInfo.notfound) {
+                return {};
+            }
+        } catch (err) {
+            globalStore.set(this.errorMessageAtom, `Failed to check widgets.json: ${err.message || String(err)}`);
+            return null;
+        }
+
         try {
             const fileData = await this.env.rpc.FileReadCommand(TabRpcClient, {
                 info: { path: fullPath },
@@ -628,22 +648,39 @@ export class WaveConfigViewModel implements ViewModel {
                 return {};
             }
             const parsed = JSON.parse(content);
-            return typeof parsed === "object" && parsed != null && !Array.isArray(parsed) ? parsed : {};
-        } catch {
-            return {};
+            if (typeof parsed !== "object" || parsed == null || Array.isArray(parsed)) {
+                globalStore.set(this.errorMessageAtom, "widgets.json content is not a valid object");
+                return null;
+            }
+            return parsed;
+        } catch (err) {
+            globalStore.set(this.errorMessageAtom, `Failed to read widgets.json: ${err.message || String(err)}`);
+            return null;
         }
     }
 
     // Merges only the touched widget key(s) into the raw file (each written in full,
     // per Wave's whole-key-replace merge semantics for the widgets map) and leaves
-    // every other key exactly as it already is on disk.
+    // every other key exactly as it already is on disk. Writes are serialized through
+    // widgetsWriteQueueAtom so a toggle and a drag-drop landing close together can't
+    // race: each write's read-then-merge waits for the previous write to finish first.
     async persistWidgetPatch(updates: { [key: string]: WidgetConfigType }) {
         if (Object.keys(updates).length === 0) {
             return;
         }
+        const queue = globalStore.get(this.widgetsWriteQueueAtom);
+        const nextWrite = queue.then(() => this.writeWidgetPatch(updates));
+        globalStore.set(this.widgetsWriteQueueAtom, nextWrite);
+        await nextWrite;
+    }
+
+    async writeWidgetPatch(updates: { [key: string]: WidgetConfigType }) {
         globalStore.set(this.errorMessageAtom, null);
+        const rawContent = await this.readRawWidgetsFile();
+        if (rawContent == null) {
+            return;
+        }
         try {
-            const rawContent = await this.readRawWidgetsFile();
             const merged = { ...rawContent, ...updates };
             const fullPath = `${this.configDir}/widgets.json`;
             const formatted = JSON.stringify(merged, null, 2);
