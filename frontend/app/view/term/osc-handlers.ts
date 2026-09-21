@@ -3,12 +3,7 @@
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import {
-    getApi,
-    getOverrideConfigAtom,
-    globalStore,
-    WOS,
-} from "@/store/global";
+import { getOverrideConfigAtom, globalStore, WOS } from "@/store/global";
 import { base64ToString, fireAndForget } from "@/util/util";
 import debug from "debug";
 import type { TermWrap } from "./termwrap";
@@ -56,22 +51,27 @@ function checkCommandForTelemetry(decodedCmd: string) {
 
     const normalizedCmd = normalizeCmd(decodedCmd);
 
-    if (normalizedCmd.startsWith("ssh ")) {        return;
+    if (normalizedCmd.startsWith("ssh ")) {
+        return;
     }
 
     const editorsRegex = /^(vim|vi|nano|nvim)\b/;
-    if (editorsRegex.test(normalizedCmd)) {        return;
+    if (editorsRegex.test(normalizedCmd)) {
+        return;
     }
 
     const tailFollowRegex = /(^|\|\s*)tail\s+-[fF]\b/;
-    if (tailFollowRegex.test(normalizedCmd)) {        return;
+    if (tailFollowRegex.test(normalizedCmd)) {
+        return;
     }
 
-    if (ClaudeCodeRegex.test(normalizedCmd)) {        return;
+    if (ClaudeCodeRegex.test(normalizedCmd)) {
+        return;
     }
 
     const opencodeRegex = /^opencode\b/;
-    if (opencodeRegex.test(normalizedCmd)) {        return;
+    if (opencodeRegex.test(normalizedCmd)) {
+        return;
     }
 }
 

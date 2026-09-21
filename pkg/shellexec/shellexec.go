@@ -50,8 +50,8 @@ type ShellProc struct {
 	ConnName  string
 	Cmd       ConnInterface
 	CloseOnce *sync.Once
-	DoneCh    chan any // closed after proc.Wait() returns
-	WaitErr   error    // WaitErr is synchronized by DoneCh (written before DoneCh is closed) and CloseOnce
+	DoneCh    chan any  // closed after proc.Wait() returns
+	WaitErr   error     // WaitErr is synchronized by DoneCh (written before DoneCh is closed) and CloseOnce
 	closeOnce sync.Once // ensures Close() is idempotent; defends against double-close races
 }
 

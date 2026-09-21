@@ -51,28 +51,28 @@ type SettingsType struct {
 
 	FeatureWaveAppBuilder bool `json:"feature:waveappbuilder,omitempty"`
 
-	TermClear               bool     `json:"term:*,omitempty"`
-	TermFontSize            float64  `json:"term:fontsize,omitempty"`
-	TermFontFamily          string   `json:"term:fontfamily,omitempty"`
-	TermTheme               string   `json:"term:theme,omitempty"`
-	TermDisableWebGl        bool     `json:"term:disablewebgl,omitempty"`
-	TermLocalShellPath      string   `json:"term:localshellpath,omitempty"`
-	TermLocalShellOpts      []string `json:"term:localshellopts,omitempty"`
-	TermGitBashPath         string   `json:"term:gitbashpath,omitempty"`
-	TermScrollback          *int64   `json:"term:scrollback,omitempty"`
-	TermCopyOnSelect        *bool    `json:"term:copyonselect,omitempty"`
-	TermTransparency        *float64 `json:"term:transparency,omitempty"`
-	TermAllowBracketedPaste *bool    `json:"term:allowbracketedpaste,omitempty"`
-	TermShiftEnterNewline   *bool    `json:"term:shiftenternewline,omitempty"`
-	TermMacOptionIsMeta     *bool    `json:"term:macoptionismeta,omitempty"`
-	TermCursor              string   `json:"term:cursor,omitempty"`
-	TermCursorBlink         *bool    `json:"term:cursorblink,omitempty"`
-	TermBellSound           *bool    `json:"term:bellsound,omitempty"`
-	TermBellIndicator       *bool    `json:"term:bellindicator,omitempty"`
-	TermOsc52               string   `json:"term:osc52,omitempty" jsonschema:"enum=focus,enum=always"`
-	TermDurable                    *bool    `json:"term:durable,omitempty"`
-	TermShowSplitButtons           bool     `json:"term:showsplitbuttons,omitempty"`
-	TermTrimTrailingWhitespace     *bool    `json:"term:trimtrailingwhitespace,omitempty"`
+	TermClear                  bool     `json:"term:*,omitempty"`
+	TermFontSize               float64  `json:"term:fontsize,omitempty"`
+	TermFontFamily             string   `json:"term:fontfamily,omitempty"`
+	TermTheme                  string   `json:"term:theme,omitempty"`
+	TermDisableWebGl           bool     `json:"term:disablewebgl,omitempty"`
+	TermLocalShellPath         string   `json:"term:localshellpath,omitempty"`
+	TermLocalShellOpts         []string `json:"term:localshellopts,omitempty"`
+	TermGitBashPath            string   `json:"term:gitbashpath,omitempty"`
+	TermScrollback             *int64   `json:"term:scrollback,omitempty"`
+	TermCopyOnSelect           *bool    `json:"term:copyonselect,omitempty"`
+	TermTransparency           *float64 `json:"term:transparency,omitempty"`
+	TermAllowBracketedPaste    *bool    `json:"term:allowbracketedpaste,omitempty"`
+	TermShiftEnterNewline      *bool    `json:"term:shiftenternewline,omitempty"`
+	TermMacOptionIsMeta        *bool    `json:"term:macoptionismeta,omitempty"`
+	TermCursor                 string   `json:"term:cursor,omitempty"`
+	TermCursorBlink            *bool    `json:"term:cursorblink,omitempty"`
+	TermBellSound              *bool    `json:"term:bellsound,omitempty"`
+	TermBellIndicator          *bool    `json:"term:bellindicator,omitempty"`
+	TermOsc52                  string   `json:"term:osc52,omitempty" jsonschema:"enum=focus,enum=always"`
+	TermDurable                *bool    `json:"term:durable,omitempty"`
+	TermShowSplitButtons       bool     `json:"term:showsplitbuttons,omitempty"`
+	TermTrimTrailingWhitespace *bool    `json:"term:trimtrailingwhitespace,omitempty"`
 
 	EditorMinimapEnabled      bool    `json:"editor:minimapenabled,omitempty"`
 	EditorStickyScrollEnabled bool    `json:"editor:stickyscrollenabled,omitempty"`
@@ -226,13 +226,13 @@ type FullConfigType struct {
 }
 
 type ConnKeywords struct {
-	ConnWshEnabled          *bool  `json:"conn:wshenabled,omitempty"`
-	ConnAskBeforeWshInstall *bool  `json:"conn:askbeforewshinstall,omitempty"`
-	ConnWshPath             string `json:"conn:wshpath,omitempty"`
-	ConnShellPath           string `json:"conn:shellpath,omitempty"`
-	ConnIgnoreSshConfig          *bool `json:"conn:ignoresshconfig,omitempty"`
-	ConnStallAutoDisconnect      *bool `json:"conn:stallautodisconnect,omitempty"`
-	ConnStallDisconnectThreshold *int  `json:"conn:stalldisconnectthreshold,omitempty"`
+	ConnWshEnabled               *bool  `json:"conn:wshenabled,omitempty"`
+	ConnAskBeforeWshInstall      *bool  `json:"conn:askbeforewshinstall,omitempty"`
+	ConnWshPath                  string `json:"conn:wshpath,omitempty"`
+	ConnShellPath                string `json:"conn:shellpath,omitempty"`
+	ConnIgnoreSshConfig          *bool  `json:"conn:ignoresshconfig,omitempty"`
+	ConnStallAutoDisconnect      *bool  `json:"conn:stallautodisconnect,omitempty"`
+	ConnStallDisconnectThreshold *int   `json:"conn:stalldisconnectthreshold,omitempty"`
 
 	// Keepalive interval and stall-detection threshold for the connection monitor,
 	// and timing for the reconnect scheduler (issue #19). ConnStallAutoDisconnect /
@@ -244,8 +244,8 @@ type ConnKeywords struct {
 	ConnReconnectIntervalSec           *int `json:"conn:reconnectinterval,omitempty"`
 	ConnReconnectAggressiveIntervalSec *int `json:"conn:reconnectaggressiveinterval,omitempty"`
 
-	ConnConnectCount        *int64 `json:"conn:connectcount,omitempty"`
-	ConnLastConnectTime     *int64 `json:"conn:lastconnecttime,omitempty"`
+	ConnConnectCount    *int64 `json:"conn:connectcount,omitempty"`
+	ConnLastConnectTime *int64 `json:"conn:lastconnecttime,omitempty"`
 	// ConnAuthPromptUsed records whether the last successful SSH handshake required
 	// an interactive prompt (password typed, key passphrase, or keyboard-interactive).
 	// Persisted so cold-start reconnect can skip the publickey false-positive path

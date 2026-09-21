@@ -1233,8 +1233,8 @@ func TestRestartStreamingClosesPrevReader(t *testing.T) {
 		t.Fatalf("expected to retrieve reader1 from jobReaders")
 	}
 	jobStreamIds.Set(jobId, "stream-2") // update BEFORE closing (supersession check)
-	prevReader.Close()                   // safe — unblocks old runOutputLoop
-	jobReaders.Set(jobId, reader2)       // store new reader
+	prevReader.Close()                  // safe — unblocks old runOutputLoop
+	jobReaders.Set(jobId, reader2)      // store new reader
 
 	// Verify jobReaders now holds reader2.
 	currentReader, ok := jobReaders.GetEx(jobId)
@@ -1414,5 +1414,33 @@ func TestHasActiveStream(t *testing.T) {
 				t.Errorf("hasActiveStream(%+v, healthOk=%v) = %v, want %v", tt.health, tt.healthOk, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestRegisterNewJobStreamSeedsHealthSynchronously guards against a race where
+// StartJob's stream registration and runOutputLoop's health-seed happen in
+// different goroutines: a route-up event landing in the gap between them saw
+// hasActiveStream()==false and fired handleRouteEvent's superseding reconnect
+// against the stream StartJob had just created (dropped/duplicated startup
+// output). registerNewJobStream must make hasActiveStream() true the moment it
+// returns, with no dependency on runOutputLoop ever running.
+func TestRegisterNewJobStreamSeedsHealthSynchronously(t *testing.T) {
+	jobId := "test-job-register-stream"
+	streamId := "stream-register-test"
+
+	registerNewJobStream(jobId, nil, streamId)
+
+	gotStreamId, streamIdOk := jobStreamIds.GetEx(jobId)
+	if !streamIdOk || gotStreamId != streamId {
+		t.Fatalf("jobStreamIds not set: ok=%v got=%q want=%q", streamIdOk, gotStreamId, streamId)
+	}
+
+	health, healthOk := jobStreamHealth.GetEx(jobId)
+	if !hasActiveStream(health, healthOk) {
+		t.Fatalf("hasActiveStream=false immediately after registerNewJobStream (health=%+v, ok=%v) — "+
+			"a route-up event in this window would fire a superseding reconnect", health, healthOk)
+	}
+	if health.streamId != streamId {
+		t.Fatalf("health.streamId = %q, want %q", health.streamId, streamId)
 	}
 }

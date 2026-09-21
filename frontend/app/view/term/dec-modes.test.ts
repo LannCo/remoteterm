@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mocks for heavy dependencies so TermWrap can be instantiated in Node.js
@@ -38,7 +38,11 @@ vi.mock("@xterm/xterm", () => ({
     },
 }));
 
-vi.mock("@xterm/addon-fit", () => ({ FitAddon: class MockFitAddon { fit = vi.fn(); } }));
+vi.mock("@xterm/addon-fit", () => ({
+    FitAddon: class MockFitAddon {
+        fit = vi.fn();
+    },
+}));
 vi.mock("@xterm/addon-image", () => ({ ImageAddon: class MockImageAddon {} }));
 vi.mock("@xterm/addon-search", () => ({ SearchAddon: class MockSearchAddon {} }));
 vi.mock("@xterm/addon-serialize", () => ({ SerializeAddon: class MockSerializeAddon {} }));
@@ -118,13 +122,7 @@ describe("TermWrap DEC mode tracking", () => {
             style: {},
         } as unknown as HTMLDivElement;
 
-        term = new TermWrap(
-            "tab-1",
-            "block-1",
-            mockElem,
-            {},
-            {}
-        );
+        term = new TermWrap("tab-1", "block-1", mockElem, {}, {});
     });
 
     describe("serializeDecModes", () => {
