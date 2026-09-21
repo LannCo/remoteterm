@@ -366,7 +366,7 @@ export const SecretsContent = memo(({ model }: SecretsContentProps) => {
         }
 
         if (selectedSecret) {
-            return <SecretDetailView model={model} />;
+            return <SecretDetailView key={selectedSecret} model={model} />;
         }
 
         return <SelectSecretPlaceholder />;

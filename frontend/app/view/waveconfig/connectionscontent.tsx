@@ -62,6 +62,7 @@ const QuickAddRow = memo(({ model }: QuickAddRowProps) => {
     const value = useAtomValue(model.connectionsQuickAddValueAtom);
     const error = useAtomValue(model.connectionsQuickAddErrorAtom);
     const setValue = useSetAtom(model.connectionsQuickAddValueAtom);
+    const setError = useSetAtom(model.connectionsQuickAddErrorAtom);
 
     return (
         <div className="flex flex-col gap-1">
@@ -71,7 +72,10 @@ const QuickAddRow = memo(({ model }: QuickAddRowProps) => {
                     autoFocus
                     className="flex-1 max-w-[260px] bg-black/20 border border-dashed border-accent/40 rounded-md px-2.5 py-1.5 text-xs font-mono text-accent focus:outline-none focus:border-accent"
                     value={value}
-                    onChange={(e) => setValue(e.target.value)}
+                    onChange={(e) => {
+                        setValue(e.target.value);
+                        setError(null);
+                    }}
                     onKeyDown={(e) => {
                         if (e.key === "Enter") {
                             model.submitConnectionQuickAdd();
@@ -189,9 +193,8 @@ const KeychainBanner = memo(() => {
         <div className="flex items-center gap-2 px-3 py-2 bg-warning/10 border border-warning/30 rounded-md">
             <i className="fa-sharp fa-solid fa-triangle-exclamation text-warning" />
             <span className="text-xs text-secondary">
-                Concept only — no key vault exists in{" "}
-                <code className="font-mono text-primary">connections.json</code> today. Shown to scope a possible
-                future addition, not wired to anything real yet.
+                Concept only — no key vault exists in <code className="font-mono text-primary">connections.json</code>{" "}
+                today. Shown to scope a possible future addition, not wired to anything real yet.
             </span>
         </div>
     );

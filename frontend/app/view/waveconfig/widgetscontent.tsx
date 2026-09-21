@@ -4,8 +4,8 @@
 import type { WaveConfigViewModel } from "@/app/view/waveconfig/waveconfig-model";
 import { cn, isBlank, makeIconClass } from "@/util/util";
 import { useAtomValue } from "jotai";
-import { useDrag, useDrop } from "react-dnd";
 import { memo, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useDrag, useDrop } from "react-dnd";
 
 const WidgetDragType = "WAVECONFIG_WIDGET_ROW";
 
@@ -59,69 +59,69 @@ interface WidgetOrderRowProps {
     onToggleHidden: (key: string) => void;
 }
 
-const WidgetOrderRow = memo(({ widgetKey, widget, index, moveRow, onDragFinished, onToggleHidden }: WidgetOrderRowProps) => {
-    const rowRef = useRef<HTMLDivElement>(null);
+const WidgetOrderRow = memo(
+    ({ widgetKey, widget, index, moveRow, onDragFinished, onToggleHidden }: WidgetOrderRowProps) => {
+        const rowRef = useRef<HTMLDivElement>(null);
 
-    const [, drop] = useDrop<DragItem>({
-        accept: WidgetDragType,
-        hover(item, monitor) {
-            if (!rowRef.current || item.key === widgetKey) {
-                return;
-            }
-            const dragIndex = item.index;
-            const hoverIndex = index;
-            if (dragIndex === hoverIndex) {
-                return;
-            }
-            const hoverRect = rowRef.current.getBoundingClientRect();
-            const hoverMiddleY = (hoverRect.bottom - hoverRect.top) / 2;
-            const clientOffset = monitor.getClientOffset();
-            const hoverClientY = clientOffset.y - hoverRect.top;
-            if (dragIndex < hoverIndex && hoverClientY < hoverMiddleY) {
-                return;
-            }
-            if (dragIndex > hoverIndex && hoverClientY > hoverMiddleY) {
-                return;
-            }
-            moveRow(dragIndex, hoverIndex);
-            item.index = hoverIndex;
-        },
-    });
+        const [, drop] = useDrop<DragItem>({
+            accept: WidgetDragType,
+            hover(item, monitor) {
+                if (!rowRef.current || item.key === widgetKey) {
+                    return;
+                }
+                const dragIndex = item.index;
+                const hoverIndex = index;
+                if (dragIndex === hoverIndex) {
+                    return;
+                }
+                const hoverRect = rowRef.current.getBoundingClientRect();
+                const hoverMiddleY = (hoverRect.bottom - hoverRect.top) / 2;
+                const clientOffset = monitor.getClientOffset();
+                const hoverClientY = clientOffset.y - hoverRect.top;
+                if (dragIndex < hoverIndex && hoverClientY < hoverMiddleY) {
+                    return;
+                }
+                if (dragIndex > hoverIndex && hoverClientY > hoverMiddleY) {
+                    return;
+                }
+                moveRow(dragIndex, hoverIndex);
+                item.index = hoverIndex;
+            },
+        });
 
-    const [{ isDragging }, drag] = useDrag({
-        type: WidgetDragType,
-        item: (): DragItem => ({ key: widgetKey, index }),
-        collect: (monitor) => ({ isDragging: monitor.isDragging() }),
-        end: (item) => onDragFinished(item.key),
-    });
+        const [{ isDragging }, drag] = useDrag({
+            type: WidgetDragType,
+            item: (): DragItem => ({ key: widgetKey, index }),
+            collect: (monitor) => ({ isDragging: monitor.isDragging() }),
+            end: (item) => onDragFinished(item.key),
+        });
 
-    drag(drop(rowRef));
+        drag(drop(rowRef));
 
-    return (
-        <div
-            ref={rowRef}
-            className={cn(
-                "flex items-center gap-2.5 bg-panel border border-border/60 rounded-md px-2.5 py-2 cursor-grab",
-                isDragging && "opacity-40"
-            )}
-        >
-            <i className="fa-sharp fa-solid fa-grip-dots-vertical text-[10px] text-muted shrink-0" />
+        return (
             <div
-                className="w-[26px] h-[26px] rounded-md flex items-center justify-center shrink-0"
-                style={widgetIconBoxStyle(widget.color)}
+                ref={rowRef}
+                className={cn(
+                    "flex items-center gap-2.5 bg-panel border border-border/60 rounded-md px-2.5 py-2 cursor-grab",
+                    isDragging && "opacity-40"
+                )}
             >
-                <i
-                    className={cn("text-xs", makeIconClass(widget.icon, true, { defaultIcon: "browser" }))}
-                    style={isBlank(widget.color) ? undefined : { color: widget.color }}
-                />
+                <i className="fa-sharp fa-solid fa-grip-dots-vertical text-[10px] text-muted shrink-0" />
+                <div
+                    className="w-[26px] h-[26px] rounded-md flex items-center justify-center shrink-0"
+                    style={widgetIconBoxStyle(widget.color)}
+                >
+                    <i
+                        className={cn("text-xs", makeIconClass(widget.icon, true, { defaultIcon: "browser" }))}
+                        style={isBlank(widget.color) ? undefined : { color: widget.color }}
+                    />
+                </div>
+                <span className="flex-1 text-xs truncate">{isBlank(widget.label) ? widgetKey : widget.label}</span>
+                <VisibilityToggle hidden={!!widget["display:hidden"]} onToggle={() => onToggleHidden(widgetKey)} />
             </div>
-            <span className="flex-1 text-xs truncate">
-                {isBlank(widget.label) ? widgetKey : widget.label}
-            </span>
-            <VisibilityToggle hidden={!!widget["display:hidden"]} onToggle={() => onToggleHidden(widgetKey)} />
-        </div>
-    );
-});
+        );
+    }
+);
 WidgetOrderRow.displayName = "WidgetOrderRow";
 
 interface WidgetOrderPanelProps {

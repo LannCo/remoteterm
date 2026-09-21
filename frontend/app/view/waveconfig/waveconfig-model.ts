@@ -599,7 +599,7 @@ export class WaveConfigViewModel implements ViewModel {
         globalStore.set(this.connectionsQuickAddErrorAtom, null);
     }
 
-    submitConnectionQuickAdd() {
+    async submitConnectionQuickAdd() {
         const value = globalStore.get(this.connectionsQuickAddValueAtom).trim();
         if (!value) {
             return;
@@ -611,8 +611,13 @@ export class WaveConfigViewModel implements ViewModel {
             );
             return;
         }
-        this.env.electron.createTab(value);
-        this.closeConnectionQuickAdd();
+        globalStore.set(this.connectionsQuickAddErrorAtom, null);
+        try {
+            await this.env.rpc.SetConnectionsConfigCommand(TabRpcClient, { host: value, metamaptype: {} });
+            globalStore.set(this.connectionsQuickAddValueAtom, "");
+        } catch (error) {
+            globalStore.set(this.connectionsQuickAddErrorAtom, `Failed to add connection: ${error.message}`);
+        }
     }
 
     // Reads the user's own widgets.json exactly as the Raw JSON tab does (unmerged —

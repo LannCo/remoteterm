@@ -7,7 +7,6 @@ export type WaveConfigEnv = WaveEnvSubset<{
     electron: {
         getConfigDir: WaveEnv["electron"]["getConfigDir"];
         getPlatform: WaveEnv["electron"]["getPlatform"];
-        createTab: WaveEnv["electron"]["createTab"];
     };
     rpc: {
         FileInfoCommand: WaveEnv["rpc"]["FileInfoCommand"];
@@ -17,7 +16,9 @@ export type WaveConfigEnv = WaveEnvSubset<{
         GetSecretsLinuxStorageBackendCommand: WaveEnv["rpc"]["GetSecretsLinuxStorageBackendCommand"];
         GetSecretsNamesCommand: WaveEnv["rpc"]["GetSecretsNamesCommand"];
         GetSecretsCommand: WaveEnv["rpc"]["GetSecretsCommand"];
-        SetSecretsCommand: WaveEnv["rpc"]["SetSecretsCommand"];    };
+        SetSecretsCommand: WaveEnv["rpc"]["SetSecretsCommand"];
+        SetConnectionsConfigCommand: WaveEnv["rpc"]["SetConnectionsConfigCommand"];
+    };
     atoms: {
         fullConfigAtom: WaveEnv["atoms"]["fullConfigAtom"];
         allConnStatus: WaveEnv["atoms"]["allConnStatus"];
