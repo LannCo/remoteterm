@@ -29,6 +29,7 @@ import {
     checkIfRunningUnderARM64Translation,
     getElectronAppBasePath,
     getElectronAppUnpackedBasePath,
+    getMigrationFailures,
     getWaveConfigDir,
     getWaveDataDir,
     isDev,
@@ -279,6 +280,15 @@ async function appMain() {
     const ready = await getWaveSrvReady();
     console.log("wavesrv ready signal received", ready, Date.now() - startTs, "ms");
     await electronApp.whenReady();
+    const migrationFailures = getMigrationFailures();
+    if (migrationFailures.length > 0) {
+        electron.dialog.showErrorBox(
+            "RemoteTerm Data Migration Issue",
+            "RemoteTerm could not fully migrate your existing data to its new storage location. " +
+                "Some data may be temporarily inaccessible until this is resolved manually.\n\n" +
+                migrationFailures.join("\n")
+        );
+    }
     configureAuthKeyRequestInjection(electron.session.defaultSession);
     initIpcHandlers();
 

@@ -418,7 +418,7 @@ func serverRunNormal(jwtToken string) error {
 
 func askForJwtToken() (string, error) {
 	// if it already exists in the environment, great, use it
-	jwtToken := os.Getenv(wavebase.WaveJwtTokenVarName)
+	jwtToken := wavebase.GetEnvNewOrLegacy(wavebase.WaveJwtTokenVarName, wavebase.LegacyWaveJwtTokenVarName)
 	if jwtToken != "" {
 		fmt.Printf("HAVE-JWT\n")
 		return jwtToken, nil

@@ -159,7 +159,7 @@ func (client *Client) RunMain() {
 }
 
 func (client *Client) Connect() error {
-	jwtToken := os.Getenv(wshutil.WaveJwtTokenVarName)
+	jwtToken := wavebase.GetEnvNewOrLegacy(wshutil.WaveJwtTokenVarName, wshutil.LegacyWaveJwtTokenVarName)
 	if jwtToken == "" {
 		return fmt.Errorf("no %s env var set", wshutil.WaveJwtTokenVarName)
 	}

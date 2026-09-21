@@ -155,6 +155,7 @@ func grabAndRemoveEnvVars() error {
 	os.Unsetenv(wavebase.WaveConnVarName)
 	os.Unsetenv(wavebase.LegacyWaveConnVarName)
 	os.Unsetenv(wavebase.WaveJwtTokenVarName)
+	os.Unsetenv(wavebase.LegacyWaveJwtTokenVarName)
 	os.Unsetenv(wavebase.WaveVersionVarName)
 
 	return nil

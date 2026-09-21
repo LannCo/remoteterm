@@ -267,7 +267,7 @@ func (dsc *DurableShellController) startNewJob(ctx context.Context, blockMeta wa
 		return "", fmt.Errorf("error making jwt token: %w", err)
 	}
 	swapToken.RpcContext = &rpcContext
-	swapToken.Env[wshutil.WaveJwtTokenVarName] = jwtStr
+	wavebase.SetDualEnv(swapToken.Env, wshutil.WaveJwtTokenVarName, wshutil.LegacyWaveJwtTokenVarName, jwtStr)
 	cmdOpts := shellexec.CommandOptsType{
 		Interactive: true,
 		Login:       true,

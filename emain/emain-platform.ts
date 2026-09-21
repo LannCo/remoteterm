@@ -35,6 +35,12 @@ const waveDirName = `${waveDirNamePrefix}${waveDirNameSuffix ? `-${waveDirNameSu
 const LegacyWaveHomeDirName = ".waveterm";
 const legacyWaveDirNamePrefix = "waveterm";
 const legacyWaveDirName = `${legacyWaveDirNamePrefix}${waveDirNameSuffix ? `-${waveDirNameSuffix}` : ""}`;
+// The old (pre-rename) code derived the legacy combined-home dir name from the dev-suffixed
+// waveDirName (".waveterm-dev" in dev, ".waveterm" in prod) — this is that same suffix-aware
+// shape under the frozen legacy prefix, distinct from the always-bare LegacyWaveHomeDirName
+// above (which exists so a dev build can still recognise a genuinely old, pre-suffix, bare
+// ".waveterm" install as a last-resort fallback).
+const LegacyWaveHomeDirNameSuffixed = `.${legacyWaveDirName}`;
 
 const paths = envPaths("remoteterm", { suffix: waveDirNameSuffix });
 const legacyPaths = envPaths("waveterm", { suffix: waveDirNameSuffix });
@@ -91,6 +97,27 @@ type MigrationRootSpec = {
 
 const MigrationMarkerFileName = ".migrated-from-waveterm";
 
+// Failures recorded here don't stop startup (the app can still run against whatever it can
+// resolve), but they leave data unmigrated/orphaned and the failure becomes sticky (the next
+// launch's "destination already exists and is unmarked" abort branch fires permanently), so a
+// console.log alone isn't enough. getMigrationFailures() lets emain.ts surface these to the
+// user once Electron is actually ready to show a dialog (this module's own top level runs
+// before `app` is ready, so it can only log, not show UI).
+const migrationFailures: string[] = [];
+
+function recordMigrationFailure(message: string, err?: unknown) {
+    migrationFailures.push(message);
+    if (err !== undefined) {
+        console.error(`[migration] ${message}`, err);
+    } else {
+        console.error(`[migration] ${message}`);
+    }
+}
+
+export function getMigrationFailures(): string[] {
+    return [...migrationFailures];
+}
+
 function migrateDataRoot(spec: MigrationRootSpec) {
     const markerFile = path.join(spec.dest, MigrationMarkerFileName);
     if (spec.overridden) {
@@ -101,7 +128,7 @@ function migrateDataRoot(spec: MigrationRootSpec) {
             mkdirSync(spec.dest, { recursive: true });
             writeFileSync(markerFile, `no-migration-needed:override\n${new Date().toISOString()}\n`);
         } catch (e) {
-            console.log(`[migration] failed to write override marker for ${spec.name} root:`, e);
+            recordMigrationFailure(`failed to write override marker for ${spec.name} root`, e);
         }
         return;
     }
@@ -116,19 +143,19 @@ function migrateDataRoot(spec: MigrationRootSpec) {
         try {
             destEntries = readdirSync(spec.dest);
         } catch (e) {
-            console.log(`[migration] could not inspect existing destination ${spec.dest} for ${spec.name} root:`, e);
+            recordMigrationFailure(`could not inspect existing destination ${spec.dest} for ${spec.name} root`, e);
             return;
         }
         if (destEntries.length === 0) {
             try {
                 rmdirSync(spec.dest);
             } catch (e) {
-                console.log(`[migration] could not remove empty destination ${spec.dest} for ${spec.name} root:`, e);
+                recordMigrationFailure(`could not remove empty destination ${spec.dest} for ${spec.name} root`, e);
                 return;
             }
         } else {
-            console.error(
-                `[migration] ${spec.name} root migration aborted: ${spec.dest} already exists and is not empty. Please merge ${spec.source} into ${spec.dest} manually.`
+            recordMigrationFailure(
+                `${spec.name} root migration aborted: ${spec.dest} already exists and is not empty. Please merge ${spec.source} into ${spec.dest} manually.`
             );
             return;
         }
@@ -144,13 +171,13 @@ function migrateDataRoot(spec: MigrationRootSpec) {
                 // another process already completed this root's migration
                 return;
             }
-            console.log(
-                `[migration] ${spec.name} root move failed with ENOENT and no completion marker was found (source: ${spec.source}):`,
+            recordMigrationFailure(
+                `${spec.name} root move failed with ENOENT and no completion marker was found (source: ${spec.source})`,
                 e
             );
             return;
         }
-        console.log(`[migration] error migrating ${spec.name} root from ${spec.source} to ${spec.dest}:`, e);
+        recordMigrationFailure(`error migrating ${spec.name} root from ${spec.source} to ${spec.dest}`, e);
     }
 }
 
@@ -187,7 +214,7 @@ function performDataDirMigration() {
         });
 
         const homeOverride = readOverrideEnvVar(WaveHomeVarName, LegacyWaveHomeVarName);
-        const legacyHomeSource = path.join(homeDir, LegacyWaveHomeDirName);
+        const legacyHomeSource = path.join(homeDir, LegacyWaveHomeDirNameSuffixed);
         const legacyHomeDest = path.join(homeDir, `.${waveDirName}`);
         migrateDataRoot({
             name: "legacy-home",
@@ -214,7 +241,7 @@ function performDataDirMigration() {
             });
         }
     } catch (e) {
-        console.log("[migration] unexpected error during data-dir migration, continuing startup:", e);
+        recordMigrationFailure("unexpected error during data-dir migration, continuing startup", e);
     }
 }
 
@@ -264,6 +291,10 @@ function getWaveHomeDir(): string {
             const migratedHome = path.join(homeDir, `.${waveDirName}`);
             if (existsSync(migratedHome) && existsSync(path.join(migratedHome, "wave.lock"))) {
                 return migratedHome;
+            }
+            const legacySuffixedHome = path.join(homeDir, LegacyWaveHomeDirNameSuffixed);
+            if (existsSync(legacySuffixedHome) && existsSync(path.join(legacySuffixedHome, "wave.lock"))) {
+                return legacySuffixedHome;
             }
             home = path.join(homeDir, LegacyWaveHomeDirName);
         }

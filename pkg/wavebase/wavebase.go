@@ -36,11 +36,11 @@ const (
 	WaveWshForceUpdateVarName      = "REMOTETERM_WSHFORCEUPDATE"
 	WaveNoConfirmQuitVarName       = "REMOTETERM_NOCONFIRMQUIT"
 
-	// JWT and swap tokens are packed/unpacked entirely within a single wsh<->wavesrv round
+	// The swap token itself is packed/unpacked entirely within a single wsh<->wavesrv round
 	// trip of the same app version (the client reads whatever key the server packed, via a
-	// generic map, not a hardcoded lookup), so unlike the session-scoped vars below, these
-	// don't need a legacy-name fallback.
-	WaveJwtTokenVarName  = "REMOTETERM_JWT"
+	// generic map, not a hardcoded lookup) and is unset immediately in the same shell-startup
+	// script that consumes it, so unlike the session-scoped vars below, it doesn't need a
+	// legacy-name fallback.
 	WaveSwapTokenVarName = "REMOTETERM_SWAPTOKEN"
 )
 
@@ -50,6 +50,15 @@ const (
 // the old name baked into its inherited environment for the rest of its life. Write both names
 // for one deprecation-window release with SetDualEnv, and read new-first via GetEnvNewOrLegacy.
 const (
+	// JWT is also exported directly into a spawned shell's persistent environment (both the
+	// local swap-token exchange map and the direct env injection used for WSL/remote SSH
+	// shell starts in pkg/shellexec/shellexec.go), and read back later via a hardcoded
+	// os.Getenv/map lookup (cmd/wsh/cmd/wshcmd-root.go, pkg/waveapp/waveapp.go,
+	// cmd/wsh/cmd/wshcmd-connserver.go) — unlike the swap token itself, it belongs in this
+	// dual-write group, not the no-fallback-needed block above.
+	WaveJwtTokenVarName       = "REMOTETERM_JWT"
+	LegacyWaveJwtTokenVarName = "WAVETERM_JWT"
+
 	WaveTabIdVarName       = "REMOTETERM_TABID"
 	LegacyWaveTabIdVarName = "WAVETERM_TABID"
 
@@ -94,6 +103,16 @@ func GetEnvNewOrLegacy(newName string, legacyName string) string {
 		return val
 	}
 	return os.Getenv(legacyName)
+}
+
+// GetMapValNewOrLegacy is GetEnvNewOrLegacy for an in-memory env map (e.g. a swap token's Env
+// map that may have been created and persisted by a pre-rename app instance and only ever
+// carries the legacy key).
+func GetMapValNewOrLegacy(env map[string]string, newName string, legacyName string) string {
+	if val := env[newName]; val != "" {
+		return val
+	}
+	return env[legacyName]
 }
 
 const (

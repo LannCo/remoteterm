@@ -444,7 +444,7 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 				return nil, fmt.Errorf("error making jwt token: %w", err)
 			}
 			swapToken.RpcContext = &rpcContext
-			swapToken.Env[wshutil.WaveJwtTokenVarName] = jwtStr
+			wavebase.SetDualEnv(swapToken.Env, wshutil.WaveJwtTokenVarName, wshutil.LegacyWaveJwtTokenVarName, jwtStr)
 			shellProc, err = shellexec.StartWslShellProc(ctx, rc.TermSize, cmdStr, cmdOpts, wslConn)
 			if err != nil {
 				wslConn.SetWshError(err)
@@ -477,7 +477,7 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 				return nil, fmt.Errorf("error making jwt token: %w", err)
 			}
 			swapToken.RpcContext = &rpcContext
-			swapToken.Env[wshutil.WaveJwtTokenVarName] = jwtStr
+			wavebase.SetDualEnv(swapToken.Env, wshutil.WaveJwtTokenVarName, wshutil.LegacyWaveJwtTokenVarName, jwtStr)
 			shellProc, err = shellexec.StartRemoteShellProc(ctx, logCtx, rc.TermSize, cmdStr, cmdOpts, conn)
 			if err != nil {
 				conn.SetWshError(err)
@@ -503,7 +503,7 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 				return nil, fmt.Errorf("error making jwt token: %w", err)
 			}
 			swapToken.RpcContext = &rpcContext
-			swapToken.Env[wshutil.WaveJwtTokenVarName] = jwtStr
+			wavebase.SetDualEnv(swapToken.Env, wshutil.WaveJwtTokenVarName, wshutil.LegacyWaveJwtTokenVarName, jwtStr)
 		}
 		cmdOpts.ShellPath = connUnion.ShellPath
 		cmdOpts.ShellOpts = getLocalShellOpts(blockMeta)

@@ -45,6 +45,7 @@ const DefaultOutputChSize = 32
 const DefaultInputChSize = 32
 
 const WaveJwtTokenVarName = wavebase.WaveJwtTokenVarName
+const LegacyWaveJwtTokenVarName = wavebase.LegacyWaveJwtTokenVarName
 
 // OSC escape types
 // OSC 23198 ; (JSON | base64-JSON) ST

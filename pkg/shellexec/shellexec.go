@@ -271,10 +271,15 @@ func StartWslShellProc(ctx context.Context, termSize waveobj.TermSize, cmdStr st
 		conn.Debugf(ctx, "packed swaptoken %s\n", packedToken)
 		cmdCombined = fmt.Sprintf(`%s=%s %s`, wavebase.WaveSwapTokenVarName, packedToken, cmdCombined)
 	}
-	jwtToken := cmdOpts.SwapToken.Env[wavebase.WaveJwtTokenVarName]
+	jwtToken := wavebase.GetMapValNewOrLegacy(cmdOpts.SwapToken.Env, wavebase.WaveJwtTokenVarName, wavebase.LegacyWaveJwtTokenVarName)
 	if jwtToken != "" && cmdOpts.ForceJwt {
 		conn.Debugf(ctx, "adding JWT token to environment\n")
-		cmdCombined = fmt.Sprintf(`%s=%s %s`, wavebase.WaveJwtTokenVarName, jwtToken, cmdCombined)
+		cmdCombined = fmt.Sprintf(
+			`%s=%s %s=%s %s`,
+			wavebase.WaveJwtTokenVarName, jwtToken,
+			wavebase.LegacyWaveJwtTokenVarName, jwtToken,
+			cmdCombined,
+		)
 	}
 	log.Printf("full combined command: %s", cmdCombined)
 	ecmd := exec.Command("wsl.exe", "~", "-d", client.Name(), "--", "sh", "-c", cmdCombined)
@@ -456,10 +461,15 @@ func StartRemoteShellProc(ctx context.Context, logCtx context.Context, termSize 
 		conn.Debugf(logCtx, "packed swaptoken %s\n", packedToken)
 		cmdCombined = fmt.Sprintf(`%s=%s %s`, wavebase.WaveSwapTokenVarName, packedToken, cmdCombined)
 	}
-	jwtToken := cmdOpts.SwapToken.Env[wavebase.WaveJwtTokenVarName]
+	jwtToken := wavebase.GetMapValNewOrLegacy(cmdOpts.SwapToken.Env, wavebase.WaveJwtTokenVarName, wavebase.LegacyWaveJwtTokenVarName)
 	if jwtToken != "" && cmdOpts.ForceJwt {
 		conn.Debugf(logCtx, "adding JWT token to environment\n")
-		cmdCombined = fmt.Sprintf(`%s=%s %s`, wavebase.WaveJwtTokenVarName, jwtToken, cmdCombined)
+		cmdCombined = fmt.Sprintf(
+			`%s=%s %s=%s %s`,
+			wavebase.WaveJwtTokenVarName, jwtToken,
+			wavebase.LegacyWaveJwtTokenVarName, jwtToken,
+			cmdCombined,
+		)
 	}
 	shellutil.AddTokenSwapEntry(cmdOpts.SwapToken)
 	session.RequestPty("xterm-256color", termSize.Rows, termSize.Cols, nil)
@@ -558,10 +568,10 @@ func StartRemoteShellJob(ctx context.Context, logCtx context.Context, termSize w
 			conn.Debugf(logCtx, "packed swaptoken %s\n", packedToken)
 			env[wavebase.WaveSwapTokenVarName] = packedToken
 		}
-		jwtToken := cmdOpts.SwapToken.Env[wavebase.WaveJwtTokenVarName]
+		jwtToken := wavebase.GetMapValNewOrLegacy(cmdOpts.SwapToken.Env, wavebase.WaveJwtTokenVarName, wavebase.LegacyWaveJwtTokenVarName)
 		if jwtToken != "" && cmdOpts.ForceJwt {
 			conn.Debugf(logCtx, "adding JWT token to environment\n")
-			env[wavebase.WaveJwtTokenVarName] = jwtToken
+			wavebase.SetDualEnv(env, wavebase.WaveJwtTokenVarName, wavebase.LegacyWaveJwtTokenVarName, jwtToken)
 		}
 		shellutil.AddTokenSwapEntry(cmdOpts.SwapToken)
 	}
@@ -640,10 +650,13 @@ func StartLocalShellProc(logCtx context.Context, termSize waveobj.TermSize, cmdS
 		blocklogger.Debugf(logCtx, "packed swaptoken %s\n", packedToken)
 		shellutil.UpdateCmdEnv(ecmd, map[string]string{wavebase.WaveSwapTokenVarName: packedToken})
 	}
-	jwtToken := cmdOpts.SwapToken.Env[wavebase.WaveJwtTokenVarName]
+	jwtToken := wavebase.GetMapValNewOrLegacy(cmdOpts.SwapToken.Env, wavebase.WaveJwtTokenVarName, wavebase.LegacyWaveJwtTokenVarName)
 	if jwtToken != "" && cmdOpts.ForceJwt {
 		blocklogger.Debugf(logCtx, "adding JWT token to environment\n")
-		shellutil.UpdateCmdEnv(ecmd, map[string]string{wavebase.WaveJwtTokenVarName: jwtToken})
+		shellutil.UpdateCmdEnv(ecmd, map[string]string{
+			wavebase.WaveJwtTokenVarName:       jwtToken,
+			wavebase.LegacyWaveJwtTokenVarName: jwtToken,
+		})
 	}
 
 	/*
