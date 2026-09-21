@@ -1490,6 +1490,23 @@ func hasActiveStream(health streamHealthInfo, healthOk bool) bool {
 	return healthOk && health.active
 }
 
+// registerNewJobStream records a freshly created job stream and marks it active
+// synchronously, in the caller's own goroutine, rather than deferring to
+// runOutputLoop. A route-up event can land between stream creation and
+// runOutputLoop's first tick; without a synchronous health entry here,
+// hasActiveStream() reports false in that gap and handleRouteEvent fires a
+// superseding reconnect against the stream we just created.
+func registerNewJobStream(jobId string, reader *streamclient.Reader, streamId string) {
+	jobStreamIds.Set(jobId, streamId)
+	jobReaders.Set(jobId, reader)
+	jobStreamHealth.Set(jobId, streamHealthInfo{
+		active:     true,
+		startedAt:  time.Now(),
+		lastReadAt: time.Now(),
+		streamId:   streamId,
+	})
+}
+
 func CheckJobConnected(ctx context.Context, jobId string) (*waveobj.Job, error) {
 	job, err := wstore.DBMustGet[*waveobj.Job](ctx, jobId)
 	if err != nil {
@@ -1590,8 +1607,7 @@ func StartJob(ctx context.Context, params StartJobParams) (string, error) {
 	readerRouteId := wshclient.GetBareRpcClientRouteId()
 	writerRouteId := wshutil.MakeJobRouteId(jobId)
 	reader, streamMeta := broker.CreateStreamReader(readerRouteId, writerRouteId, DefaultStreamRwnd)
-	jobStreamIds.Set(jobId, streamMeta.Id)
-	jobReaders.Set(jobId, reader)
+	registerNewJobStream(jobId, reader, streamMeta.Id)
 
 	fileOpts := wshrpc.FileOpts{
 		MaxSize:  10 * 1024 * 1024,
