@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { fireAndForget } from "@/util/util";
+import { execFileSync } from "child_process";
 import { app, dialog, ipcMain, shell } from "electron";
 import envPaths from "env-paths";
 import {
@@ -13,6 +14,7 @@ import {
     renameSync,
     rmdirSync,
     statSync,
+    unlinkSync,
     writeFileSync,
 } from "fs";
 import os from "os";
@@ -24,7 +26,8 @@ import * as keyutil from "../frontend/util/keyutil";
 // On macOS, it will store to ~/Library/Application \Support/remoteterm/electron
 // On Linux, it will store to ~/.config/remoteterm/electron
 // On Windows, it will store to %LOCALAPPDATA%/remoteterm/electron
-app.setName("remoteterm/electron");
+const ElectronUserDataPath = ["remoteterm", "electron"];
+app.setName(ElectronUserDataPath.join("/"));
 
 const isDev = !app.isPackaged;
 const isDevVite = isDev && process.env.ELECTRON_RENDERER_URL;
@@ -113,6 +116,10 @@ type MigrationRootSpec = {
 const EmainDataEntryNames = new Set(["logs", "rtapp.log"]);
 
 const MigrationMarkerFileName = ".migrated-from-waveterm";
+// Present in a destination while a merge into it is unfinished. Once some entries have moved, the
+// destination no longer passes canMergeIntoDest and the source may have lost the file that
+// qualified it (wave.lock), so this marker alone lets a later launch finish the merge.
+const MigrationInProgressFileName = ".migrating-from-waveterm";
 const LegacyLockFileName = "wave.lock";
 // pkg/secretstore keeps the encrypted secret store in the config root.
 const LegacySecretsFileName = "secrets.enc";
@@ -139,9 +146,16 @@ export function getMigrationFailures(): string[] {
 }
 
 // The pre-rename app set its name to "waveterm/electron" in both dev and prod builds, so its
-// Electron userData (and Chromium's SingletonLock) is at <appData>/waveterm/electron.
+// Electron userData (and Chromium's SingletonLock) is at <appData>/waveterm/electron. The lock's
+// holder is told apart by its executable (LegacyExecutableNames).
 const LegacyElectronUserDataPath = ["waveterm", "electron"];
 const SingletonLockFileName = "SingletonLock";
+// Basename of the legacy app's main-process executable. electron-builder named the Linux binary
+// after package.json "name" and the macOS one after "productName"; dev builds ran stock Electron.
+const LegacyExecutableNames: Record<string, { prod: string; dev: string }> = {
+    linux: { prod: "waveterm", dev: "electron" },
+    darwin: { prod: "Wave", dev: "Electron" },
+};
 
 type LegacyInstanceState = {
     // True only for a live pid on this host; otherwise liveness could not be determined.
@@ -154,9 +168,31 @@ let legacyInstanceState: LegacyInstanceState = null;
 let blockingLegacyInstance: LegacyInstanceState = null;
 let ignoreLegacyInstance = false;
 
+// Returns null when the executable cannot be read (another uid, exited, unsupported platform).
+function readProcessExecutable(pid: number): string {
+    try {
+        if (process.platform === "linux") {
+            return readlinkSync(`/proc/${pid}/exe`).replace(/ \(deleted\)$/, "");
+        }
+        if (process.platform === "darwin") {
+            const out = execFileSync("ps", ["-p", String(pid), "-o", "comm="], {
+                encoding: "utf8",
+                stdio: ["ignore", "pipe", "ignore"],
+                timeout: 2000,
+            });
+            return out.trim() || null;
+        }
+    } catch (e) {
+        console.log(`[migration] could not read the executable of pid ${pid} (${e?.code ?? e})`);
+    }
+    return null;
+}
+
 // Node has no portable flock, so liveness comes from the legacy Electron process instead: Chromium
-// keeps SingletonLock as a symlink to "<hostname>-<pid>" for as long as that app runs. Windows is
-// not checked: renaming a root fails there while the legacy app holds files open in it.
+// keeps SingletonLock as a symlink to "<hostname>-<pid>" for as long as that app runs. A lock left
+// by a crash can name a pid the OS has since given to an unrelated process, so a live pid counts
+// as the legacy app only if its executable is the legacy app's. Windows is not checked: renaming
+// a root fails there while the legacy app holds files open in it.
 function checkLegacyInstanceRunning(): LegacyInstanceState {
     if (process.platform === "win32") {
         return null;
@@ -187,7 +223,21 @@ function checkLegacyInstanceRunning(): LegacyInstanceState {
             return null;
         }
     }
-    return { confirmedRunning: true, reason: `WaveTerm is running (pid ${pid}, per ${lockPath})` };
+    const exe = readProcessExecutable(pid);
+    if (exe == null) {
+        return { confirmedRunning: false, reason: `pid ${pid} in ${lockPath} is running but could not be identified` };
+    }
+    const exeNames = LegacyExecutableNames[process.platform];
+    // Both flavours of the legacy app shared one userData dir and so one SingletonLock: the other
+    // flavour holding it means this flavour, the only one using the roots we move, is not running.
+    if (path.basename(exe) === exeNames?.[isDev ? "prod" : "dev"]) {
+        console.log(`[migration] ${lockPath} is held by the other legacy build (${exe}), not the one being migrated`);
+        return null;
+    }
+    if (path.basename(exe) !== exeNames?.[isDev ? "dev" : "prod"]) {
+        return { confirmedRunning: false, reason: `pid ${pid} in ${lockPath} is running ${exe}` };
+    }
+    return { confirmedRunning: true, reason: `pid ${pid} (${exe}) holds ${lockPath}` };
 }
 
 function getLegacyInstanceState(): LegacyInstanceState {
@@ -213,9 +263,11 @@ export async function resolveLegacyInstanceBlock(): Promise<boolean> {
         await dialog.showMessageBox({
             type: "warning",
             buttons: ["Quit"],
-            title: "WaveTerm Is Still Running",
-            message: "Quit WaveTerm, then relaunch RemoteTerm.",
-            detail: "RemoteTerm needs to move your WaveTerm data to its new location and cannot do that while WaveTerm is running.",
+            title: "Wave Terminal Is Still Running",
+            message: "Quit Wave Terminal, then relaunch RemoteTerm.",
+            detail:
+                "RemoteTerm needs to move your Wave Terminal data to its new location and cannot do that while Wave Terminal is running.\n\n" +
+                `${block.reason}.`,
         });
         return false;
     }
@@ -224,12 +276,12 @@ export async function resolveLegacyInstanceBlock(): Promise<boolean> {
         buttons: ["Quit", "Migrate anyway"],
         defaultId: 0,
         cancelId: 0,
-        title: "WaveTerm May Still Be Running",
-        message: "RemoteTerm could not confirm that WaveTerm has quit.",
+        title: "Wave Terminal May Still Be Running",
+        message: "RemoteTerm could not confirm that Wave Terminal has quit.",
         detail:
             `${block.reason}.\n\n` +
-            "If WaveTerm is running, quit it and relaunch RemoteTerm: moving its data while it runs can break it. " +
-            "If you are sure WaveTerm is not running (for example after a crash), choose Migrate anyway.",
+            "If Wave Terminal is running, quit it and relaunch RemoteTerm: moving its data while it runs can break it. " +
+            "If you are sure Wave Terminal is not running (for example after a crash), choose Migrate anyway.",
     });
     if (response !== 1) {
         return false;
@@ -262,7 +314,8 @@ function migrateDataRoot(spec: MigrationRootSpec) {
         console.log(`[migration] skipping ${spec.name} root: ${spec.source} does not exist`);
         return;
     }
-    const skipReason = spec.sourceSkipReason?.();
+    const resumeMerge = existsSync(path.join(spec.dest, MigrationInProgressFileName));
+    const skipReason = resumeMerge ? null : spec.sourceSkipReason?.();
     if (skipReason) {
         console.log(`[migration] skipping ${spec.name} root: ${spec.source} ${skipReason}`);
         return;
@@ -290,7 +343,7 @@ function migrateDataRoot(spec: MigrationRootSpec) {
                 recordMigrationFailure(`could not remove empty destination ${spec.dest} for ${spec.name} root`, e);
                 return;
             }
-        } else if (spec.canMergeIntoDest?.(destEntries)) {
+        } else if (resumeMerge || spec.canMergeIntoDest?.(destEntries)) {
             mergeDataRoot(spec);
             return;
         } else {
@@ -354,10 +407,13 @@ function mergeTree(source: string, dest: string, rel: string, result: MergeResul
 
 // Moves every source entry the destination lacks into it and never overwrites a destination
 // entry. Whatever cannot be moved stays in the source; the marker is written regardless so the
-// state converges instead of re-reporting on every launch.
+// state converges instead of re-reporting on every launch. A merge that throws part-way leaves
+// the in-progress marker, and the next launch runs the same merge again over what is left.
 function mergeDataRoot(spec: MigrationRootSpec) {
     const result: MergeResult = { merged: [], kept: [] };
+    const inProgressFile = path.join(spec.dest, MigrationInProgressFileName);
     try {
+        writeFileSync(inProgressFile, `merging-from:${spec.source}\n${new Date().toISOString()}\n`);
         mergeTree(spec.source, spec.dest, "", result);
         writeFileSync(
             path.join(spec.dest, MigrationMarkerFileName),
@@ -369,6 +425,11 @@ function mergeDataRoot(spec: MigrationRootSpec) {
             e
         );
         return;
+    }
+    try {
+        unlinkSync(inProgressFile);
+    } catch (e) {
+        console.log(`[migration] could not remove ${inProgressFile} (${e?.code ?? e})`);
     }
     console.log(
         `[migration] merged ${spec.name} root from ${spec.source} into existing ${spec.dest}: ` +
@@ -430,6 +491,13 @@ function performDataDirMigration() {
         const dataOverride = readOverrideEnvVar(RemoteTermDataHomeVarName, LegacyRemoteTermDataHomeVarName);
         const dataSource = xdgDataHome ? path.join(xdgDataHome, legacyRemoteTermDirName) : legacyPaths.data;
         const dataDest = xdgDataHome ? path.join(xdgDataHome, remoteTermDirName) : paths.data;
+        // requestSingleInstanceLock() creates Electron's userData before a blocked launch quits; on
+        // macOS (without XDG_DATA_HOME) that directory is inside the data root.
+        const blockedLaunchDataEntryNames = new Set(EmainDataEntryNames);
+        const electronUserData = path.join(app.getPath("appData"), ...ElectronUserDataPath);
+        if (path.dirname(electronUserData) === dataDest) {
+            blockedLaunchDataEntryNames.add(path.basename(electronUserData));
+        }
         migrateDataRoot({
             name: "data",
             source: dataOverride ?? dataSource,
@@ -437,7 +505,7 @@ function performDataDirMigration() {
             overridden: dataOverride != null,
             sourceSkipReason: () => lockFileSkipReason(dataSource),
             // Never merge next to a database the new build already created.
-            canMergeIntoDest: (destEntries) => destEntries.every((name) => EmainDataEntryNames.has(name)),
+            canMergeIntoDest: (destEntries) => destEntries.every((name) => blockedLaunchDataEntryNames.has(name)),
         });
 
         const homeOverride = readOverrideEnvVar(RemoteTermHomeVarName, LegacyRemoteTermHomeVarName);
