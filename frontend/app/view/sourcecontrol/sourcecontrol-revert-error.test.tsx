@@ -74,6 +74,17 @@ it("a failed staged-hunk revert shows a dismissible alert in the source control 
     expect(screen.queryByRole("alert")).toBeNull();
 });
 
+// happy-dom does no layout, so this pins the sizing utility rather than a measured box:
+// WCAG 2.5.8 needs at least 24x24 CSS px, and the bare icon is about 11px.
+it("the dismiss button carries a 24x24 minimum target", async () => {
+    await renderView({ GitRevertHunkCommand: rejects(PartialRevertError) });
+    await act(() => model.revertHunk("a.ts", 0, true));
+
+    const cls = screen.getByRole("button", { name: "Dismiss error" }).className.split(/\s+/);
+    expect(cls).toContain("min-w-6");
+    expect(cls).toContain("min-h-6");
+});
+
 it.each([
     ["stage files", "GitStageCommand", (m: any) => m.stageFiles(["a.ts"])],
     ["unstage files", "GitUnstageCommand", (m: any) => m.unstageFiles(["a.ts"])],
