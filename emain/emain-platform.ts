@@ -4,7 +4,17 @@
 import { fireAndForget } from "@/util/util";
 import { app, dialog, ipcMain, shell } from "electron";
 import envPaths from "env-paths";
-import { Dirent, existsSync, mkdirSync, readdirSync, renameSync, rmdirSync, statSync, writeFileSync } from "fs";
+import {
+    Dirent,
+    existsSync,
+    mkdirSync,
+    readdirSync,
+    readlinkSync,
+    renameSync,
+    rmdirSync,
+    statSync,
+    writeFileSync,
+} from "fs";
 import os from "os";
 import path from "path";
 import { RemoteTermDevVarName, RemoteTermDevViteVarName } from "../frontend/util/isdev";
@@ -91,11 +101,16 @@ type MigrationRootSpec = {
     overridden: boolean;
     // Returns why the existing source is not a real legacy root to migrate, or null if it is.
     sourceSkipReason?: () => string;
-    // Merge into a non-empty destination instead of aborting. Only safe for roots holding plain
-    // files: an earlier build that skipped the legacy root may already have created this one
-    // (presets/, Electron userData), and without a merge that state aborts on every launch.
-    mergeIntoExistingDest?: boolean;
+    // Given a non-empty destination's top-level entries, whether to merge into it instead of
+    // aborting. An earlier build that skipped the legacy root, or a launch blocked by a running
+    // legacy instance, may already have created the destination; without a merge that state
+    // aborts on every launch.
+    canMergeIntoDest?: (destEntries: string[]) => boolean;
 };
+
+// Written into the data dir by emain-log at module load, including on a launch that is blocked
+// by a running legacy instance and quits before the server starts.
+const EmainDataEntryNames = new Set(["logs", "rtapp.log"]);
 
 const MigrationMarkerFileName = ".migrated-from-waveterm";
 const LegacyLockFileName = "wave.lock";
@@ -121,6 +136,109 @@ function recordMigrationFailure(message: string, err?: unknown) {
 
 export function getMigrationFailures(): string[] {
     return [...migrationFailures];
+}
+
+// The pre-rename app set its name to "waveterm/electron" in both dev and prod builds, so its
+// Electron userData (and Chromium's SingletonLock) is at <appData>/waveterm/electron.
+const LegacyElectronUserDataPath = ["waveterm", "electron"];
+const SingletonLockFileName = "SingletonLock";
+
+type LegacyInstanceState = {
+    // True only for a live pid on this host; otherwise liveness could not be determined.
+    confirmedRunning: boolean;
+    reason: string;
+};
+
+let legacyInstanceChecked = false;
+let legacyInstanceState: LegacyInstanceState = null;
+let blockingLegacyInstance: LegacyInstanceState = null;
+let ignoreLegacyInstance = false;
+
+// Node has no portable flock, so liveness comes from the legacy Electron process instead: Chromium
+// keeps SingletonLock as a symlink to "<hostname>-<pid>" for as long as that app runs. Windows is
+// not checked: renaming a root fails there while the legacy app holds files open in it.
+function checkLegacyInstanceRunning(): LegacyInstanceState {
+    if (process.platform === "win32") {
+        return null;
+    }
+    const lockPath = path.join(app.getPath("appData"), ...LegacyElectronUserDataPath, SingletonLockFileName);
+    let target: string;
+    try {
+        target = readlinkSync(lockPath);
+    } catch (e) {
+        if (e?.code === "ENOENT") {
+            return null;
+        }
+        return { confirmedRunning: false, reason: `could not read ${lockPath} (${e?.code ?? e})` };
+    }
+    const sepIdx = target.lastIndexOf("-");
+    const hostname = target.slice(0, sepIdx);
+    const pid = parseInt(target.slice(sepIdx + 1), 10);
+    if (sepIdx <= 0 || !Number.isInteger(pid) || pid <= 0) {
+        return { confirmedRunning: false, reason: `${lockPath} has an unrecognised target "${target}"` };
+    }
+    if (hostname !== os.hostname()) {
+        return { confirmedRunning: false, reason: `${lockPath} was written by host "${hostname}"` };
+    }
+    try {
+        process.kill(pid, 0);
+    } catch (e) {
+        if (e?.code === "ESRCH") {
+            return null;
+        }
+    }
+    return { confirmedRunning: true, reason: `WaveTerm is running (pid ${pid}, per ${lockPath})` };
+}
+
+function getLegacyInstanceState(): LegacyInstanceState {
+    if (!legacyInstanceChecked) {
+        legacyInstanceChecked = true;
+        legacyInstanceState = checkLegacyInstanceRunning();
+    }
+    return legacyInstanceState;
+}
+
+/**
+ * Must be awaited before the server starts. When a pending migration was held back because a
+ * pre-rename instance is (or may be) running, asks the user and resolves false if this launch
+ * must quit: starting the server would create the new roots next to the live legacy ones.
+ */
+export async function resolveLegacyInstanceBlock(): Promise<boolean> {
+    const block = blockingLegacyInstance;
+    if (block == null) {
+        return true;
+    }
+    await app.whenReady();
+    if (block.confirmedRunning) {
+        await dialog.showMessageBox({
+            type: "warning",
+            buttons: ["Quit"],
+            title: "WaveTerm Is Still Running",
+            message: "Quit WaveTerm, then relaunch RemoteTerm.",
+            detail: "RemoteTerm needs to move your WaveTerm data to its new location and cannot do that while WaveTerm is running.",
+        });
+        return false;
+    }
+    const { response } = await dialog.showMessageBox({
+        type: "warning",
+        buttons: ["Quit", "Migrate anyway"],
+        defaultId: 0,
+        cancelId: 0,
+        title: "WaveTerm May Still Be Running",
+        message: "RemoteTerm could not confirm that WaveTerm has quit.",
+        detail:
+            `${block.reason}.\n\n` +
+            "If WaveTerm is running, quit it and relaunch RemoteTerm: moving its data while it runs can break it. " +
+            "If you are sure WaveTerm is not running (for example after a crash), choose Migrate anyway.",
+    });
+    if (response !== 1) {
+        return false;
+    }
+    console.log("[migration] user chose to migrate despite a possibly running WaveTerm");
+    blockingLegacyInstance = null;
+    ignoreLegacyInstance = true;
+    performDataDirMigration();
+    return true;
 }
 
 function migrateDataRoot(spec: MigrationRootSpec) {
@@ -149,6 +267,14 @@ function migrateDataRoot(spec: MigrationRootSpec) {
         console.log(`[migration] skipping ${spec.name} root: ${spec.source} ${skipReason}`);
         return;
     }
+    const legacyInstance = ignoreLegacyInstance ? null : getLegacyInstanceState();
+    if (legacyInstance) {
+        blockingLegacyInstance = legacyInstance;
+        console.log(
+            `[migration] not migrating ${spec.name} root this launch: ${legacyInstance.reason}; will retry next launch`
+        );
+        return;
+    }
     if (existsSync(spec.dest)) {
         let destEntries: string[];
         try {
@@ -164,7 +290,7 @@ function migrateDataRoot(spec: MigrationRootSpec) {
                 recordMigrationFailure(`could not remove empty destination ${spec.dest} for ${spec.name} root`, e);
                 return;
             }
-        } else if (spec.mergeIntoExistingDest) {
+        } else if (spec.canMergeIntoDest?.(destEntries)) {
             mergeDataRoot(spec);
             return;
         } else {
@@ -297,7 +423,8 @@ function performDataDirMigration() {
             dest: configOverride ?? configDest,
             overridden: configOverride != null,
             sourceSkipReason: () => legacyConfigSkipReason(configSource),
-            mergeIntoExistingDest: true,
+            // Config files are plain files the merge never overwrites, so any destination is safe.
+            canMergeIntoDest: () => true,
         });
 
         const dataOverride = readOverrideEnvVar(RemoteTermDataHomeVarName, LegacyRemoteTermDataHomeVarName);
@@ -309,6 +436,8 @@ function performDataDirMigration() {
             dest: dataOverride ?? dataDest,
             overridden: dataOverride != null,
             sourceSkipReason: () => lockFileSkipReason(dataSource),
+            // Never merge next to a database the new build already created.
+            canMergeIntoDest: (destEntries) => destEntries.every((name) => EmainDataEntryNames.has(name)),
         });
 
         const homeOverride = readOverrideEnvVar(RemoteTermHomeVarName, LegacyRemoteTermHomeVarName);
