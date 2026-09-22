@@ -1,0 +1,108 @@
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+import { atom, createStore, Provider } from "jotai";
+import type { ComponentType } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vitest";
+import { SecretsContent } from "./secretscontent";
+
+vi.mock("@/app/view/remotetermconfig/remotetermconfig-model", () => ({
+    SecretNameRegex: /^[A-Za-z][A-Za-z0-9_]*$/,
+}));
+
+// Any *Atom the test doesn't name resolves to atom(null); any other property is a no-op
+// method, so each test only spells out the state its markup depends on.
+function makeModel(values: Record<string, any>): any {
+    const cache: Record<string, any> = {};
+    return new Proxy(
+        {},
+        {
+            get(_target, key: string) {
+                if (key in values) return (cache[key] ??= atom(values[key]));
+                if (key.endsWith("Atom")) return (cache[key] ??= atom(null));
+                return (cache[key] ??= vi.fn());
+            },
+        }
+    );
+}
+
+function render(Component: ComponentType<{ model: any }>, model: any): string {
+    return renderToStaticMarkup(
+        <Provider store={createStore()}>
+            <Component model={model} />
+        </Provider>
+    );
+}
+
+function escapeRegex(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function labelTarget(html: string, labelText: string): string {
+    const match = html.match(new RegExp(`<label[^>]*for="([^"]+)"[^>]*>${escapeRegex(labelText)}</label>`));
+    expect(match, `no <label for> with text "${labelText}"`).not.toBeNull();
+    return match[1];
+}
+
+function openingTagWithId(html: string, id: string): string {
+    const match = html.match(new RegExp(`<[a-z]+[^>]*\\sid="${escapeRegex(id)}"[^>]*>`));
+    expect(match, `no element with id "${id}"`).not.toBeNull();
+    return match[0];
+}
+
+function elementTextById(html: string, id: string): string {
+    const match = html.match(new RegExp(`\\sid="${escapeRegex(id)}"[^>]*>([^<]*)<`));
+    return match?.[1] ?? "";
+}
+
+const SecretsBase = {
+    secretNamesAtom: ["FOO"],
+    selectedSecretAtom: null,
+    isLoadingAtom: false,
+    errorMessageAtom: null,
+    storageBackendErrorAtom: null,
+    isAddingNewAtom: false,
+    newSecretNameAtom: "",
+    newSecretValueAtom: "",
+    secretValueAtom: "",
+    secretShownAtom: false,
+};
+
+describe("SecretsContent labels and validation", () => {
+    it("associates the add form's Name and Value labels with their fields", () => {
+        const html = render(SecretsContent, makeModel({ ...SecretsBase, isAddingNewAtom: true }));
+        expect(openingTagWithId(html, labelTarget(html, "Name"))).toMatch(/^<input/);
+        expect(openingTagWithId(html, labelTarget(html, "Value"))).toMatch(/^<textarea/);
+    });
+
+    it("associates the detail view's Value label with the value textarea", () => {
+        const html = render(SecretsContent, makeModel({ ...SecretsBase, selectedSecretAtom: "FOO" }));
+        expect(openingTagWithId(html, labelTarget(html, "Value"))).toMatch(/^<textarea/);
+    });
+
+    it("marks an invalid secret name with aria-invalid and a linked text explanation", () => {
+        const html = render(
+            SecretsContent,
+            makeModel({ ...SecretsBase, isAddingNewAtom: true, newSecretNameAtom: "1bad-name" })
+        );
+        const input = openingTagWithId(html, labelTarget(html, "Name"));
+        expect(input).toContain('aria-invalid="true"');
+        const describedBy = input.match(/aria-describedby="([^"]+)"/)?.[1];
+        expect(describedBy).toBeTruthy();
+        expect(elementTextById(html, describedBy)).toMatch(/^Invalid name/);
+    });
+
+    it("does not mark a valid or empty secret name as invalid", () => {
+        for (const name of ["", "GOOD_NAME"]) {
+            const html = render(
+                SecretsContent,
+                makeModel({ ...SecretsBase, isAddingNewAtom: true, newSecretNameAtom: name })
+            );
+            const input = openingTagWithId(html, labelTarget(html, "Name"));
+            expect(input).not.toContain('aria-invalid="true"');
+            const describedBy = input.match(/aria-describedby="([^"]+)"/)?.[1];
+            expect(elementTextById(html, describedBy)).toMatch(/^Must start with a letter/);
+        }
+    });
+});
