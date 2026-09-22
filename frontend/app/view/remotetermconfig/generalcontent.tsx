@@ -1042,6 +1042,7 @@ interface NumberControlProps {
     max?: number;
     step?: number;
     // Resolves false when the write failed, so the control can drop back to the stored value.
+    // Must be serialised with every other write to the key (FieldControl's queue does this).
     onChange: (value: number) => Promise<boolean>;
     fieldLabel: string;
     labelledBy: string;
@@ -1064,11 +1065,19 @@ export function parseNumberInput(raw: string, min?: number, max?: number): numbe
     return next;
 }
 
+function decimalPlaces(n: number): number {
+    const m = /(?:\.(\d+))?(?:e([+-]\d+))?$/i.exec(String(n));
+    return Math.min(100, Math.max(0, (m[1]?.length ?? 0) - Number(m[2] ?? 0)));
+}
+
 // Step from the typed draft, not `value`: `value` only catches up after the settings
 // round-trip, so stepping from it would discard an uncommitted draft.
+// The sum is rounded to the finer of the step's and the base's precision: 1.1 + 0.05 is
+// 1.1500000000000001 in binary floating point, and that literal would be shown and stored.
 export function bumpNumberInput(draft: string, value: number, delta: number, min?: number, max?: number): number {
     const base = parseNumberInput(draft, min, max) ?? value;
-    return parseNumberInput(String(base + delta), min, max);
+    const decimals = Math.max(decimalPlaces(base), decimalPlaces(delta));
+    return parseNumberInput((base + delta).toFixed(decimals), min, max);
 }
 
 const NumberControl = memo(
@@ -1078,8 +1087,20 @@ const NumberControl = memo(
         // The last value this control wrote; `value` only catches up after the config watcher's
         // event, so until then the written value, not the stale prop, is what is shown and stepped.
         const [pending, setPending] = useState<number>(null);
-        const writeQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+        const [prevValue, setPrevValue] = useState(value);
+        const inFlightRef = useRef(0);
+        // Values written since `pending` was last clear, so an echo of an earlier one is not
+        // mistaken for another writer's change.
+        const sentRef = useRef<number[]>([]);
 
+        if (value !== prevValue) {
+            setPrevValue(value);
+            // With nothing of ours outstanding, a change that is not our own echo came from another
+            // writer (Reset, another window, `wsh setconfig`), whose read may have skipped our echo.
+            if (pending != null && value !== pending && inFlightRef.current === 0 && !sentRef.current.includes(value)) {
+                setPending(null);
+            }
+        }
         if (pending != null && pending === value) {
             setPending(null);
         }
@@ -1087,18 +1108,20 @@ const NumberControl = memo(
             setLocal(String(value));
         }
 
-        // Each SetConfigCommand runs on its own goroutine server-side, so two in-flight writes for
-        // this key can be applied out of order; send the next only after the previous resolves.
         const write = (next: number) => {
             setLocal(String(next));
             setPending(next);
-            const sent = writeQueueRef.current.then(() => onChange(next));
-            writeQueueRef.current = sent.catch(() => {});
-            sent.then(
+            sentRef.current = pending == null ? [next] : [...sentRef.current, next];
+            inFlightRef.current++;
+            onChange(next).then(
                 (ok) => {
+                    inFlightRef.current--;
                     if (ok === false) setPending((p) => (p === next ? null : p));
                 },
-                () => setPending((p) => (p === next ? null : p))
+                () => {
+                    inFlightRef.current--;
+                    setPending((p) => (p === next ? null : p));
+                }
             );
         };
 
@@ -1237,8 +1260,18 @@ interface FieldControlProps {
 const FieldControl = memo(({ schema, model, settings, isSet }: FieldControlProps) => {
     const rawValue = settings[schema.key];
     const defaultDisplay = resolveDefaultDisplay(schema, model);
-    const write = (value: unknown) => model.setGeneralSetting({ [schema.key]: value } as SettingsType);
-    const reset = () => model.setGeneralSetting({ [schema.key]: null } as SettingsType);
+    const writeQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+    // Each SetConfigCommand runs on its own goroutine server-side, so two in-flight writes for
+    // this key can be applied out of order; send the next only after the previous resolves.
+    // Reset shares the queue, or a spin write still queued behind it would undo it.
+    const write = (value: unknown): Promise<boolean> => {
+        const sent = writeQueueRef.current.then(() =>
+            model.setGeneralSetting({ [schema.key]: value } as SettingsType)
+        );
+        writeQueueRef.current = sent.catch(() => {});
+        return sent;
+    };
+    const reset = () => write(null);
 
     const labelId = `field-label-${String(schema.key)}`;
     const hintId = `field-hint-${String(schema.key)}`;

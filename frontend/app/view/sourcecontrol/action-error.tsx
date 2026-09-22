@@ -2,14 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as jotai from "jotai";
-import { memo } from "react";
+import { memo, type RefObject } from "react";
 
 interface ActionErrorBannerProps {
     errorAtom: jotai.Atom<string | null>;
     onDismiss: () => void;
+    // Dismissing unmounts the banner along with its focused button; focus moves here first so
+    // it does not fall to <body>.
+    focusAnchorRef: RefObject<HTMLElement>;
 }
 
-export const ActionErrorBanner = memo(({ errorAtom, onDismiss }: ActionErrorBannerProps) => {
+export const ActionErrorBanner = memo(({ errorAtom, onDismiss, focusAnchorRef }: ActionErrorBannerProps) => {
     const error = jotai.useAtomValue(errorAtom);
     if (!error) {
         return null;
@@ -23,8 +26,11 @@ export const ActionErrorBanner = memo(({ errorAtom, onDismiss }: ActionErrorBann
             <button
                 type="button"
                 aria-label="Dismiss error"
-                className="shrink-0 cursor-pointer text-red-400 hover:text-white"
-                onClick={onDismiss}
+                className="shrink-0 min-w-6 min-h-6 -m-1 flex items-center justify-center rounded cursor-pointer text-red-400 hover:text-white"
+                onClick={() => {
+                    focusAnchorRef.current?.focus();
+                    onDismiss();
+                }}
             >
                 <i aria-hidden="true" className="fa-solid fa-times" />
             </button>
