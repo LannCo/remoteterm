@@ -18,8 +18,8 @@ const ErrorDisplay = memo(({ message, variant = "error" }: ErrorDisplayProps) =>
 
     return (
         <div className={cn("flex items-center gap-2 px-3 py-2.5 border rounded-md text-xs", variantClasses)}>
-            <i className={`fa-sharp fa-solid ${icon}`} />
-            <span>{message}</span>
+            <i aria-hidden="true" className={`fa-sharp fa-solid ${icon}`} />
+            <span className={variant === "error" ? "text-primary" : undefined}>{message}</span>
         </div>
     );
 });
@@ -28,7 +28,7 @@ ErrorDisplay.displayName = "ErrorDisplay";
 const LoadingSpinner = memo(({ message }: { message: string }) => {
     return (
         <div className="flex flex-col items-center justify-center gap-3 py-12">
-            <i className="fa-sharp fa-solid fa-spinner fa-spin text-2xl text-muted" />
+            <i aria-hidden="true" className="fa-sharp fa-solid fa-spinner fa-spin text-2xl text-muted" />
             <span className="text-muted text-sm">{message}</span>
         </div>
     );
@@ -38,14 +38,14 @@ LoadingSpinner.displayName = "LoadingSpinner";
 const EmptyState = memo(({ onAddSecret }: { onAddSecret: () => void }) => {
     return (
         <div className="flex flex-col items-center justify-center gap-3 h-full text-center">
-            <i className="fa-sharp fa-solid fa-key text-4xl text-muted" />
+            <i aria-hidden="true" className="fa-sharp fa-solid fa-key text-4xl text-muted" />
             <h3 className="text-sm font-semibold text-secondary">No Secrets</h3>
             <p className="text-xs text-muted">Add a secret to get started</p>
             <button
-                className="flex items-center gap-2 mt-1 px-3 py-1.5 text-xs rounded bg-accent/80 text-primary hover:bg-accent transition-colors cursor-pointer"
+                className="flex items-center gap-2 mt-1 px-3 py-1.5 text-xs rounded bg-accent/80 text-background hover:bg-accent transition-colors cursor-pointer"
                 onClick={onAddSecret}
             >
-                <i className="fa-sharp fa-solid fa-plus" />
+                <i aria-hidden="true" className="fa-sharp fa-solid fa-plus" />
                 <span className="font-medium">Add New Secret</span>
             </button>
         </div>
@@ -79,7 +79,7 @@ const SecretListPanel = memo(({ secretNames, selectedSecret, onSelectSecret, onA
                     onClick={() => onSelectSecret(name)}
                 >
                     <span className="truncate">{name}</span>
-                    <i className="fa-sharp fa-solid fa-chevron-right text-xxs text-muted shrink-0" />
+                    <i aria-hidden="true" className="fa-sharp fa-solid fa-chevron-right text-xxs text-muted shrink-0" />
                 </button>
             ))}
             <button
@@ -87,7 +87,7 @@ const SecretListPanel = memo(({ secretNames, selectedSecret, onSelectSecret, onA
                 className="flex items-center gap-2 mt-0.5 px-2.5 py-2 text-xs text-muted border border-dashed border-border rounded-md hover:text-secondary transition-colors cursor-pointer"
                 onClick={onAddSecret}
             >
-                <i className="fa-sharp fa-solid fa-plus" />
+                <i aria-hidden="true" className="fa-sharp fa-solid fa-plus" />
                 New secret
             </button>
         </div>
@@ -98,7 +98,7 @@ SecretListPanel.displayName = "SecretListPanel";
 const SelectSecretPlaceholder = memo(() => {
     return (
         <div className="flex flex-col items-center justify-center gap-2 h-full text-center">
-            <i className="fa-sharp fa-solid fa-key text-3xl text-muted" />
+            <i aria-hidden="true" className="fa-sharp fa-solid fa-key text-3xl text-muted" />
             <div className="text-secondary text-sm">Select a secret to view its details</div>
         </div>
     );
@@ -134,6 +134,7 @@ const AddSecretForm = memo(
                     <label className="text-caption text-muted">Name</label>
                     <input
                         type="text"
+                        autoFocus
                         className={cn(
                             "px-2.5 py-1.5 bg-black/20 border rounded-md focus:outline-none font-mono text-xs",
                             isNameInvalid ? "border-error focus:border-error" : "border-border focus:border-accent"
@@ -168,13 +169,13 @@ const AddSecretForm = memo(
                         Cancel
                     </button>
                     <button
-                        className="flex items-center gap-2 px-3.5 py-1.5 text-xs font-medium rounded bg-accent/80 text-primary hover:bg-accent transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                        className="flex items-center gap-2 px-3.5 py-1.5 text-xs font-medium rounded bg-accent/80 text-background hover:bg-accent transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
                         onClick={onSubmit}
                         disabled={isLoading || isNameInvalid || newSecretName.trim() === ""}
                     >
                         {isLoading ? (
                             <>
-                                <i className="fa-sharp fa-solid fa-spinner fa-spin" />
+                                <i aria-hidden="true" className="fa-sharp fa-solid fa-spinner fa-spin" />
                                 Adding...
                             </>
                         ) : (
@@ -203,6 +204,8 @@ const SecretDetailView = memo(({ model }: SecretDetailViewProps) => {
         return null;
     }
 
+    const revealAnnouncement = secretShown ? `${secretName} value revealed` : "";
+
     return (
         <div className="flex flex-col gap-3.5 h-full min-h-0">
             <div>
@@ -230,10 +233,13 @@ const SecretDetailView = memo(({ model }: SecretDetailViewProps) => {
                     rows={6}
                     placeholder={!secretShown ? "Enter new secret value..." : ""}
                 />
+                <div aria-live="polite" className="sr-only">
+                    {revealAnnouncement}
+                </div>
                 {!secretShown &&
                     (isLoading ? (
                         <div className="text-caption text-muted">
-                            <i className="fa-sharp fa-solid fa-spinner fa-spin" /> Loading...
+                            <i aria-hidden="true" className="fa-sharp fa-solid fa-spinner fa-spin" /> Loading...
                         </div>
                     ) : (
                         <button
@@ -241,13 +247,13 @@ const SecretDetailView = memo(({ model }: SecretDetailViewProps) => {
                             onClick={() => model.showSecret()}
                             disabled={isLoading}
                         >
-                            <i className="fa-sharp fa-solid fa-eye" />
+                            <i aria-hidden="true" className="fa-sharp fa-solid fa-eye" />
                             Reveal
                         </button>
                     ))}
             </div>
             <div className="flex items-center gap-2 px-3 py-2 bg-accent/5 border border-accent/25 rounded-md max-w-[420px]">
-                <i className="fa-sharp fa-solid fa-lock text-accent" />
+                <i aria-hidden="true" className="fa-sharp fa-solid fa-lock text-accent" />
                 <span className="text-caption text-secondary">
                     Stored in your OS keychain — CLI access via{" "}
                     <code className="font-mono text-primary">wsh secret get {secretName}</code>
@@ -263,12 +269,12 @@ const SecretDetailView = memo(({ model }: SecretDetailViewProps) => {
                 >
                     {isLoading ? (
                         <>
-                            <i className="fa-sharp fa-solid fa-spinner fa-spin" />
+                            <i aria-hidden="true" className="fa-sharp fa-solid fa-spinner fa-spin" />
                             Deleting...
                         </>
                     ) : (
                         <>
-                            <i className="fa-sharp fa-solid fa-trash" />
+                            <i aria-hidden="true" className="fa-sharp fa-solid fa-trash" />
                             Delete secret
                         </>
                     )}
@@ -282,13 +288,13 @@ const SecretDetailView = memo(({ model }: SecretDetailViewProps) => {
                         Cancel
                     </button>
                     <button
-                        className="flex items-center gap-2 px-3.5 py-1.5 text-xs font-medium rounded bg-accent/80 text-primary hover:bg-accent transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                        className="flex items-center gap-2 px-3.5 py-1.5 text-xs font-medium rounded bg-accent/80 text-background hover:bg-accent transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
                         onClick={() => model.saveSecret()}
                         disabled={isLoading}
                     >
                         {isLoading ? (
                             <>
-                                <i className="fa-sharp fa-solid fa-spinner fa-spin" />
+                                <i aria-hidden="true" className="fa-sharp fa-solid fa-spinner fa-spin" />
                                 Saving...
                             </>
                         ) : (

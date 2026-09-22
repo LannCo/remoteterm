@@ -599,9 +599,9 @@ const ResetButton = memo(({ onClick, label }: ResetButtonProps) => (
         onClick={onClick}
         aria-label={label}
         title={label}
-        className="w-[22px] h-[22px] rounded-md border-none bg-transparent text-muted hover:text-secondary flex items-center justify-center cursor-pointer shrink-0"
+        className="w-6 h-6 rounded-md border-none bg-transparent text-muted hover:text-secondary flex items-center justify-center cursor-pointer shrink-0"
     >
-        <i className="fa-sharp fa-solid fa-arrow-rotate-left text-caption" />
+        <i aria-hidden="true" className="fa-sharp fa-solid fa-arrow-rotate-left text-caption" />
     </button>
 ));
 ResetButton.displayName = "ResetButton";
@@ -610,19 +610,23 @@ interface FieldRowProps {
     schema: FieldSchema;
     isSet: boolean;
     defaultDisplay?: string;
+    labelId: string;
+    hintId: string;
     onReset?: () => void;
     children: React.ReactNode;
 }
 
-const FieldRow = memo(({ schema, isSet, defaultDisplay, onReset, children }: FieldRowProps) => {
+const FieldRow = memo(({ schema, isSet, defaultDisplay, labelId, hintId, onReset, children }: FieldRowProps) => {
     const showHint = schema.nullable && !isSet;
     return (
         <div className="flex items-center gap-3 bg-modalbg px-3 py-2.5">
             <div className="flex-1 min-w-0">
-                <div className="text-xs">{schema.label}</div>
+                <div id={labelId} className="text-xs">
+                    {schema.label}
+                </div>
                 <div className="text-caption text-muted font-mono">{schema.key}</div>
                 {showHint && (
-                    <div className="text-xxs text-muted mt-0.5">
+                    <div id={hintId} className="text-xxs text-muted mt-0.5">
                         {defaultDisplay ? `Not set — using default (${defaultDisplay})` : "Not set"}
                     </div>
                 )}
@@ -639,30 +643,36 @@ interface ToggleControlProps {
     dashed?: boolean;
     onToggle: () => void;
     label: string;
+    describedBy?: string;
 }
 
-const ToggleControl = memo(({ checked, dashed, onToggle, label }: ToggleControlProps) => (
+const ToggleControl = memo(({ checked, dashed, onToggle, label, describedBy }: ToggleControlProps) => (
     <button
         type="button"
         role="switch"
         aria-checked={checked}
         aria-label={label}
+        aria-describedby={describedBy}
         onClick={onToggle}
-        className={cn(
-            "relative w-[30px] h-[17px] shrink-0 rounded-full cursor-pointer transition-colors",
-            checked
-                ? "bg-accent border-none"
-                : dashed
-                  ? "bg-border border border-dashed border-muted"
-                  : "bg-border border-none"
-        )}
+        className="shrink-0 p-1.5 -m-1.5 flex items-center justify-center cursor-pointer"
     >
         <span
             className={cn(
-                "absolute top-0.5 w-3 h-3 rounded-full transition-all",
-                checked ? "right-0.5 bg-background" : "left-0.5 bg-muted"
+                "relative w-[30px] h-[17px] rounded-full transition-colors",
+                checked
+                    ? "bg-accent border-none"
+                    : dashed
+                      ? "bg-border border border-dashed border-muted"
+                      : "bg-border border-none"
             )}
-        />
+        >
+            <span
+                className={cn(
+                    "absolute top-0.5 w-3 h-3 rounded-full transition-all",
+                    checked ? "right-0.5 bg-background" : "left-0.5 bg-muted"
+                )}
+            />
+        </span>
     </button>
 ));
 ToggleControl.displayName = "ToggleControl";
@@ -671,14 +681,22 @@ interface SegmentedControlProps {
     value: string;
     options: FieldOption[];
     onChange: (value: string) => void;
+    labelledBy: string;
+    describedBy?: string;
 }
 
-const SegmentedControl = memo(({ value, options, onChange }: SegmentedControlProps) => (
-    <div className="flex bg-black/25 border border-border rounded-md p-0.5 shrink-0">
+const SegmentedControl = memo(({ value, options, onChange, labelledBy, describedBy }: SegmentedControlProps) => (
+    <div
+        role="group"
+        aria-labelledby={labelledBy}
+        aria-describedby={describedBy}
+        className="flex bg-black/25 border border-border rounded-md p-0.5 shrink-0"
+    >
         {options.map((opt) => (
             <button
                 key={opt.value}
                 type="button"
+                aria-pressed={value === opt.value}
                 onClick={() => onChange(opt.value)}
                 className={cn(
                     "px-3 py-1 text-caption rounded cursor-pointer transition-colors",
@@ -696,12 +714,16 @@ interface SelectControlProps {
     value: string;
     options: FieldOption[];
     onChange: (value: string) => void;
+    labelledBy: string;
+    describedBy?: string;
 }
 
-const SelectControl = memo(({ value, options, onChange }: SelectControlProps) => (
+const SelectControl = memo(({ value, options, onChange, labelledBy, describedBy }: SelectControlProps) => (
     <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        aria-labelledby={labelledBy}
+        aria-describedby={describedBy}
         className="shrink-0 bg-black/25 border border-border rounded-md px-2.5 py-1.5 text-xs text-primary cursor-pointer"
     >
         {options.map((opt) => (
@@ -717,9 +739,11 @@ interface TextControlProps {
     value: string;
     placeholder?: string;
     onCommit: (value: string) => void;
+    labelledBy: string;
+    describedBy?: string;
 }
 
-const TextControl = memo(({ value, placeholder, onCommit }: TextControlProps) => {
+const TextControl = memo(({ value, placeholder, onCommit, labelledBy, describedBy }: TextControlProps) => {
     const [local, setLocal] = useState(value);
     const [dirty, setDirty] = useState(false);
 
@@ -739,6 +763,8 @@ const TextControl = memo(({ value, placeholder, onCommit }: TextControlProps) =>
             type="text"
             value={local}
             placeholder={placeholder}
+            aria-labelledby={labelledBy}
+            aria-describedby={describedBy}
             onChange={(e) => {
                 setDirty(true);
                 setLocal(e.target.value);
@@ -762,60 +788,69 @@ interface NumberControlProps {
     max?: number;
     step?: number;
     onChange: (value: number) => void;
+    fieldLabel: string;
+    labelledBy: string;
+    describedBy?: string;
 }
 
-const NumberControl = memo(({ value, unit, min, max, step = 1, onChange }: NumberControlProps) => {
-    const bump = (delta: number) => {
-        let next = value + delta;
-        if (min != null) next = Math.max(min, next);
-        if (max != null) next = Math.min(max, next);
-        onChange(next);
-    };
+const NumberControl = memo(
+    ({ value, unit, min, max, step = 1, onChange, fieldLabel, labelledBy, describedBy }: NumberControlProps) => {
+        const bump = (delta: number) => {
+            let next = value + delta;
+            if (min != null) next = Math.max(min, next);
+            if (max != null) next = Math.min(max, next);
+            onChange(next);
+        };
 
-    return (
-        <div className="flex items-center gap-1 shrink-0 bg-black/25 border border-border rounded-md pl-2.5 pr-1 py-0.5">
-            <input
-                type="number"
-                value={value}
-                min={min}
-                max={max}
-                step={step}
-                onChange={(e) => {
-                    const next = Number(e.target.value);
-                    if (Number.isFinite(next)) onChange(next);
-                }}
-                className="w-14 bg-transparent text-xs font-mono text-primary focus:outline-none"
-            />
-            {unit && <span className="text-caption text-muted mr-1">{unit}</span>}
-            <div className="flex flex-col">
-                <button
-                    type="button"
-                    aria-label="Increase"
-                    onClick={() => bump(step)}
-                    className="w-4 h-[11px] flex items-center justify-center bg-hover rounded-t-sm text-secondary cursor-pointer"
-                >
-                    <i className="fa-sharp fa-solid fa-caret-up text-xxs" />
-                </button>
-                <button
-                    type="button"
-                    aria-label="Decrease"
-                    onClick={() => bump(-step)}
-                    className="w-4 h-[11px] flex items-center justify-center bg-hover rounded-b-sm text-secondary cursor-pointer mt-px"
-                >
-                    <i className="fa-sharp fa-solid fa-caret-down text-xxs" />
-                </button>
+        return (
+            <div className="flex items-center gap-1 shrink-0 bg-black/25 border border-border rounded-md pl-2.5 pr-1 py-0.5">
+                <input
+                    type="number"
+                    value={value}
+                    min={min}
+                    max={max}
+                    step={step}
+                    aria-labelledby={labelledBy}
+                    aria-describedby={describedBy}
+                    onChange={(e) => {
+                        const next = Number(e.target.value);
+                        if (Number.isFinite(next)) onChange(next);
+                    }}
+                    className="w-14 bg-transparent text-xs font-mono text-primary focus:outline-none"
+                />
+                {unit && <span className="text-caption text-muted mr-1">{unit}</span>}
+                <div className="flex flex-col">
+                    <button
+                        type="button"
+                        aria-label={`Increase ${fieldLabel}`}
+                        onClick={() => bump(step)}
+                        className="relative w-4 h-[11px] flex items-center justify-center bg-hover rounded-t-sm text-secondary cursor-pointer before:absolute before:-inset-x-1.5 before:-top-2 before:-bottom-0.5 before:content-['']"
+                    >
+                        <i aria-hidden="true" className="fa-sharp fa-solid fa-caret-up text-xxs" />
+                    </button>
+                    <button
+                        type="button"
+                        aria-label={`Decrease ${fieldLabel}`}
+                        onClick={() => bump(-step)}
+                        className="relative w-4 h-[11px] flex items-center justify-center bg-hover rounded-b-sm text-secondary cursor-pointer mt-px before:absolute before:-inset-x-1.5 before:-top-0.5 before:-bottom-2 before:content-['']"
+                    >
+                        <i aria-hidden="true" className="fa-sharp fa-solid fa-caret-down text-xxs" />
+                    </button>
+                </div>
             </div>
-        </div>
-    );
-});
+        );
+    }
+);
 NumberControl.displayName = "NumberControl";
 
 interface SliderControlProps {
     value: number;
     onCommit: (value: number) => void;
+    labelledBy: string;
+    describedBy?: string;
 }
 
-const SliderControl = memo(({ value, onCommit }: SliderControlProps) => {
+const SliderControl = memo(({ value, onCommit, labelledBy, describedBy }: SliderControlProps) => {
     const [local, setLocal] = useState(Math.round(value * 100));
     const [dirty, setDirty] = useState(false);
 
@@ -835,6 +870,8 @@ const SliderControl = memo(({ value, onCommit }: SliderControlProps) => {
                 min={0}
                 max={100}
                 value={local}
+                aria-labelledby={labelledBy}
+                aria-describedby={describedBy}
                 onChange={(e) => {
                     setDirty(true);
                     setLocal(Number(e.target.value));
@@ -865,6 +902,11 @@ const FieldControl = memo(({ schema, model, settings, isSet }: FieldControlProps
     const write = (value: unknown) => model.setGeneralSetting({ [schema.key]: value } as SettingsType);
     const reset = () => model.setGeneralSetting({ [schema.key]: null } as SettingsType);
 
+    const labelId = `field-label-${String(schema.key)}`;
+    const hintId = `field-hint-${String(schema.key)}`;
+    const showHint = schema.nullable && !isSet;
+    const describedBy = showHint ? hintId : undefined;
+
     if (schema.control === "toggle") {
         const checked = !!rawValue;
         return (
@@ -872,6 +914,8 @@ const FieldControl = memo(({ schema, model, settings, isSet }: FieldControlProps
                 schema={schema}
                 isSet={isSet}
                 defaultDisplay={defaultDisplay}
+                labelId={labelId}
+                hintId={hintId}
                 onReset={schema.nullable && isSet ? reset : undefined}
             >
                 <ToggleControl
@@ -879,6 +923,7 @@ const FieldControl = memo(({ schema, model, settings, isSet }: FieldControlProps
                     dashed={schema.nullable && !isSet}
                     onToggle={() => write(!checked)}
                     label={`Toggle ${schema.label}`}
+                    describedBy={describedBy}
                 />
             </FieldRow>
         );
@@ -891,9 +936,17 @@ const FieldControl = memo(({ schema, model, settings, isSet }: FieldControlProps
                 schema={schema}
                 isSet={isSet}
                 defaultDisplay={defaultDisplay}
+                labelId={labelId}
+                hintId={hintId}
                 onReset={schema.nullable && isSet ? reset : undefined}
             >
-                <SegmentedControl value={value} options={schema.options} onChange={write} />
+                <SegmentedControl
+                    value={value}
+                    options={schema.options}
+                    onChange={write}
+                    labelledBy={labelId}
+                    describedBy={describedBy}
+                />
             </FieldRow>
         );
     }
@@ -905,9 +958,17 @@ const FieldControl = memo(({ schema, model, settings, isSet }: FieldControlProps
                 schema={schema}
                 isSet={isSet}
                 defaultDisplay={defaultDisplay}
+                labelId={labelId}
+                hintId={hintId}
                 onReset={schema.nullable && isSet ? reset : undefined}
             >
-                <SelectControl value={value} options={schema.options} onChange={write} />
+                <SelectControl
+                    value={value}
+                    options={schema.options}
+                    onChange={write}
+                    labelledBy={labelId}
+                    describedBy={describedBy}
+                />
             </FieldRow>
         );
     }
@@ -919,12 +980,16 @@ const FieldControl = memo(({ schema, model, settings, isSet }: FieldControlProps
                 schema={schema}
                 isSet={isSet}
                 defaultDisplay={defaultDisplay}
+                labelId={labelId}
+                hintId={hintId}
                 onReset={isSet && value !== "" ? reset : undefined}
             >
                 <TextControl
                     value={value}
                     placeholder={schema.placeholder}
                     onCommit={(v) => (v === "" ? reset() : write(v))}
+                    labelledBy={labelId}
+                    describedBy={describedBy}
                 />
             </FieldRow>
         );
@@ -937,6 +1002,8 @@ const FieldControl = memo(({ schema, model, settings, isSet }: FieldControlProps
                 schema={schema}
                 isSet={isSet}
                 defaultDisplay={defaultDisplay}
+                labelId={labelId}
+                hintId={hintId}
                 onReset={schema.nullable && isSet ? reset : undefined}
             >
                 <NumberControl
@@ -946,6 +1013,9 @@ const FieldControl = memo(({ schema, model, settings, isSet }: FieldControlProps
                     max={schema.max}
                     step={schema.step}
                     onChange={write}
+                    fieldLabel={schema.label}
+                    labelledBy={labelId}
+                    describedBy={describedBy}
                 />
             </FieldRow>
         );
@@ -958,9 +1028,11 @@ const FieldControl = memo(({ schema, model, settings, isSet }: FieldControlProps
             schema={schema}
             isSet={isSet}
             defaultDisplay={defaultDisplay}
+            labelId={labelId}
+            hintId={hintId}
             onReset={schema.nullable && isSet ? reset : undefined}
         >
-            <SliderControl value={value} onCommit={write} />
+            <SliderControl value={value} onCommit={write} labelledBy={labelId} describedBy={describedBy} />
         </FieldRow>
     );
 });
@@ -977,7 +1049,7 @@ const CategoryPanel = memo(({ category, model, settings, rawSettings }: Category
     const fields = fieldsByCategory(category);
     return (
         <div className="flex-1 min-w-0 overflow-y-auto p-4">
-            <div className="text-caption font-semibold uppercase tracking-wide text-muted pb-2 px-0.5">{category}</div>
+            <h2 className="text-caption font-semibold uppercase tracking-wide text-muted pb-2 px-0.5">{category}</h2>
             {category === "Advanced" && (
                 <div className="text-caption text-muted pb-3 max-w-[480px]">{AdvancedCategoryHint}</div>
             )}
@@ -1009,6 +1081,7 @@ const CategoryRail = memo(({ active, onSelect }: CategoryRailProps) => (
                 key={category}
                 type="button"
                 onClick={() => onSelect(category)}
+                aria-current={active === category ? "true" : undefined}
                 className={cn(
                     "text-left text-xs px-2.5 py-1.5 rounded-md cursor-pointer transition-colors",
                     active === category ? "bg-activebg text-primary" : "text-secondary hover:bg-hover"

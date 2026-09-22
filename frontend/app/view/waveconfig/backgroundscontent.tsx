@@ -39,6 +39,7 @@ const BackgroundTile = memo(({ label, bg, active, onClick }: BackgroundTileProps
         <button
             type="button"
             onClick={onClick}
+            aria-pressed={active}
             className={cn(
                 "relative flex flex-col overflow-hidden rounded-md text-left cursor-pointer transition-colors",
                 active ? "border-2 border-accent" : "border border-border/60 hover:border-border"
@@ -50,7 +51,10 @@ const BackgroundTile = memo(({ label, bg, active, onClick }: BackgroundTileProps
             />
             <div className="px-2 py-1.5 bg-modalbg text-caption truncate">{label}</div>
             {active && (
-                <i className="fa-sharp fa-solid fa-check absolute top-1 right-1 text-xxs bg-accent text-background rounded-full p-1" />
+                <i
+                    aria-hidden="true"
+                    className="fa-sharp fa-solid fa-check absolute top-1 right-1 text-xxs bg-accent text-background rounded-full p-1"
+                />
             )}
         </button>
     );
@@ -74,6 +78,7 @@ const AddBackgroundForm = memo(({ model }: AddBackgroundFormProps) => {
                 <input
                     type="text"
                     autoFocus
+                    aria-label="Background name"
                     className="flex-1 max-w-[180px] bg-black/20 border border-border rounded px-2 py-1 text-xs focus:outline-none focus:border-accent"
                     placeholder="Name"
                     value={name}
@@ -82,6 +87,7 @@ const AddBackgroundForm = memo(({ model }: AddBackgroundFormProps) => {
                 />
                 <input
                     type="text"
+                    aria-label="Background CSS value"
                     className="flex-1 bg-black/20 border border-border rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-accent"
                     placeholder="CSS background value, e.g. linear-gradient(135deg, purple, blue)"
                     value={bg}
@@ -92,7 +98,7 @@ const AddBackgroundForm = memo(({ model }: AddBackgroundFormProps) => {
                     }}
                 />
                 <button
-                    className="px-3 py-1.5 text-xs rounded bg-accent/80 text-primary hover:bg-accent transition-colors cursor-pointer shrink-0"
+                    className="px-3 py-1.5 text-xs rounded bg-accent/80 text-background hover:bg-accent transition-colors cursor-pointer shrink-0"
                     onClick={() => model.submitBackgroundAdd()}
                 >
                     Add
@@ -203,7 +209,7 @@ export const BackgroundsContent = memo(({ model }: BackgroundsContentProps) => {
                     onClick={() => model.openBackgroundAdd()}
                     className="flex flex-col items-center justify-center gap-1 h-[94px] rounded-md border border-dashed border-border text-muted text-caption cursor-pointer hover:border-accent/60 hover:text-secondary transition-colors"
                 >
-                    <i className="fa-sharp fa-solid fa-plus" />
+                    <i aria-hidden="true" className="fa-sharp fa-solid fa-plus" />
                     New background
                 </button>
             </div>

@@ -34,17 +34,21 @@ const VisibilityToggle = memo(({ hidden, onToggle }: VisibilityToggleProps) => {
             aria-checked={!hidden}
             aria-label={hidden ? "Show widget" : "Hide widget"}
             onClick={onToggle}
-            className={cn(
-                "relative w-[30px] h-[17px] shrink-0 rounded-full border-none cursor-pointer transition-colors",
-                hidden ? "bg-border" : "bg-accent"
-            )}
+            className="shrink-0 p-1.5 -m-1.5 flex items-center justify-center cursor-pointer"
         >
             <span
                 className={cn(
-                    "absolute top-0.5 w-3 h-3 rounded-full transition-all",
-                    hidden ? "left-0.5 bg-muted-foreground" : "right-0.5 bg-background"
+                    "relative w-[30px] h-[17px] rounded-full border-none transition-colors",
+                    hidden ? "bg-border" : "bg-accent"
                 )}
-            />
+            >
+                <span
+                    className={cn(
+                        "absolute top-0.5 w-3 h-3 rounded-full transition-all",
+                        hidden ? "left-0.5 bg-muted-foreground" : "right-0.5 bg-background"
+                    )}
+                />
+            </span>
         </button>
     );
 });
@@ -54,13 +58,26 @@ interface WidgetOrderRowProps {
     widgetKey: string;
     widget: WidgetConfigType;
     index: number;
+    canMoveUp: boolean;
+    canMoveDown: boolean;
     moveRow: (dragIndex: number, hoverIndex: number) => void;
     onDragFinished: (key: string) => void;
     onToggleHidden: (key: string) => void;
+    onKeyboardMove: (key: string, direction: -1 | 1) => void;
 }
 
 const WidgetOrderRow = memo(
-    ({ widgetKey, widget, index, moveRow, onDragFinished, onToggleHidden }: WidgetOrderRowProps) => {
+    ({
+        widgetKey,
+        widget,
+        index,
+        canMoveUp,
+        canMoveDown,
+        moveRow,
+        onDragFinished,
+        onToggleHidden,
+        onKeyboardMove,
+    }: WidgetOrderRowProps) => {
         const rowRef = useRef<HTMLDivElement>(null);
 
         const [, drop] = useDrop<DragItem>({
@@ -98,6 +115,8 @@ const WidgetOrderRow = memo(
 
         drag(drop(rowRef));
 
+        const widgetLabel = isBlank(widget.label) ? widgetKey : widget.label;
+
         return (
             <div
                 ref={rowRef}
@@ -106,17 +125,41 @@ const WidgetOrderRow = memo(
                     isDragging && "opacity-40"
                 )}
             >
-                <i className="fa-sharp fa-solid fa-grip-dots-vertical text-xxs text-muted shrink-0" />
+                <i
+                    aria-hidden="true"
+                    className="fa-sharp fa-solid fa-grip-dots-vertical text-xxs text-muted shrink-0"
+                />
                 <div
                     className="w-[26px] h-[26px] rounded-md flex items-center justify-center shrink-0"
                     style={widgetIconBoxStyle(widget.color)}
                 >
                     <i
+                        aria-hidden="true"
                         className={cn("text-xs", makeIconClass(widget.icon, true, { defaultIcon: "browser" }))}
                         style={isBlank(widget.color) ? undefined : { color: widget.color }}
                     />
                 </div>
-                <span className="flex-1 text-xs truncate">{isBlank(widget.label) ? widgetKey : widget.label}</span>
+                <span className="flex-1 text-xs truncate">{widgetLabel}</span>
+                <div className="flex flex-col shrink-0">
+                    <button
+                        type="button"
+                        aria-label={`Move ${widgetLabel} up`}
+                        disabled={!canMoveUp}
+                        onClick={() => onKeyboardMove(widgetKey, -1)}
+                        className="w-5 h-[13px] flex items-center justify-center text-secondary hover:text-primary disabled:opacity-30 disabled:cursor-default cursor-pointer"
+                    >
+                        <i aria-hidden="true" className="fa-sharp fa-solid fa-caret-up text-xxs" />
+                    </button>
+                    <button
+                        type="button"
+                        aria-label={`Move ${widgetLabel} down`}
+                        disabled={!canMoveDown}
+                        onClick={() => onKeyboardMove(widgetKey, 1)}
+                        className="w-5 h-[13px] flex items-center justify-center text-secondary hover:text-primary disabled:opacity-30 disabled:cursor-default cursor-pointer"
+                    >
+                        <i aria-hidden="true" className="fa-sharp fa-solid fa-caret-down text-xxs" />
+                    </button>
+                </div>
                 <VisibilityToggle hidden={!!widget["display:hidden"]} onToggle={() => onToggleHidden(widgetKey)} />
             </div>
         );
@@ -174,10 +217,30 @@ const WidgetOrderPanel = memo(({ model }: WidgetOrderPanelProps) => {
         [model]
     );
 
+    const onKeyboardMove = useCallback(
+        (key: string, direction: -1 | 1) => {
+            const current = localKeysRef.current;
+            const index = current.indexOf(key);
+            if (index === -1) {
+                return;
+            }
+            const targetIndex = index + direction;
+            if (targetIndex < 0 || targetIndex >= current.length) {
+                return;
+            }
+            const next = [...current];
+            const [moved] = next.splice(index, 1);
+            next.splice(targetIndex, 0, moved);
+            setLocalKeys(next);
+            model.reorderWidget(key, targetIndex, next);
+        },
+        [model]
+    );
+
     return (
         <div className="w-[340px] @max-w600:w-[260px] @max-w450:w-[200px] shrink-0 flex flex-col gap-1.5 overflow-y-auto">
             <div className="text-caption font-semibold uppercase tracking-wide text-muted px-1 pb-0.5">
-                Widget order &middot; drag to reorder
+                Widget order &middot; drag to reorder, or use the up/down buttons
             </div>
             {localKeys.map((key, idx) => {
                 const widget = widgetByKey.get(key);
@@ -190,9 +253,12 @@ const WidgetOrderPanel = memo(({ model }: WidgetOrderPanelProps) => {
                         widgetKey={key}
                         widget={widget}
                         index={idx}
+                        canMoveUp={idx > 0}
+                        canMoveDown={idx < localKeys.length - 1}
                         moveRow={moveRow}
                         onDragFinished={onDragFinished}
                         onToggleHidden={onToggleHidden}
+                        onKeyboardMove={onKeyboardMove}
                     />
                 );
             })}
@@ -202,7 +268,7 @@ const WidgetOrderPanel = memo(({ model }: WidgetOrderPanelProps) => {
                 title="Add a new widget entry via Raw JSON — authoring a widget's blockdef isn't supported here yet"
                 className="flex items-center gap-2 mt-0.5 px-2.5 py-2 text-xs text-muted border border-dashed border-border rounded-md opacity-70"
             >
-                <i className="fa-sharp fa-solid fa-plus" />
+                <i aria-hidden="true" className="fa-sharp fa-solid fa-plus" />
                 Add widget
             </button>
         </div>
@@ -221,7 +287,10 @@ const LivePreviewRail = memo(({ model }: LivePreviewRailProps) => {
         <div className="flex-1 min-w-0 flex flex-col items-center">
             <div className="w-full max-w-[220px] flex flex-col gap-2.5">
                 <div className="text-caption font-semibold uppercase tracking-wide text-muted">Live preview</div>
-                <div className="w-16 bg-panel border border-border rounded-lg py-2.5 flex flex-col items-center gap-3.5 self-center">
+                <div
+                    aria-hidden="true"
+                    className="w-16 bg-panel border border-border rounded-lg py-2.5 flex flex-col items-center gap-3.5 self-center"
+                >
                     {previewWidgets.map((widget, idx) => (
                         <div
                             key={idx}

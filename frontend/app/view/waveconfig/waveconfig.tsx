@@ -38,23 +38,28 @@ const ConfigSidebar = memo(({ model }: ConfigSidebarProps) => {
                 <span className="font-semibold">Config Files</span>
                 <button
                     onClick={() => setIsMenuOpen(false)}
+                    aria-label="Close menu"
                     className="hover:bg-secondary/50 rounded p-1 cursor-pointer transition-colors"
                 >
                     ✕
                 </button>
             </div>
             {configFiles.map((file) => (
-                <div
+                <button
+                    type="button"
                     key={file.path}
                     onClick={() => handleFileSelect(file)}
-                    className={`px-4 py-2 border-b border-border cursor-pointer transition-colors ${
+                    className={`w-full text-left px-4 py-2 border-b border-border cursor-pointer transition-colors ${
                         selectedFile?.path === file.path ? "bg-accentbg text-primary" : "hover:bg-secondary/50"
                     }`}
                 >
                     <div className="flex items-center gap-1">
                         <div className="whitespace-nowrap overflow-hidden text-ellipsis flex-1">{file.name}</div>
                         {configErrorFiles.has(file.path) && (
-                            <i className="fa fa-solid fa-circle-exclamation text-error text-[14px] shrink-0" />
+                            <i
+                                aria-hidden="true"
+                                className="fa fa-solid fa-circle-exclamation text-error text-[14px] shrink-0"
+                            />
                         )}
                     </div>
                     {file.description && (
@@ -62,34 +67,36 @@ const ConfigSidebar = memo(({ model }: ConfigSidebarProps) => {
                             {file.description}
                         </div>
                     )}
-                </div>
+                </button>
             ))}
             {deprecatedConfigFiles.length > 0 && (
                 <>
                     {deprecatedConfigFiles.map((file) => (
-                        <div
+                        <button
+                            type="button"
                             key={file.path}
                             onClick={() => handleFileSelect(file)}
-                            className={`px-4 py-2 border-b border-border cursor-pointer transition-colors ${
+                            className={`w-full text-left px-4 py-2 border-b border-border cursor-pointer transition-colors ${
                                 selectedFile?.path === file.path ? "bg-accentbg text-primary" : "hover:bg-secondary/50"
                             }`}
                         >
                             <div className="flex items-center gap-2 overflow-hidden">
                                 <span className="text-secondary truncate">{file.name}</span>
                                 <span
-                                    className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${
-                                        selectedFile?.path === file.path
-                                            ? "text-primary/80 bg-secondary/50"
-                                            : "text-muted-foreground/70 bg-secondary/30"
+                                    className={`text-xs px-1.5 py-0.5 rounded shrink-0 text-background ${
+                                        selectedFile?.path === file.path ? "bg-secondary/80" : "bg-secondary/70"
                                     }`}
                                 >
                                     deprecated
                                 </span>
                                 {configErrorFiles.has(file.path) && (
-                                    <i className="fa fa-solid fa-circle-exclamation text-error text-[14px] ml-auto shrink-0" />
+                                    <i
+                                        aria-hidden="true"
+                                        className="fa fa-solid fa-circle-exclamation text-error text-[14px] ml-auto shrink-0"
+                                    />
                                 )}
                             </div>
-                        </div>
+                        </button>
                     ))}
                 </>
             )}
@@ -182,9 +189,10 @@ const WaveConfigView = memo(({ blockId, model }: ViewComponentProps<WaveConfigVi
                                 <div className="flex items-baseline gap-2 min-w-0">
                                     <button
                                         onClick={() => setIsMenuOpen(true)}
+                                        aria-label="Open menu"
                                         className="@w600:hidden hover:bg-secondary/50 rounded p-1 cursor-pointer transition-colors mr-2 shrink-0"
                                     >
-                                        <i className="fa fa-bars" />
+                                        <i aria-hidden="true" className="fa fa-bars" />
                                     </button>
                                     <div className="text-lg font-semibold whitespace-nowrap shrink-0">
                                         {selectedFile.name}
@@ -195,9 +203,10 @@ const WaveConfigView = memo(({ blockId, model }: ViewComponentProps<WaveConfigVi
                                                 href={`${selectedFile.docsUrl}?ref=waveconfig`}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
+                                                aria-label="View documentation"
                                                 className="!text-muted-foreground hover:!text-primary transition-colors ml-1 shrink-0 cursor-pointer"
                                             >
-                                                <i className="fa fa-book text-sm" />
+                                                <i aria-hidden="true" className="fa fa-book text-sm" />
                                             </a>
                                         </Tooltip>
                                     )}
@@ -220,7 +229,7 @@ const WaveConfigView = memo(({ blockId, model }: ViewComponentProps<WaveConfigVi
                                                     className={`px-3 py-1 rounded transition-colors text-sm ${
                                                         !hasChanges || isSaving
                                                             ? "border border-border text-muted-foreground opacity-50"
-                                                            : "bg-accent/80 text-primary hover:bg-accent cursor-pointer"
+                                                            : "bg-accent/80 text-background hover:bg-accent cursor-pointer"
                                                     }`}
                                                 >
                                                     {isSaving ? "Saving..." : "Save"}
@@ -238,6 +247,7 @@ const WaveConfigView = memo(({ blockId, model }: ViewComponentProps<WaveConfigVi
                                             model.discardChanges();
                                             setActiveTab("visual");
                                         }}
+                                        aria-selected={activeTab === "visual"}
                                         className={cn(
                                             "px-4 pt-1 pb-1.5 cursor-pointer transition-colors text-secondary",
                                             activeTab === "visual"
@@ -250,6 +260,7 @@ const WaveConfigView = memo(({ blockId, model }: ViewComponentProps<WaveConfigVi
                                     {/* No guard needed: visual tab saves changes immediately via RPC */}
                                     <button
                                         onClick={() => setActiveTab("json")}
+                                        aria-selected={activeTab === "json"}
                                         className={cn(
                                             "px-4 pt-1 pb-1.5 cursor-pointer transition-colors text-secondary",
                                             activeTab === "json"
@@ -262,10 +273,11 @@ const WaveConfigView = memo(({ blockId, model }: ViewComponentProps<WaveConfigVi
                                 </div>
                             )}
                             {errorMessage && (
-                                <div className="bg-error text-primary px-4 py-2 border-b border-error flex items-center justify-between">
+                                <div className="bg-error text-black px-4 py-2 border-b border-error flex items-center justify-between">
                                     <span>{errorMessage}</span>
                                     <button
                                         onClick={() => model.clearError()}
+                                        aria-label="Dismiss error"
                                         className="ml-2 hover:bg-black/20 rounded p-1 cursor-pointer transition-colors"
                                     >
                                         ✕
@@ -273,10 +285,11 @@ const WaveConfigView = memo(({ blockId, model }: ViewComponentProps<WaveConfigVi
                                 </div>
                             )}
                             {validationError && (
-                                <div className="bg-error text-primary px-4 py-2 border-b border-error flex items-center justify-between">
+                                <div className="bg-error text-black px-4 py-2 border-b border-error flex items-center justify-between">
                                     <span>{validationError}</span>
                                     <button
                                         onClick={() => model.clearValidationError()}
+                                        aria-label="Dismiss validation error"
                                         className="ml-2 hover:bg-black/20 rounded p-1 cursor-pointer transition-colors"
                                     >
                                         ✕
@@ -311,7 +324,7 @@ const WaveConfigView = memo(({ blockId, model }: ViewComponentProps<WaveConfigVi
                 </div>
             </div>
             {configErrors?.length > 0 && (
-                <div className="bg-error text-primary px-4 py-1 max-h-12 overflow-y-auto border-t border-error/50 shrink-0">
+                <div className="bg-error text-black px-4 py-1 max-h-12 overflow-y-auto border-t border-error/50 shrink-0">
                     {configErrors.map((cerr, i) => (
                         <div key={i} className="text-sm">
                             <span className="font-semibold">Config Error: </span>
