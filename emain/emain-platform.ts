@@ -30,16 +30,13 @@ const remoteTermDirNamePrefix = "remoteterm";
 const remoteTermDirNameSuffix = isDev ? "dev" : "";
 const remoteTermDirName = `${remoteTermDirNamePrefix}${remoteTermDirNameSuffix ? `-${remoteTermDirNameSuffix}` : ""}`;
 
-// Frozen forever: this is the real pre-v0.8 legacy directory name/prefix on disk, independent of
+// Frozen forever: this is the real pre-rename legacy directory prefix on disk, independent of
 // whatever the product is branded as today. Never derive this from remoteTermDirNamePrefix.
-const LegacyRemoteTermHomeDirName = ".waveterm";
 const legacyRemoteTermDirNamePrefix = "waveterm";
 const legacyRemoteTermDirName = `${legacyRemoteTermDirNamePrefix}${remoteTermDirNameSuffix ? `-${remoteTermDirNameSuffix}` : ""}`;
-// The old (pre-rename) code derived the legacy combined-home dir name from the dev-suffixed
-// remoteTermDirName (".waveterm-dev" in dev, ".waveterm" in prod) — this is that same suffix-aware
-// shape under the frozen legacy prefix, distinct from the always-bare LegacyRemoteTermHomeDirName
-// above (which exists so a dev build can still recognise a genuinely old, pre-suffix, bare
-// ".waveterm" install as a last-resort fallback).
+// Upstream derived the combined-home dir from the dev-suffixed dir name (".waveterm-dev" in dev,
+// ".waveterm" in prod) and never fell back from one to the other, so a dev build must not touch
+// the production ".waveterm".
 const LegacyRemoteTermHomeDirNameSuffixed = `.${legacyRemoteTermDirName}`;
 
 const paths = envPaths("remoteterm", { suffix: remoteTermDirNameSuffix });
@@ -276,35 +273,37 @@ export function checkIfRunningUnderARM64Translation(fullConfig: FullConfigType) 
     }
 }
 
+function isCombinedHomeDir(dir: string): boolean {
+    // If home exists and it has `wave.lock` in it, we know it has valid data from Wave >=v0.8. Otherwise, it could be for WaveLegacy (<v0.8)
+    return existsSync(dir) && existsSync(path.join(dir, "wave.lock"));
+}
+
 /**
  * Gets the path to the combined RemoteTerm home directory (defaults to `~/.remoteterm`, falling back
- * to the frozen pre-v0.8 legacy path `~/.waveterm` if that's what has valid data).
+ * to the legacy path `~/.waveterm`, or `-dev` suffixed variants of both in dev builds).
  * @returns The path to the directory if it exists and contains valid data for the current app, otherwise null.
  */
 function getRemoteTermHomeDir(): string {
-    let home = readOverrideEnvVar(RemoteTermHomeVarName, LegacyRemoteTermHomeVarName);
-    if (!home) {
-        const homeDir = app.getPath("home");
-        if (homeDir) {
-            // Check the current (post-migration) default combined-home location first, then
-            // fall back to the frozen pre-v0.8 legacy location. The migration shim above moves
-            // a valid legacy home dir from the latter to the former, but this function may be
-            // called before that migration has a chance to run for a given process, or the
-            // migration may have been skipped/failed, so both locations must be checked.
-            const migratedHome = path.join(homeDir, `.${remoteTermDirName}`);
-            if (existsSync(migratedHome) && existsSync(path.join(migratedHome, "wave.lock"))) {
-                return migratedHome;
-            }
-            const legacySuffixedHome = path.join(homeDir, LegacyRemoteTermHomeDirNameSuffixed);
-            if (existsSync(legacySuffixedHome) && existsSync(path.join(legacySuffixedHome, "wave.lock"))) {
-                return legacySuffixedHome;
-            }
-            home = path.join(homeDir, LegacyRemoteTermHomeDirName);
-        }
+    const override = readOverrideEnvVar(RemoteTermHomeVarName, LegacyRemoteTermHomeVarName);
+    if (override) {
+        return isCombinedHomeDir(override) ? override : null;
     }
-    // If home exists and it has `wave.lock` in it, we know it has valid data from Wave >=v0.8. Otherwise, it could be for WaveLegacy (<v0.8)
-    if (home && existsSync(home) && existsSync(path.join(home, "wave.lock"))) {
-        return home;
+    const homeDir = app.getPath("home");
+    if (!homeDir) {
+        return null;
+    }
+    // Check the current (post-migration) default combined-home location first, then
+    // fall back to the legacy location. The migration shim above moves a valid legacy home
+    // dir from the latter to the former, but this function may be called before that
+    // migration has a chance to run for a given process, or the migration may have been
+    // skipped/failed, so both locations must be checked.
+    const migratedHome = path.join(homeDir, `.${remoteTermDirName}`);
+    if (isCombinedHomeDir(migratedHome)) {
+        return migratedHome;
+    }
+    const legacySuffixedHome = path.join(homeDir, LegacyRemoteTermHomeDirNameSuffixed);
+    if (isCombinedHomeDir(legacySuffixedHome)) {
+        return legacySuffixedHome;
     }
     return null;
 }
