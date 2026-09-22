@@ -147,6 +147,13 @@ var (
 	reconnectRouteGroup      singleflight.Group
 	terminateJobManagerGroup singleflight.Group
 
+	// jobReconnectLocks serialises doReconnectJob per job across both singleflight
+	// groups. The groups only dedupe within one entrypoint, and a ReconnectJob's own
+	// RemoteReconnectToJobManager publishes the route-up that spawns ReconnectJobRoute;
+	// without this, both would run restartStreaming at once and each close the
+	// other's fresh reader while sending JobPrepareConnect to the job manager.
+	jobReconnectLocks = ds.MakeSyncMap[*sync.Mutex]()
+
 	// test hooks for unit testing auto-reconnect behavior
 	isConnectedTestHook           func(connName string) (bool, error)
 	reconcileOnUpTestHook         func(connName string)
@@ -576,9 +583,11 @@ func handleRouteEvent(event *wps.WaveEvent, newStatus string) {
 					// Failure mode B (Connected-but-no-stream), Path 2: the job's route
 					// re-registered independently of doReconnectJob (e.g. reconnect handled
 					// elsewhere), so this handler marks the job Connected but previously never
-					// restarted the stream. Trigger a stream restart through the existing
-					// singleflight-guarded ReconnectJobRoute entrypoint so it can't race a
-					// concurrent doReconnectJob for the same job.
+					// restarted the stream. Trigger a stream restart through ReconnectJobRoute.
+					// Its singleflight group is separate from ReconnectJob's, so an in-flight
+					// ReconnectJob (whose RemoteReconnectToJobManager is often what raised this
+					// route-up) is excluded by jobReconnectLocks instead: this restart waits for
+					// it, then skips if it already left the job with an active stream.
 					log.Printf("[job:%s] route up: connected via route event with no active stream (active=%v, streamId=%q), triggering stream restart",
 						jobId, health.active, health.streamId)
 					go func() {
@@ -1997,16 +2006,26 @@ func remoteTerminateJobManager(ctx context.Context, job *remotetermobj.Job) erro
 
 func ReconnectJob(ctx context.Context, jobId string, rtOpts *remotetermobj.RuntimeOpts) error {
 	_, err, _ := reconnectConnGroup.Do(jobId, func() (any, error) {
-		return nil, doReconnectJob(ctx, jobId, rtOpts)
+		return nil, doReconnectJobExclusive(ctx, jobId, rtOpts)
 	})
 	return err
 }
 
 func ReconnectJobRoute(ctx context.Context, jobId string, rtOpts *remotetermobj.RuntimeOpts) error {
 	_, err, _ := reconnectRouteGroup.Do(jobId, func() (any, error) {
-		return nil, doReconnectJob(ctx, jobId, rtOpts)
+		return nil, doReconnectJobExclusive(ctx, jobId, rtOpts)
 	})
 	return err
+}
+
+// doReconnectJobExclusive runs doReconnectJob under the job's reconnect lock. A
+// caller that waited on the lock re-evaluates from scratch, so it skips when the
+// previous holder already left the job Connected with an active stream.
+func doReconnectJobExclusive(ctx context.Context, jobId string, rtOpts *remotetermobj.RuntimeOpts) error {
+	lock := jobReconnectLocks.GetOrCreate(jobId, func() *sync.Mutex { return &sync.Mutex{} })
+	lock.Lock()
+	defer lock.Unlock()
+	return doReconnectJob(ctx, jobId, rtOpts)
 }
 
 func doReconnectJob(ctx context.Context, jobId string, rtOpts *remotetermobj.RuntimeOpts) error {
