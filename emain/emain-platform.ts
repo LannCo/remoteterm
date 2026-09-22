@@ -95,6 +95,8 @@ type MigrationRootSpec = {
 
 const MigrationMarkerFileName = ".migrated-from-waveterm";
 const LegacyLockFileName = "wave.lock";
+// pkg/secretstore keeps the encrypted secret store in the config root.
+const LegacySecretsFileName = "secrets.enc";
 
 // Failures recorded here don't stop startup (the app can still run against whatever it can
 // resolve), but they leave data unmigrated/orphaned and the failure becomes sticky (the next
@@ -204,9 +206,11 @@ function legacyConfigSkipReason(dir: string): string {
         return `could not be read (${e})`;
     }
     const hasConfig = entries.some(
-        (ent) => (ent.isFile() && ent.name.endsWith(".json")) || (ent.isDirectory() && ent.name === "presets")
+        (ent) =>
+            (ent.isFile() && (ent.name.endsWith(".json") || ent.name === LegacySecretsFileName)) ||
+            (ent.isDirectory() && ent.name === "presets")
     );
-    return hasConfig ? null : "has no config files (*.json or presets/)";
+    return hasConfig ? null : `has no config files (*.json, ${LegacySecretsFileName} or presets/)`;
 }
 
 function performDataDirMigration() {

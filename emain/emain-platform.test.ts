@@ -109,7 +109,7 @@ function loggedLines(): string[] {
 }
 
 describe("legacy config root validation", () => {
-    it.each([["connections.json"], ["widgets.json"], ["presets/ai.json"]])(
+    it.each([["connections.json"], ["widgets.json"], ["presets/ai.json"], ["secrets.enc"]])(
         "migrates a root holding only %s",
         async (fileName) => {
             const legacy = makeDir(path.join(xdgConfig, "waveterm"), { [fileName]: "{}" });
