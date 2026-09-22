@@ -68,11 +68,7 @@ function StandardSessionContent({ viewModel, onClose }: StandardSessionContentPr
     );
 }
 
-interface DurableAttachedContentProps {
-    onClose: () => void;
-}
-
-function DurableAttachedContent({ onClose }: DurableAttachedContentProps) {
+function DurableAttachedContent() {
     return (
         <div className="flex flex-col gap-2 max-w-[280px]">
             <div className="font-semibold text-sm flex items-center gap-2 text-secondary">
@@ -88,11 +84,7 @@ function DurableAttachedContent({ onClose }: DurableAttachedContentProps) {
     );
 }
 
-interface DurableDetachedContentProps {
-    onClose: () => void;
-}
-
-function DurableDetachedContent({ onClose }: DurableDetachedContentProps) {
+function DurableDetachedContent() {
     return (
         <div className="flex flex-col gap-2 max-w-[280px]">
             <div className="font-semibold text-sm flex items-center gap-2 text-secondary">
@@ -156,11 +148,7 @@ function DurableAwaitingStart({ connected, viewModel, onClose }: DurableAwaiting
     );
 }
 
-interface DurableStartingContentProps {
-    onClose: () => void;
-}
-
-function DurableStartingContent({ onClose }: DurableStartingContentProps) {
+function DurableStartingContent() {
     return (
         <div className="flex flex-col gap-2 max-w-[280px]">
             <div className="font-semibold text-sm flex items-center gap-2 text-secondary">
@@ -271,11 +259,11 @@ function getContentToRender(
 
     const status = jobStatus?.status;
     if (status === "connected") {
-        return <DurableAttachedContent onClose={onClose} />;
+        return <DurableAttachedContent />;
     } else if (status === "disconnected") {
-        return <DurableDetachedContent onClose={onClose} />;
+        return <DurableDetachedContent />;
     } else if (status === "init") {
-        return <DurableStartingContent onClose={onClose} />;
+        return <DurableStartingContent />;
     } else if (status === "done") {
         const doneReason = jobStatus?.donereason;
         const startupError = jobStatus?.startuperror;

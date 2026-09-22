@@ -95,10 +95,7 @@ func webGetRun(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func webOpenRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func webOpenRun(cmd *cobra.Command, args []string) error {
 	var replaceBlockORef *waveobj.ORef
 	if webOpenReplaceBlock != "" {
 		var err error

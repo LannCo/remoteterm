@@ -30,9 +30,7 @@ func init() {
 	rootCmd.AddCommand(editorCmd)
 }
 
-func editorRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
+func editorRun(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		OutputHelpMessage(cmd)
 		return fmt.Errorf("no arguments.  wsh editor requires a file or URL as an argument argument")

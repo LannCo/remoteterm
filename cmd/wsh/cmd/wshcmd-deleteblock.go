@@ -22,9 +22,7 @@ func init() {
 	rootCmd.AddCommand(deleteBlockCmd)
 }
 
-func deleteBlockRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
+func deleteBlockRun(cmd *cobra.Command, args []string) error {
 	fullORef, err := resolveBlockArg()
 	if err != nil {
 		return err
