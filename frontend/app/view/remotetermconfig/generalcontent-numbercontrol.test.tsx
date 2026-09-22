@@ -13,10 +13,20 @@ const Key = "term:fontsize";
 const Label = "Terminal font size";
 
 // Mirrors RemoteTermConfigViewModel.setGeneralSetting: the RPC resolves after `delayMs`, and the
-// config watcher's event (which is what moves `settings`) lands after that.
-function setup({ delayMs = 200, initial = 12, fail = false } = {}) {
+// config watcher's event (which is what moves `settings`) lands after that, re-reading the whole
+// file as it is at that moment (pkg/rtconfig/filewatcher.go, ReadFullConfig).
+function setup({
+    delayMs = 200,
+    initial = 12 as number,
+    fail = false,
+    key = Key as string,
+    label = Label,
+    eventLagMs = 10,
+} = {}) {
     const store = createStore();
-    const settingsAtom = atom({ [Key]: initial }) as PrimitiveAtom<SettingsType>;
+    const file: SettingsType = { [key]: initial };
+    const settingsAtom = atom({ ...file }) as PrimitiveAtom<SettingsType>;
+    const watcherEvent = () => setTimeout(() => store.set(settingsAtom, { ...file }), eventLagMs);
     let inFlight = 0;
     let maxInFlight = 0;
     const SetConfigCommand = vi.fn(async (patch: SettingsType) => {
@@ -27,12 +37,13 @@ function setup({ delayMs = 200, initial = 12, fail = false } = {}) {
         if (fail) {
             throw new Error("write rejected");
         }
-        setTimeout(() => store.set(settingsAtom, { ...store.get(settingsAtom), ...patch }), 10);
+        Object.assign(file, patch);
+        watcherEvent();
     });
     const model: any = {
         settingsAtom,
-        generalRawSettingsAtom: atom({ [Key]: initial }),
-        generalSearchAtom: atom(Label),
+        generalRawSettingsAtom: atom((get) => get(settingsAtom)),
+        generalSearchAtom: atom(label),
         env: { isWindows: () => false },
         async setGeneralSetting(patch: SettingsType) {
             try {
@@ -48,19 +59,29 @@ function setup({ delayMs = 200, initial = 12, fail = false } = {}) {
             <GeneralContent model={model} />
         </Provider>
     );
-    const writes = () => SetConfigCommand.mock.calls.map((c) => c[0][Key]);
+    const writes = () => SetConfigCommand.mock.calls.map((c) => c[0][key]);
     const settled = () => waitFor(() => expect(inFlight).toBe(0), { timeout: 3000 });
     const eventsLanded = () =>
-        waitFor(() => expect(store.get(settingsAtom)[Key]).toBe(writes().at(-1) ?? initial), { timeout: 3000 });
+        waitFor(() => expect(store.get(settingsAtom)[key]).toBe(writes().at(-1) ?? initial), { timeout: 3000 });
     return {
         writes,
         settled,
         eventsLanded,
         maxInFlight: () => maxInFlight,
-        stored: () => store.get(settingsAtom)[Key],
+        stored: () => store.get(settingsAtom)[key],
+        // Resolves when the most recent SetConfigCommand RPC has, before its watcher event lands.
+        lastRpc: () => act(() => SetConfigCommand.mock.results.at(-1).value),
+        // Another writer (Reset elsewhere, another window, `wsh setconfig`) changing the file.
+        external: (value: unknown) => {
+            file[key] = value;
+            watcherEvent();
+        },
+        // A watcher event whose read of the file happened earlier, delivered now.
+        deliver: (value: unknown) => act(() => store.set(settingsAtom, { ...store.get(settingsAtom), [key]: value })),
         input: () => screen.getByRole("spinbutton") as HTMLInputElement,
-        up: () => screen.getByRole("button", { name: `Increase ${Label}` }),
-        down: () => screen.getByRole("button", { name: `Decrease ${Label}` }),
+        up: () => screen.getByRole("button", { name: `Increase ${label}` }),
+        down: () => screen.getByRole("button", { name: `Decrease ${label}` }),
+        reset: () => screen.getByRole("button", { name: `Reset ${label} to default` }),
     };
 }
 
@@ -177,5 +198,44 @@ describe("NumberControl interaction", () => {
         await c.settled();
         await waitFor(() => expect(c.input().value).toBe("12"));
         expect(c.writes()).toEqual([13]);
+    });
+
+    it("an external change landing after the write is acknowledged, but before its echo, is shown", async () => {
+        const user = userEvent.setup();
+        const c = setup({ delayMs: 30 });
+        await user.click(c.up());
+        await c.lastRpc();
+        c.external(30);
+        await waitFor(() => expect(c.stored()).toBe(30));
+        await waitFor(() => expect(c.input().value).toBe("30"));
+        expect(c.writes()).toEqual([13]);
+        await user.click(c.up());
+        await c.settled();
+        expect(c.writes()).toEqual([13, 31]);
+    });
+
+    it("an external change landing while this control's write is still in flight does not replace the shown value", async () => {
+        const user = userEvent.setup();
+        const c = setup({ delayMs: 150 });
+        await user.click(c.up());
+        c.external(30);
+        await waitFor(() => expect(c.stored()).toBe(30));
+        expect(c.input().value).toBe("13");
+        await c.settled();
+        await c.eventsLanded();
+        expect(c.input().value).toBe("13");
+    });
+
+    it("a late echo of an earlier write from this control does not replace the value it wrote since", async () => {
+        const user = userEvent.setup();
+        const c = setup({ delayMs: 20, eventLagMs: 200 });
+        await user.click(c.up());
+        await user.click(c.up());
+        await c.settled();
+        expect(c.writes()).toEqual([13, 14]);
+        await c.deliver(13);
+        expect(c.input().value).toBe("14");
+        await c.eventsLanded();
+        expect(c.input().value).toBe("14");
     });
 });

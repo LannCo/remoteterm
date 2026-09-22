@@ -1078,8 +1078,21 @@ const NumberControl = memo(
         // The last value this control wrote; `value` only catches up after the config watcher's
         // event, so until then the written value, not the stale prop, is what is shown and stepped.
         const [pending, setPending] = useState<number>(null);
+        const [prevValue, setPrevValue] = useState(value);
         const writeQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+        const inFlightRef = useRef(0);
+        // Values written since `pending` was last clear, so an echo of an earlier one is not
+        // mistaken for another writer's change.
+        const sentRef = useRef<number[]>([]);
 
+        if (value !== prevValue) {
+            setPrevValue(value);
+            // With nothing of ours outstanding, a change that is not our own echo came from another
+            // writer (Reset, another window, `wsh setconfig`), whose read may have skipped our echo.
+            if (pending != null && value !== pending && inFlightRef.current === 0 && !sentRef.current.includes(value)) {
+                setPending(null);
+            }
+        }
         if (pending != null && pending === value) {
             setPending(null);
         }
@@ -1092,13 +1105,19 @@ const NumberControl = memo(
         const write = (next: number) => {
             setLocal(String(next));
             setPending(next);
+            sentRef.current = pending == null ? [next] : [...sentRef.current, next];
+            inFlightRef.current++;
             const sent = writeQueueRef.current.then(() => onChange(next));
             writeQueueRef.current = sent.catch(() => {});
             sent.then(
                 (ok) => {
+                    inFlightRef.current--;
                     if (ok === false) setPending((p) => (p === next ? null : p));
                 },
-                () => setPending((p) => (p === next ? null : p))
+                () => {
+                    inFlightRef.current--;
+                    setPending((p) => (p === next ? null : p));
+                }
             );
         };
 
