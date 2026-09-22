@@ -21,6 +21,10 @@ import * as React from "react";
 
 type ValidationResult = { success: true } | { error: string };
 type ConfigValidator = (parsed: any) => ValidationResult;
+type WidgetPatchFn = (rawContent: { [key: string]: WidgetConfigType }) => { [key: string]: WidgetConfigType } | null;
+type BackgroundPatchFn = (rawContent: {
+    [key: string]: BackgroundConfigType;
+}) => { [key: string]: BackgroundConfigType } | null;
 
 export type ConfigFile = {
     name: string;
@@ -148,13 +152,13 @@ export class RemoteTermConfigViewModel implements ViewModel {
     // chaining on the value returned by globalStore.get() -- the continuation silently
     // never fires. Nothing reads this reactively (no useAtomValue anywhere), so it never
     // needed to be an atom; it's pure internal write-serialization state.
-    widgetsWriteQueue: Promise<void> = Promise.resolve();
+    widgetsWriteQueue: Promise<unknown> = Promise.resolve();
 
     backgroundsMapAtom: Atom<{ [key: string]: BackgroundConfigType }>;
     backgroundsOrderedAtom: Atom<[string, BackgroundConfigType][]>;
     activeTabBackgroundKeyAtom: Atom<string>;
     // Same reasoning as widgetsWriteQueue above -- not a Jotai atom on purpose.
-    backgroundsWriteQueue: Promise<void> = Promise.resolve();
+    backgroundsWriteQueue: Promise<unknown> = Promise.resolve();
     backgroundsAddOpenAtom: PrimitiveAtom<boolean>;
     backgroundsAddNameAtom: PrimitiveAtom<string>;
     backgroundsAddBgAtom: PrimitiveAtom<string>;
@@ -763,28 +767,37 @@ export class RemoteTermConfigViewModel implements ViewModel {
     }
 
     // Merges only the touched widget key(s) into the raw file (each written in full,
-    // per Wave's whole-key-replace merge semantics for the widgets map) and leaves
+    // per RemoteTerm's whole-key-replace merge semantics for the widgets map) and leaves
     // every other key exactly as it already is on disk. Writes are serialized through
-    // widgetsWriteQueue (a plain field, not an atom -- see its declaration) so a toggle
-    // and a drag-drop landing close together can't race: each write's read-then-merge
-    // waits for the previous write to finish first.
-    async persistWidgetPatch(updates: { [key: string]: WidgetConfigType }) {
-        if (Object.keys(updates).length === 0) {
-            return;
-        }
+    // widgetsWriteQueue (a plain field, not an atom -- see its declaration), and the patch
+    // is built by makeUpdates *inside* the queued step from the freshly-read raw file.
+    // Building it at enqueue time instead would base a drag landing right after a toggle
+    // on the pre-toggle snapshot (fullConfigAtom only catches up after the config watcher
+    // round-trip), and its whole-key write would silently undo the toggle.
+    async persistWidgetPatch(makeUpdates: WidgetPatchFn): Promise<boolean> {
         const nextWrite = this.widgetsWriteQueue.then(
-            () => this.writeWidgetPatch(updates),
-            () => this.writeWidgetPatch(updates)
+            () => this.writeWidgetPatch(makeUpdates),
+            () => this.writeWidgetPatch(makeUpdates)
         );
         this.widgetsWriteQueue = nextWrite;
-        await nextWrite;
+        return nextWrite;
     }
 
-    async writeWidgetPatch(updates: { [key: string]: WidgetConfigType }) {
+    // raw[key] is the freshest effective value (it includes earlier queued writes);
+    // widgetsMap covers built-in defaults the user's file doesn't mention yet.
+    getLatestWidget(rawContent: { [key: string]: WidgetConfigType }, key: string): WidgetConfigType {
+        return rawContent[key] ?? globalStore.get(this.widgetsMapAtom)[key];
+    }
+
+    async writeWidgetPatch(makeUpdates: WidgetPatchFn): Promise<boolean> {
         globalStore.set(this.errorMessageAtom, null);
         const rawContent = await this.readRawWidgetsFile();
         if (rawContent == null) {
-            return;
+            return false;
+        }
+        const updates = makeUpdates(rawContent);
+        if (updates == null || Object.keys(updates).length === 0) {
+            return false;
         }
         try {
             const merged = { ...rawContent, ...updates };
@@ -799,8 +812,10 @@ export class RemoteTermConfigViewModel implements ViewModel {
                 globalStore.set(this.originalContentAtom, formatted);
                 globalStore.set(this.fileContentAtom, formatted);
             }
+            return true;
         } catch (err) {
             globalStore.set(this.errorMessageAtom, `Failed to save widgets.json: ${err.message || String(err)}`);
+            return false;
         }
     }
 
@@ -828,14 +843,20 @@ export class RemoteTermConfigViewModel implements ViewModel {
             newOrder = 0;
         }
 
-        await this.persistWidgetPatch({ [movedKey]: { ...widget, "display:order": newOrder } });
+        await this.persistWidgetPatch((raw) => {
+            const latest = this.getLatestWidget(raw, movedKey);
+            if (latest == null) return null;
+            return { [movedKey]: { ...latest, "display:order": newOrder } };
+        });
     }
 
     async toggleWidgetHidden(key: string) {
-        const widgetsMap = globalStore.get(this.widgetsMapAtom);
-        const widget = widgetsMap[key];
-        if (widget == null) return;
-        await this.persistWidgetPatch({ [key]: { ...widget, "display:hidden": !widget["display:hidden"] } });
+        if (globalStore.get(this.widgetsMapAtom)[key] == null) return;
+        await this.persistWidgetPatch((raw) => {
+            const latest = this.getLatestWidget(raw, key);
+            if (latest == null) return null;
+            return { [key]: { ...latest, "display:hidden": !latest["display:hidden"] } };
+        });
     }
 
     // Same unmerged-read rationale as readRawWidgetsFile: fullConfig.backgrounds includes
@@ -876,23 +897,30 @@ export class RemoteTermConfigViewModel implements ViewModel {
         }
     }
 
-    async persistBackgroundPatch(updates: { [key: string]: BackgroundConfigType }) {
-        if (Object.keys(updates).length === 0) {
-            return;
-        }
+    // Same queue-and-build-at-write-time contract as persistWidgetPatch; resolves true only
+    // when the file write actually succeeded.
+    async persistBackgroundPatch(makeUpdates: BackgroundPatchFn): Promise<boolean> {
         const nextWrite = this.backgroundsWriteQueue.then(
-            () => this.writeBackgroundPatch(updates),
-            () => this.writeBackgroundPatch(updates)
+            () => this.writeBackgroundPatch(makeUpdates),
+            () => this.writeBackgroundPatch(makeUpdates)
         );
         this.backgroundsWriteQueue = nextWrite;
-        await nextWrite;
+        return nextWrite;
     }
 
-    async writeBackgroundPatch(updates: { [key: string]: BackgroundConfigType }) {
+    getLatestBackground(rawContent: { [key: string]: BackgroundConfigType }, key: string): BackgroundConfigType {
+        return rawContent[key] ?? globalStore.get(this.backgroundsMapAtom)[key];
+    }
+
+    async writeBackgroundPatch(makeUpdates: BackgroundPatchFn): Promise<boolean> {
         globalStore.set(this.errorMessageAtom, null);
         const rawContent = await this.readRawBackgroundsFile();
         if (rawContent == null) {
-            return;
+            return false;
+        }
+        const updates = makeUpdates(rawContent);
+        if (updates == null || Object.keys(updates).length === 0) {
+            return false;
         }
         try {
             const merged = { ...rawContent, ...updates };
@@ -907,8 +935,10 @@ export class RemoteTermConfigViewModel implements ViewModel {
                 globalStore.set(this.originalContentAtom, formatted);
                 globalStore.set(this.fileContentAtom, formatted);
             }
+            return true;
         } catch (err) {
             globalStore.set(this.errorMessageAtom, `Failed to save backgrounds.json: ${err.message || String(err)}`);
+            return false;
         }
     }
 
@@ -920,18 +950,21 @@ export class RemoteTermConfigViewModel implements ViewModel {
         });
     }
 
+    async updateBackgroundField(key: string, field: "bg:opacity" | "bg:blendmode", value: number | string) {
+        if (globalStore.get(this.backgroundsMapAtom)[key] == null) return;
+        await this.persistBackgroundPatch((raw) => {
+            const latest = this.getLatestBackground(raw, key);
+            if (latest == null) return null;
+            return { [key]: { ...latest, [field]: value } };
+        });
+    }
+
     async updateBackgroundOpacity(key: string, opacity: number) {
-        const backgroundsMap = globalStore.get(this.backgroundsMapAtom);
-        const background = backgroundsMap[key];
-        if (background == null) return;
-        await this.persistBackgroundPatch({ [key]: { ...background, "bg:opacity": opacity } });
+        await this.updateBackgroundField(key, "bg:opacity", opacity);
     }
 
     async updateBackgroundBlendMode(key: string, blendMode: string) {
-        const backgroundsMap = globalStore.get(this.backgroundsMapAtom);
-        const background = backgroundsMap[key];
-        if (background == null) return;
-        await this.persistBackgroundPatch({ [key]: { ...background, "bg:blendmode": blendMode } });
+        await this.updateBackgroundField(key, "bg:blendmode", blendMode);
     }
 
     async addBackground(displayName: string, bg: string) {
@@ -956,10 +989,10 @@ export class RemoteTermConfigViewModel implements ViewModel {
         // are a single flat CSS value rather than a multi-layer gradient — Rainbow, Green,
         // Blue, and Red in pkg/wconfig/defaultconfig/backgrounds.json all use it, and none
         // of those set bg:blendmode either.
-        await this.persistBackgroundPatch({
+        const saved = await this.persistBackgroundPatch(() => ({
             [key]: { "display:name": name, bg, "bg:opacity": 0.3, "display:order": maxOrder + 1 },
-        });
-        return key;
+        }));
+        return saved ? key : null;
     }
 
     openBackgroundAdd() {
@@ -989,10 +1022,11 @@ export class RemoteTermConfigViewModel implements ViewModel {
         }
         globalStore.set(this.backgroundsAddErrorAtom, null);
         const key = await this.addBackground(name, bg);
-        this.closeBackgroundAdd();
-        if (key) {
-            await this.applyBackgroundToTab(key);
+        if (!key) {
+            return;
         }
+        this.closeBackgroundAdd();
+        await this.applyBackgroundToTab(key);
     }
 
     giveFocus(): boolean {
