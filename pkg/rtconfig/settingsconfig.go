@@ -439,7 +439,11 @@ func ReadWaveHomeConfigFile(fileName string) (remotetermobj.MetaMapType, []Confi
 func WriteWaveHomeConfigFile(fileName string, m remotetermobj.MetaMapType) error {
 	configWriteLock.Lock()
 	defer configWriteLock.Unlock()
+	return writeWaveHomeConfigFileLocked(fileName, m)
+}
 
+// Caller must hold configWriteLock.
+func writeWaveHomeConfigFileLocked(fileName string, m remotetermobj.MetaMapType) error {
 	configDirAbsPath := remotetermbase.GetWaveConfigDir()
 	fullFileName := filepath.Join(configDirAbsPath, fileName)
 	barr, err := jsonMarshalConfigInOrder(m)
@@ -708,7 +712,11 @@ func convertJsonNumber(num json.Number, ctype reflect.Type) (interface{}, error)
 	return nil, fmt.Errorf("cannot convert number to %s", ctype)
 }
 
+// The lock spans the read as well as the write: concurrent RPCs each merging one key would
+// otherwise read the same snapshot and the last writer would drop the others' keys.
 func SetBaseConfigValue(toMerge remotetermobj.MetaMapType) error {
+	configWriteLock.Lock()
+	defer configWriteLock.Unlock()
 	m, cerrs := ReadWaveHomeConfigFile(SettingsFile)
 	if len(cerrs) > 0 {
 		return fmt.Errorf("error reading config file: %v", cerrs[0])
@@ -743,10 +751,12 @@ func SetBaseConfigValue(toMerge remotetermobj.MetaMapType) error {
 			m[configKey] = val
 		}
 	}
-	return WriteWaveHomeConfigFile(SettingsFile, m)
+	return writeWaveHomeConfigFileLocked(SettingsFile, m)
 }
 
 func SetConnectionsConfigValue(connName string, toMerge remotetermobj.MetaMapType) error {
+	configWriteLock.Lock()
+	defer configWriteLock.Unlock()
 	m, cerrs := ReadWaveHomeConfigFile(ConnectionsFile)
 	if len(cerrs) > 0 {
 		return fmt.Errorf("error reading config file: %v", cerrs[0])
@@ -762,7 +772,7 @@ func SetConnectionsConfigValue(connName string, toMerge remotetermobj.MetaMapTyp
 		connData[configKey] = val
 	}
 	m[connName] = connData
-	return WriteWaveHomeConfigFile(ConnectionsFile, m)
+	return writeWaveHomeConfigFileLocked(ConnectionsFile, m)
 }
 
 func MigratePresetsBackgrounds() {

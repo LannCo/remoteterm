@@ -4,7 +4,7 @@
 import { fireAndForget } from "@/util/util";
 import { app, dialog, ipcMain, shell } from "electron";
 import envPaths from "env-paths";
-import { existsSync, mkdirSync, readdirSync, renameSync, rmdirSync, writeFileSync } from "fs";
+import { Dirent, existsSync, mkdirSync, readdirSync, renameSync, rmdirSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import { RemoteTermDevVarName, RemoteTermDevViteVarName } from "../frontend/util/isdev";
@@ -30,16 +30,13 @@ const remoteTermDirNamePrefix = "remoteterm";
 const remoteTermDirNameSuffix = isDev ? "dev" : "";
 const remoteTermDirName = `${remoteTermDirNamePrefix}${remoteTermDirNameSuffix ? `-${remoteTermDirNameSuffix}` : ""}`;
 
-// Frozen forever: this is the real pre-v0.8 legacy directory name/prefix on disk, independent of
+// Frozen forever: this is the real pre-rename legacy directory prefix on disk, independent of
 // whatever the product is branded as today. Never derive this from remoteTermDirNamePrefix.
-const LegacyRemoteTermHomeDirName = ".waveterm";
 const legacyRemoteTermDirNamePrefix = "waveterm";
 const legacyRemoteTermDirName = `${legacyRemoteTermDirNamePrefix}${remoteTermDirNameSuffix ? `-${remoteTermDirNameSuffix}` : ""}`;
-// The old (pre-rename) code derived the legacy combined-home dir name from the dev-suffixed
-// remoteTermDirName (".waveterm-dev" in dev, ".waveterm" in prod) — this is that same suffix-aware
-// shape under the frozen legacy prefix, distinct from the always-bare LegacyRemoteTermHomeDirName
-// above (which exists so a dev build can still recognise a genuinely old, pre-suffix, bare
-// ".waveterm" install as a last-resort fallback).
+// Upstream derived the combined-home dir from the dev-suffixed dir name (".waveterm-dev" in dev,
+// ".waveterm" in prod) and never fell back from one to the other, so a dev build must not touch
+// the production ".waveterm".
 const LegacyRemoteTermHomeDirNameSuffixed = `.${legacyRemoteTermDirName}`;
 
 const paths = envPaths("remoteterm", { suffix: remoteTermDirNameSuffix });
@@ -92,10 +89,12 @@ type MigrationRootSpec = {
     source: string;
     dest: string;
     overridden: boolean;
-    validateSource?: () => boolean;
+    // Returns why the existing source is not a real legacy root to migrate, or null if it is.
+    sourceSkipReason?: () => string;
 };
 
 const MigrationMarkerFileName = ".migrated-from-waveterm";
+const LegacyLockFileName = "wave.lock";
 
 // Failures recorded here don't stop startup (the app can still run against whatever it can
 // resolve), but they leave data unmigrated/orphaned and the failure becomes sticky (the next
@@ -135,7 +134,13 @@ function migrateDataRoot(spec: MigrationRootSpec) {
     if (existsSync(markerFile)) {
         return;
     }
-    if (!existsSync(spec.source) || (spec.validateSource && !spec.validateSource())) {
+    if (!existsSync(spec.source)) {
+        console.log(`[migration] skipping ${spec.name} root: ${spec.source} does not exist`);
+        return;
+    }
+    const skipReason = spec.sourceSkipReason?.();
+    if (skipReason) {
+        console.log(`[migration] skipping ${spec.name} root: ${spec.source} ${skipReason}`);
         return;
     }
     if (existsSync(spec.dest)) {
@@ -184,6 +189,26 @@ function migrateDataRoot(spec: MigrationRootSpec) {
     }
 }
 
+function lockFileSkipReason(dir: string): string {
+    return existsSync(path.join(dir, LegacyLockFileName)) ? null : `has no ${LegacyLockFileName}`;
+}
+
+// The Linux legacy config root also holds Electron's userData ("electron/"), which moves along with
+// a real config root but is not migrated on its own: it is cache and window state, and an
+// Electron-only root would otherwise abort permanently once the new build has created its own.
+function legacyConfigSkipReason(dir: string): string {
+    let entries: Dirent[];
+    try {
+        entries = readdirSync(dir, { withFileTypes: true });
+    } catch (e) {
+        return `could not be read (${e})`;
+    }
+    const hasConfig = entries.some(
+        (ent) => (ent.isFile() && ent.name.endsWith(".json")) || (ent.isDirectory() && ent.name === "presets")
+    );
+    return hasConfig ? null : "has no config files (*.json or presets/)";
+}
+
 function performDataDirMigration() {
     try {
         const homeDir = app.getPath("home");
@@ -202,7 +227,7 @@ function performDataDirMigration() {
             source: configOverride ?? configSource,
             dest: configOverride ?? configDest,
             overridden: configOverride != null,
-            validateSource: () => existsSync(path.join(configSource, "settings.json")),
+            sourceSkipReason: () => legacyConfigSkipReason(configSource),
         });
 
         const dataOverride = readOverrideEnvVar(RemoteTermDataHomeVarName, LegacyRemoteTermDataHomeVarName);
@@ -213,7 +238,7 @@ function performDataDirMigration() {
             source: dataOverride ?? dataSource,
             dest: dataOverride ?? dataDest,
             overridden: dataOverride != null,
-            validateSource: () => existsSync(path.join(dataSource, "wave.lock")),
+            sourceSkipReason: () => lockFileSkipReason(dataSource),
         });
 
         const homeOverride = readOverrideEnvVar(RemoteTermHomeVarName, LegacyRemoteTermHomeVarName);
@@ -224,7 +249,7 @@ function performDataDirMigration() {
             source: homeOverride ?? legacyHomeSource,
             dest: homeOverride ?? legacyHomeDest,
             overridden: homeOverride != null,
-            validateSource: () => existsSync(path.join(legacyHomeSource, "wave.lock")),
+            sourceSkipReason: () => lockFileSkipReason(legacyHomeSource),
         });
 
         // Best-effort fourth root: on Windows, Electron's own userData subtree (cookies, cache,
@@ -240,7 +265,6 @@ function performDataDirMigration() {
                 source: winSource,
                 dest: winDest,
                 overridden: false,
-                validateSource: () => existsSync(winSource),
             });
         }
     } catch (e) {
@@ -276,35 +300,37 @@ export function checkIfRunningUnderARM64Translation(fullConfig: FullConfigType) 
     }
 }
 
+function isCombinedHomeDir(dir: string): boolean {
+    // If home exists and it has `wave.lock` in it, we know it has valid data from Wave >=v0.8. Otherwise, it could be for WaveLegacy (<v0.8)
+    return existsSync(dir) && existsSync(path.join(dir, "wave.lock"));
+}
+
 /**
  * Gets the path to the combined RemoteTerm home directory (defaults to `~/.remoteterm`, falling back
- * to the frozen pre-v0.8 legacy path `~/.waveterm` if that's what has valid data).
+ * to the legacy path `~/.waveterm`, or `-dev` suffixed variants of both in dev builds).
  * @returns The path to the directory if it exists and contains valid data for the current app, otherwise null.
  */
 function getRemoteTermHomeDir(): string {
-    let home = readOverrideEnvVar(RemoteTermHomeVarName, LegacyRemoteTermHomeVarName);
-    if (!home) {
-        const homeDir = app.getPath("home");
-        if (homeDir) {
-            // Check the current (post-migration) default combined-home location first, then
-            // fall back to the frozen pre-v0.8 legacy location. The migration shim above moves
-            // a valid legacy home dir from the latter to the former, but this function may be
-            // called before that migration has a chance to run for a given process, or the
-            // migration may have been skipped/failed, so both locations must be checked.
-            const migratedHome = path.join(homeDir, `.${remoteTermDirName}`);
-            if (existsSync(migratedHome) && existsSync(path.join(migratedHome, "wave.lock"))) {
-                return migratedHome;
-            }
-            const legacySuffixedHome = path.join(homeDir, LegacyRemoteTermHomeDirNameSuffixed);
-            if (existsSync(legacySuffixedHome) && existsSync(path.join(legacySuffixedHome, "wave.lock"))) {
-                return legacySuffixedHome;
-            }
-            home = path.join(homeDir, LegacyRemoteTermHomeDirName);
-        }
+    const override = readOverrideEnvVar(RemoteTermHomeVarName, LegacyRemoteTermHomeVarName);
+    if (override) {
+        return isCombinedHomeDir(override) ? override : null;
     }
-    // If home exists and it has `wave.lock` in it, we know it has valid data from Wave >=v0.8. Otherwise, it could be for WaveLegacy (<v0.8)
-    if (home && existsSync(home) && existsSync(path.join(home, "wave.lock"))) {
-        return home;
+    const homeDir = app.getPath("home");
+    if (!homeDir) {
+        return null;
+    }
+    // Check the current (post-migration) default combined-home location first, then
+    // fall back to the legacy location. The migration shim above moves a valid legacy home
+    // dir from the latter to the former, but this function may be called before that
+    // migration has a chance to run for a given process, or the migration may have been
+    // skipped/failed, so both locations must be checked.
+    const migratedHome = path.join(homeDir, `.${remoteTermDirName}`);
+    if (isCombinedHomeDir(migratedHome)) {
+        return migratedHome;
+    }
+    const legacySuffixedHome = path.join(homeDir, LegacyRemoteTermHomeDirNameSuffixed);
+    if (isCombinedHomeDir(legacySuffixedHome)) {
+        return legacySuffixedHome;
     }
     return null;
 }

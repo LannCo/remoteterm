@@ -8,14 +8,11 @@ package remotetermbase
 import (
 	"fmt"
 	"log"
-	"path/filepath"
 
 	"github.com/alexflint/go-filemutex"
 )
 
-func AcquireWaveLock() (FDLock, error) {
-	dataHomeDir := GetWaveDataDir()
-	lockFileName := filepath.Join(dataHomeDir, WaveLockFile)
+func acquireLockFile(lockFileName string) (FDLock, error) {
 	log.Printf("[base] acquiring lock on %s\n", lockFileName)
 	m, err := filemutex.New(lockFileName)
 	if err != nil {
