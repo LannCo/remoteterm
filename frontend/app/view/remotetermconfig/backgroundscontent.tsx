@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { WaveConfigViewModel } from "@/app/view/waveconfig/waveconfig-model";
+import type { RemoteTermConfigViewModel } from "@/app/view/remotetermconfig/remotetermconfig-model";
 import { cn, isBlank } from "@/util/util";
 import { useAtomValue, useSetAtom } from "jotai";
 import { memo, useEffect, useState } from "react";
@@ -62,7 +62,7 @@ const BackgroundTile = memo(({ label, bg, active, onClick }: BackgroundTileProps
 BackgroundTile.displayName = "BackgroundTile";
 
 interface AddBackgroundFormProps {
-    model: WaveConfigViewModel;
+    model: RemoteTermConfigViewModel;
 }
 
 const AddBackgroundForm = memo(({ model }: AddBackgroundFormProps) => {
@@ -117,7 +117,7 @@ const AddBackgroundForm = memo(({ model }: AddBackgroundFormProps) => {
 AddBackgroundForm.displayName = "AddBackgroundForm";
 
 interface BackgroundDetailPanelProps {
-    model: WaveConfigViewModel;
+    model: RemoteTermConfigViewModel;
     activeKey: string;
     background: BackgroundConfigType;
 }
@@ -180,7 +180,7 @@ const BackgroundDetailPanel = memo(({ model, activeKey, background }: Background
 BackgroundDetailPanel.displayName = "BackgroundDetailPanel";
 
 interface BackgroundsContentProps {
-    model: WaveConfigViewModel;
+    model: RemoteTermConfigViewModel;
 }
 
 export const BackgroundsContent = memo(({ model }: BackgroundsContentProps) => {

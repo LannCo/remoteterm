@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { WaveConfigViewModel } from "@/app/view/waveconfig/waveconfig-model";
+import type { RemoteTermConfigViewModel } from "@/app/view/remotetermconfig/remotetermconfig-model";
 import { cn, isBlank, makeIconClass } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { memo, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
@@ -168,7 +168,7 @@ const WidgetOrderRow = memo(
 WidgetOrderRow.displayName = "WidgetOrderRow";
 
 interface WidgetOrderPanelProps {
-    model: WaveConfigViewModel;
+    model: RemoteTermConfigViewModel;
 }
 
 const WidgetOrderPanel = memo(({ model }: WidgetOrderPanelProps) => {
@@ -308,7 +308,7 @@ const WidgetOrderPanel = memo(({ model }: WidgetOrderPanelProps) => {
 WidgetOrderPanel.displayName = "WidgetOrderPanel";
 
 interface LivePreviewRailProps {
-    model: WaveConfigViewModel;
+    model: RemoteTermConfigViewModel;
 }
 
 const LivePreviewRail = memo(({ model }: LivePreviewRailProps) => {
@@ -350,7 +350,7 @@ const LivePreviewRail = memo(({ model }: LivePreviewRailProps) => {
 LivePreviewRail.displayName = "LivePreviewRail";
 
 interface WidgetsContentProps {
-    model: WaveConfigViewModel;
+    model: RemoteTermConfigViewModel;
 }
 
 export const WidgetsContent = memo(({ model }: WidgetsContentProps) => {

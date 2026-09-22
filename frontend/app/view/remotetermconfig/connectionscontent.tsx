@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { WaveConfigViewModel } from "@/app/view/waveconfig/waveconfig-model";
+import type { RemoteTermConfigViewModel } from "@/app/view/remotetermconfig/remotetermconfig-model";
 import { cn, formatRelativeTime } from "@/util/util";
 import { useAtomValue, useSetAtom } from "jotai";
 import { memo, useMemo } from "react";
@@ -63,7 +63,7 @@ function statusLabel(status: ConnStatus | undefined): string {
 }
 
 interface QuickAddRowProps {
-    model: WaveConfigViewModel;
+    model: RemoteTermConfigViewModel;
 }
 
 const QuickAddRow = memo(({ model }: QuickAddRowProps) => {
@@ -114,7 +114,7 @@ const QuickAddRow = memo(({ model }: QuickAddRowProps) => {
 QuickAddRow.displayName = "QuickAddRow";
 
 interface HostsHeaderProps {
-    model: WaveConfigViewModel;
+    model: RemoteTermConfigViewModel;
     view: ConnectionsView;
     quickAddOpen: boolean;
 }
@@ -284,7 +284,7 @@ const KeychainView = memo(() => {
 KeychainView.displayName = "KeychainView";
 
 interface ConnectionsContentProps {
-    model: WaveConfigViewModel;
+    model: RemoteTermConfigViewModel;
 }
 
 export const ConnectionsContent = memo(({ model }: ConnectionsContentProps) => {
