@@ -5,6 +5,8 @@ import { atom, createStore, Provider } from "jotai";
 import type { ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { BackgroundsContent } from "./backgroundscontent";
+import { ConnectionsContent } from "./connectionscontent";
 import { SecretsContent } from "./secretscontent";
 
 vi.mock("@/app/view/remotetermconfig/remotetermconfig-model", () => ({
@@ -103,6 +105,57 @@ describe("SecretsContent labels and validation", () => {
             expect(input).not.toContain('aria-invalid="true"');
             const describedBy = input.match(/aria-describedby="([^"]+)"/)?.[1];
             expect(elementTextById(html, describedBy)).toMatch(/^Must start with a letter/);
+        }
+    });
+});
+
+describe("quick-add error messages are announced", () => {
+    it("connections quick-add error sits in role=alert", () => {
+        const html = render(
+            ConnectionsContent,
+            makeModel({
+                connectionsViewAtom: "hosts",
+                connectionsQuickAddOpenAtom: true,
+                connectionsSearchAtom: "",
+                connectionNamesAtom: [],
+                connStatusMapAtom: new Map(),
+                connectionsQuickAddValueAtom: "",
+                connectionsQuickAddErrorAtom: "CONN-ERR",
+            })
+        );
+        expect(html).toMatch(/<div[^>]*role="alert"[^>]*>CONN-ERR<\/div>/);
+    });
+
+    it("background add-form error sits in role=alert", () => {
+        const html = render(
+            BackgroundsContent,
+            makeModel({
+                backgroundsOrderedAtom: [],
+                backgroundsAddOpenAtom: true,
+                backgroundsAddNameAtom: "",
+                backgroundsAddBgAtom: "",
+                backgroundsAddErrorAtom: "BG-ERR",
+            })
+        );
+        expect(html).toMatch(/<div[^>]*role="alert"[^>]*>BG-ERR<\/div>/);
+    });
+});
+
+describe("Keychain rows", () => {
+    it("do not dim their text with a row-level opacity", () => {
+        const html = render(
+            ConnectionsContent,
+            makeModel({
+                connectionsViewAtom: "keychain",
+                connectionsSearchAtom: "",
+                connectionNamesAtom: [],
+                connStatusMapAtom: new Map(),
+            })
+        );
+        const rows = html.match(/<div class="grid grid-cols-\[22px_1\.4fr_80px_1fr_80px_16px\] items-center[^"]*"/g);
+        expect(rows).toHaveLength(2);
+        for (const row of rows) {
+            expect(row).not.toMatch(/opacity-/);
         }
     });
 });
