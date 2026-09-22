@@ -187,6 +187,8 @@ const LegacyExecutableNames: Record<string, { prod: string; dev: string }> = {
 type LegacyInstanceState = {
     // True only for a live pid on this host; otherwise liveness could not be determined.
     confirmedRunning: boolean;
+    // The holder is the other legacy flavour, which shares only the Electron profile with this one.
+    otherFlavour?: boolean;
     reason: string;
 };
 
@@ -255,23 +257,39 @@ function checkLegacyInstanceRunning(): LegacyInstanceState {
         return { confirmedRunning: false, reason: `pid ${pid} in ${lockPath} is running but could not be identified` };
     }
     const exeNames = LegacyExecutableNames[process.platform];
-    // Both flavours of the legacy app shared one userData dir and so one SingletonLock: the other
-    // flavour holding it means this flavour, the only one using the roots we move, is not running.
-    if (path.basename(exe) === exeNames?.[isDev ? "prod" : "dev"]) {
-        console.log(`[migration] ${lockPath} is held by the other legacy build (${exe}), not the one being migrated`);
-        return null;
-    }
-    if (path.basename(exe) !== exeNames?.[isDev ? "dev" : "prod"]) {
+    const exeName = path.basename(exe);
+    if (exeName !== exeNames?.prod && exeName !== exeNames?.dev) {
         return { confirmedRunning: false, reason: `pid ${pid} in ${lockPath} is running ${exe}` };
     }
+    const holderIsDev = exeName === exeNames.dev;
+    // Both flavours of the legacy app shared one userData dir and so one SingletonLock: the other
+    // flavour holding it means this flavour is not running, but that profile (and its live lock)
+    // still sits inside some production roots (see legacyInstanceBlocksRoot).
+    const otherFlavour = holderIsDev !== isDev;
     // Stock Electron is shared by every `electron .` process, so a reused pid would match too.
-    if (isDev) {
+    if (holderIsDev) {
         return {
             confirmedRunning: false,
+            otherFlavour,
             reason: `pid ${pid} in ${lockPath} is running ${exe}, which could be the pre-rename dev build or any other Electron app`,
         };
     }
-    return { confirmedRunning: true, reason: `pid ${pid} (${exe}) holds ${lockPath}` };
+    return { confirmedRunning: true, otherFlavour, reason: `pid ${pid} (${exe}) holds ${lockPath}` };
+}
+
+// The shared legacy profile is inside the Linux config root and the macOS data root; moving either
+// would move a running other-flavour app's profile and live SingletonLock into this build's userData.
+function legacyInstanceBlocksRoot(state: LegacyInstanceState, source: string): boolean {
+    if (!state.otherFlavour) {
+        return true;
+    }
+    const profileDir = path.join(app.getPath("appData"), ...LegacyElectronUserDataPath);
+    const rel = path.relative(source, profileDir);
+    if (rel === "" || (rel.split(path.sep)[0] !== ".." && !path.isAbsolute(rel))) {
+        return true;
+    }
+    console.log(`[migration] the lock is held by the other legacy build, whose profile is not in ${source}`);
+    return false;
 }
 
 function getLegacyInstanceState(): LegacyInstanceState {
@@ -355,7 +373,7 @@ function migrateDataRoot(spec: MigrationRootSpec) {
         return;
     }
     const legacyInstance = ignoreLegacyInstance ? null : getLegacyInstanceState();
-    if (legacyInstance) {
+    if (legacyInstance && legacyInstanceBlocksRoot(legacyInstance, spec.source)) {
         blockingLegacyInstance = legacyInstance;
         console.log(
             `[migration] not migrating ${spec.name} root this launch: ${legacyInstance.reason}; will retry next launch`

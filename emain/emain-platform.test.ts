@@ -91,6 +91,7 @@ afterEach(() => {
     vi.doUnmock("electron");
     vi.doUnmock("fs");
     vi.doUnmock("child_process");
+    vi.doUnmock("env-paths");
     Object.defineProperty(process, "platform", savedPlatform);
     process.env = { ...savedEnv };
     fs.rmSync(tmpHome, { recursive: true, force: true });
@@ -120,6 +121,19 @@ describe("combined-home fallback", () => {
         expect(mod.getRemoteTermConfigDir()).toBe(path.join(tmpHome, ".remoteterm", "config"));
     });
 });
+
+// env-paths reads the home dir once per process, so point it at this test's home instead.
+function mockMacEnvPaths() {
+    setPlatform("darwin");
+    delete process.env.XDG_CONFIG_HOME;
+    delete process.env.XDG_DATA_HOME;
+    appDataDir = path.join(tmpHome, "Library", "Application Support");
+    vi.doMock("env-paths", () => ({
+        default: (name: string, opts: { suffix?: string }) => ({
+            data: path.join(appDataDir, opts?.suffix ? `${name}-${opts.suffix}` : name),
+        }),
+    }));
+}
 
 function loggedLines(): string[] {
     const logSpy = vi.mocked(console.log);
@@ -344,7 +358,7 @@ describe.skipIf(process.platform === "win32")("running legacy instance", () => {
     const newData = () => path.join(xdgData, "remoteterm");
     const legacyConfig = () => path.join(xdgConfig, "waveterm");
     const newConfig = () => path.join(xdgConfig, "remoteterm");
-    const singletonLock = () => path.join(xdgConfig, "waveterm", "electron", "SingletonLock");
+    const singletonLock = () => path.join(appDataDir, "waveterm", "electron", "SingletonLock");
     const LegacyPid = 424242;
 
     function writeSingletonLock(target: string) {
@@ -495,32 +509,99 @@ describe.skipIf(process.platform === "win32")("running legacy instance", () => {
     );
 
     // Both flavours of the legacy app shared <appData>/waveterm/electron, so the other flavour
-    // holding the lock means this flavour's legacy app is not running.
+    // holding the lock means this flavour's legacy app is not running. The -dev roots never
+    // contain that shared profile.
     it.each([
-        ["dev", "linux", "/opt/Wave/waveterm"],
-        ["dev", "darwin", "/Applications/Wave.app/Contents/MacOS/Wave"],
-        ["production", "linux", "/home/dev/waveterm/node_modules/electron/dist/electron"],
-        ["production", "darwin", "/w/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"],
-    ] as [string, NodeJS.Platform, string][])(
-        "a %s build migrates while the other flavour holds the lock (%s, %s)",
-        async (flavour, platform, exe) => {
-            const isPackaged = flavour === "production";
-            const suffix = isPackaged ? "" : "-dev";
-            makeDir(path.join(xdgData, `waveterm${suffix}`), { "wave.lock": "", "db/waveterm.db": "legacy" });
-            makeDir(path.join(xdgConfig, `waveterm${suffix}`), { "settings.json": "legacy" });
+        ["linux", "/opt/Wave/waveterm"],
+        ["darwin", "/Applications/Wave.app/Contents/MacOS/Wave"],
+    ] as [NodeJS.Platform, string][])(
+        "a dev build migrates while the production legacy app holds the lock (%s, %s)",
+        async (platform, exe) => {
+            makeDir(path.join(xdgData, "waveterm-dev"), { "wave.lock": "", "db/waveterm.db": "legacy" });
+            makeDir(path.join(xdgConfig, "waveterm-dev"), { "settings.json": "legacy" });
             writeSingletonLock(`${os.hostname()}-${LegacyPid}`);
             mockKill();
             mockProcessIdentity(exe);
             setPlatform(platform);
-            const mod = await loadPlatform(isPackaged);
+            const mod = await loadPlatform(false);
             expect(await mod.resolveLegacyInstanceBlock()).toBe(true);
             expect(showMessageBox).not.toHaveBeenCalled();
-            const newDataDir = path.join(xdgData, `remoteterm${suffix}`);
-            expect(fs.readFileSync(path.join(newDataDir, "db/waveterm.db"), "utf8")).toBe("legacy");
-            expect(fs.existsSync(path.join(xdgConfig, `remoteterm${suffix}`, "settings.json"))).toBe(true);
+            expect(fs.readFileSync(path.join(xdgData, "remoteterm-dev", "db/waveterm.db"), "utf8")).toBe("legacy");
+            expect(fs.existsSync(path.join(xdgConfig, "remoteterm-dev", "settings.json"))).toBe(true);
             expect(mod.getMigrationFailures()).toEqual([]);
         }
     );
+
+    // The shared profile, and so the running dev app's live SingletonLock, sits inside the Linux
+    // config root and the macOS data root; moving that root would move the profile out from under it.
+    describe("a production build with a stock Electron lock holder", () => {
+        const devExe = {
+            linux: "/home/dev/waveterm/node_modules/electron/dist/electron",
+            darwin: "/w/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron",
+        };
+
+        function setUp(platform: "linux" | "darwin") {
+            if (platform === "darwin") {
+                mockMacEnvPaths();
+            }
+            setPlatform(platform);
+            const dataRoot = path.join(platform === "darwin" ? appDataDir : xdgData, "waveterm");
+            const configRoot = path.join(platform === "darwin" ? path.join(tmpHome, ".config") : xdgConfig, "waveterm");
+            makeDir(dataRoot, { "wave.lock": "", "db/waveterm.db": "legacy" });
+            makeDir(configRoot, { "settings.json": "legacy" });
+            writeSingletonLock(`${os.hostname()}-${LegacyPid}`);
+            mockKill();
+            mockProcessIdentity(devExe[platform]);
+            const profileRoot = platform === "darwin" ? dataRoot : configRoot;
+            const otherRoot = platform === "darwin" ? configRoot : dataRoot;
+            const newRoot = (legacy: string) => path.join(path.dirname(legacy), "remoteterm");
+            return { profileRoot, otherRoot, newRoot };
+        }
+
+        it.each([["linux"], ["darwin"]] as ["linux" | "darwin"][])(
+            "blocks only the root holding the shared profile (%s)",
+            async (platform) => {
+                const { profileRoot, otherRoot, newRoot } = setUp(platform);
+                const liveLock = fs.readlinkSync(singletonLock());
+                const mod = await loadPlatform(true);
+                expect(await mod.resolveLegacyInstanceBlock()).toBe(false);
+                const opts = showMessageBox.mock.calls[0][0];
+                expect(opts.buttons).toEqual(["Quit", "Migrate anyway"]);
+                expect(opts.detail).toContain(devExe[platform]);
+                expect(fs.readlinkSync(singletonLock())).toBe(liveLock);
+                expect(fs.readdirSync(profileRoot).sort()).toContain("electron");
+                expect(fs.existsSync(path.join(newRoot(profileRoot), MarkerFileName))).toBe(false);
+                expect(fs.existsSync(path.join(newRoot(profileRoot), "electron", "SingletonLock"))).toBe(false);
+                expect(fs.existsSync(otherRoot)).toBe(false);
+                expect(fs.existsSync(path.join(newRoot(otherRoot), MarkerFileName))).toBe(true);
+                expect(mod.getMigrationFailures()).toEqual([]);
+            }
+        );
+
+        it.each([["linux"], ["darwin"]] as ["linux" | "darwin"][])(
+            "moves the profile root on Migrate anyway (%s)",
+            async (platform) => {
+                const { profileRoot, newRoot } = setUp(platform);
+                showMessageBox.mockResolvedValue({ response: 1 });
+                const mod = await loadPlatform(true);
+                expect(await mod.resolveLegacyInstanceBlock()).toBe(true);
+                expect(fs.existsSync(path.join(newRoot(profileRoot), MarkerFileName))).toBe(true);
+                expect(mod.getMigrationFailures()).toEqual([]);
+            }
+        );
+
+        it("migrates without a dialog when the profile root has nothing left to migrate (linux)", async () => {
+            const { profileRoot, otherRoot, newRoot } = setUp("linux");
+            makeDir(newRoot(profileRoot), { [MarkerFileName]: "done" });
+            const liveLock = fs.readlinkSync(singletonLock());
+            const mod = await loadPlatform(true);
+            expect(await mod.resolveLegacyInstanceBlock()).toBe(true);
+            expect(showMessageBox).not.toHaveBeenCalled();
+            expect(fs.readlinkSync(path.join(profileRoot, "electron", "SingletonLock"))).toBe(liveLock);
+            expect(fs.existsSync(otherRoot)).toBe(false);
+            expect(fs.existsSync(path.join(newRoot(otherRoot), MarkerFileName))).toBe(true);
+        });
+    });
 
     // Every `electron .` process (any dev app, its helpers, a new-build dev instance) has this
     // basename, so a reused pid cannot be told apart from the legacy dev app: never Quit-only.
@@ -666,23 +747,6 @@ describe.skipIf(process.platform === "win32")("running legacy instance", () => {
 
 describe("what a blocked launch leaves in the data destination", () => {
     const newData = () => path.join(xdgData, "remoteterm");
-
-    // env-paths reads the home dir once per process, so point it at this test's home instead.
-    function mockMacEnvPaths() {
-        setPlatform("darwin");
-        delete process.env.XDG_CONFIG_HOME;
-        delete process.env.XDG_DATA_HOME;
-        appDataDir = path.join(tmpHome, "Library", "Application Support");
-        vi.doMock("env-paths", () => ({
-            default: (name: string, opts: { suffix?: string }) => ({
-                data: path.join(appDataDir, opts?.suffix ? `${name}-${opts.suffix}` : name),
-            }),
-        }));
-    }
-
-    afterEach(() => {
-        vi.doUnmock("env-paths");
-    });
 
     it("macOS: merges past the Electron userData a blocked launch created", async () => {
         mockMacEnvPaths();
