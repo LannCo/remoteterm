@@ -522,21 +522,30 @@ describe.skipIf(process.platform === "win32")("running legacy instance", () => {
         }
     );
 
+    // Every `electron .` process (any dev app, its helpers, a new-build dev instance) has this
+    // basename, so a reused pid cannot be told apart from the legacy dev app: never Quit-only.
     it.each([
         ["linux", "/home/dev/waveterm/node_modules/electron/dist/electron"],
         ["darwin", "/w/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"],
     ] as [NodeJS.Platform, string][])(
-        "a dev build is still blocked by the dev legacy app (%s)",
+        "a dev build is still blocked by a stock Electron holder, with Migrate anyway (%s)",
         async (platform, exe) => {
             makeDir(path.join(xdgData, "waveterm-dev"), { "wave.lock": "", "db/waveterm.db": "legacy" });
             writeSingletonLock(`${os.hostname()}-${LegacyPid}`);
             mockKill();
             mockProcessIdentity(exe);
             setPlatform(platform);
-            const mod = await loadPlatform(false);
+            let mod = await loadPlatform(false);
             expect(await mod.resolveLegacyInstanceBlock()).toBe(false);
-            expect(showMessageBox.mock.calls[0][0].buttons).toEqual(["Quit"]);
+            expect(showMessageBox.mock.calls[0][0].buttons).toEqual(["Quit", "Migrate anyway"]);
+            expect(showMessageBox.mock.calls[0][0].detail).toContain(exe);
             expect(fs.existsSync(path.join(xdgData, "waveterm-dev", "db/waveterm.db"))).toBe(true);
+
+            vi.resetModules();
+            showMessageBox.mockResolvedValue({ response: 1 });
+            mod = await loadPlatform(false);
+            expect(await mod.resolveLegacyInstanceBlock()).toBe(true);
+            expect(fs.readFileSync(path.join(xdgData, "remoteterm-dev", "db/waveterm.db"), "utf8")).toBe("legacy");
         }
     );
 

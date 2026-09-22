@@ -264,6 +264,13 @@ function checkLegacyInstanceRunning(): LegacyInstanceState {
     if (path.basename(exe) !== exeNames?.[isDev ? "dev" : "prod"]) {
         return { confirmedRunning: false, reason: `pid ${pid} in ${lockPath} is running ${exe}` };
     }
+    // Stock Electron is shared by every `electron .` process, so a reused pid would match too.
+    if (isDev) {
+        return {
+            confirmedRunning: false,
+            reason: `pid ${pid} in ${lockPath} is running ${exe}, which could be the pre-rename dev build or any other Electron app`,
+        };
+    }
     return { confirmedRunning: true, reason: `pid ${pid} (${exe}) holds ${lockPath}` };
 }
 
