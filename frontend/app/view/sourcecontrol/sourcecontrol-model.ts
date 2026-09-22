@@ -628,7 +628,8 @@ export class SourceControlViewModel implements ViewModel {
         try {
             const diff = await this.fetchDiffCached(path, staged, false);
             const hunkCount = diff?.hunks?.length ?? 0;
-            for (let i = 0; i < hunkCount; i++) {
+            // Last to first: each revert re-diffs server-side, so earlier indices stay valid.
+            for (let i = hunkCount - 1; i >= 0; i--) {
                 await this.revertHunk(path, i, staged);
             }
             this.invalidateDiffCache(path);

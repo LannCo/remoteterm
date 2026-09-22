@@ -503,7 +503,7 @@ describe("SourceControlViewModel — review mode", () => {
     // ---- revertFileFromReview ----
 
     describe("revertFileFromReview", () => {
-        it("invalidates diff cache and calls revertHunk for each hunk", async () => {
+        it("invalidates diff cache and reverts every hunk from last to first", async () => {
             model.enterReview([makeReviewFile({ path: "a.ts", staged: false })]);
             model.diffCacheAtom._value = new Map([
                 [
@@ -527,9 +527,12 @@ describe("SourceControlViewModel — review mode", () => {
 
             await model.revertFileFromReview("a.ts", false);
 
-            expect(revertHunkSpy).toHaveBeenCalledTimes(2);
-            expect(revertHunkSpy).toHaveBeenCalledWith("a.ts", 0, false);
-            expect(revertHunkSpy).toHaveBeenCalledWith("a.ts", 1, false);
+            // The server re-diffs on every revert, so reverting hunk 0 first would shift
+            // the remaining hunks down and index 1 would then skip one.
+            expect(revertHunkSpy.mock.calls).toEqual([
+                ["a.ts", 1, false],
+                ["a.ts", 0, false],
+            ]);
             expect(model.diffCacheAtom._value.has("a.ts|unstaged|")).toBe(false);
         });
     });
