@@ -4,7 +4,17 @@
 import { fireAndForget } from "@/util/util";
 import { app, dialog, ipcMain, shell } from "electron";
 import envPaths from "env-paths";
-import { Dirent, existsSync, mkdirSync, readdirSync, renameSync, rmdirSync, writeFileSync } from "fs";
+import {
+    Dirent,
+    existsSync,
+    mkdirSync,
+    readdirSync,
+    readlinkSync,
+    renameSync,
+    rmdirSync,
+    statSync,
+    writeFileSync,
+} from "fs";
 import os from "os";
 import path from "path";
 import { RemoteTermDevVarName, RemoteTermDevViteVarName } from "../frontend/util/isdev";
@@ -91,10 +101,21 @@ type MigrationRootSpec = {
     overridden: boolean;
     // Returns why the existing source is not a real legacy root to migrate, or null if it is.
     sourceSkipReason?: () => string;
+    // Given a non-empty destination's top-level entries, whether to merge into it instead of
+    // aborting. An earlier build that skipped the legacy root, or a launch blocked by a running
+    // legacy instance, may already have created the destination; without a merge that state
+    // aborts on every launch.
+    canMergeIntoDest?: (destEntries: string[]) => boolean;
 };
+
+// Written into the data dir by emain-log at module load, including on a launch that is blocked
+// by a running legacy instance and quits before the server starts.
+const EmainDataEntryNames = new Set(["logs", "rtapp.log"]);
 
 const MigrationMarkerFileName = ".migrated-from-waveterm";
 const LegacyLockFileName = "wave.lock";
+// pkg/secretstore keeps the encrypted secret store in the config root.
+const LegacySecretsFileName = "secrets.enc";
 
 // Failures recorded here don't stop startup (the app can still run against whatever it can
 // resolve), but they leave data unmigrated/orphaned and the failure becomes sticky (the next
@@ -115,6 +136,109 @@ function recordMigrationFailure(message: string, err?: unknown) {
 
 export function getMigrationFailures(): string[] {
     return [...migrationFailures];
+}
+
+// The pre-rename app set its name to "waveterm/electron" in both dev and prod builds, so its
+// Electron userData (and Chromium's SingletonLock) is at <appData>/waveterm/electron.
+const LegacyElectronUserDataPath = ["waveterm", "electron"];
+const SingletonLockFileName = "SingletonLock";
+
+type LegacyInstanceState = {
+    // True only for a live pid on this host; otherwise liveness could not be determined.
+    confirmedRunning: boolean;
+    reason: string;
+};
+
+let legacyInstanceChecked = false;
+let legacyInstanceState: LegacyInstanceState = null;
+let blockingLegacyInstance: LegacyInstanceState = null;
+let ignoreLegacyInstance = false;
+
+// Node has no portable flock, so liveness comes from the legacy Electron process instead: Chromium
+// keeps SingletonLock as a symlink to "<hostname>-<pid>" for as long as that app runs. Windows is
+// not checked: renaming a root fails there while the legacy app holds files open in it.
+function checkLegacyInstanceRunning(): LegacyInstanceState {
+    if (process.platform === "win32") {
+        return null;
+    }
+    const lockPath = path.join(app.getPath("appData"), ...LegacyElectronUserDataPath, SingletonLockFileName);
+    let target: string;
+    try {
+        target = readlinkSync(lockPath);
+    } catch (e) {
+        if (e?.code === "ENOENT") {
+            return null;
+        }
+        return { confirmedRunning: false, reason: `could not read ${lockPath} (${e?.code ?? e})` };
+    }
+    const sepIdx = target.lastIndexOf("-");
+    const hostname = target.slice(0, sepIdx);
+    const pid = parseInt(target.slice(sepIdx + 1), 10);
+    if (sepIdx <= 0 || !Number.isInteger(pid) || pid <= 0) {
+        return { confirmedRunning: false, reason: `${lockPath} has an unrecognised target "${target}"` };
+    }
+    if (hostname !== os.hostname()) {
+        return { confirmedRunning: false, reason: `${lockPath} was written by host "${hostname}"` };
+    }
+    try {
+        process.kill(pid, 0);
+    } catch (e) {
+        if (e?.code === "ESRCH") {
+            return null;
+        }
+    }
+    return { confirmedRunning: true, reason: `WaveTerm is running (pid ${pid}, per ${lockPath})` };
+}
+
+function getLegacyInstanceState(): LegacyInstanceState {
+    if (!legacyInstanceChecked) {
+        legacyInstanceChecked = true;
+        legacyInstanceState = checkLegacyInstanceRunning();
+    }
+    return legacyInstanceState;
+}
+
+/**
+ * Must be awaited before the server starts. When a pending migration was held back because a
+ * pre-rename instance is (or may be) running, asks the user and resolves false if this launch
+ * must quit: starting the server would create the new roots next to the live legacy ones.
+ */
+export async function resolveLegacyInstanceBlock(): Promise<boolean> {
+    const block = blockingLegacyInstance;
+    if (block == null) {
+        return true;
+    }
+    await app.whenReady();
+    if (block.confirmedRunning) {
+        await dialog.showMessageBox({
+            type: "warning",
+            buttons: ["Quit"],
+            title: "WaveTerm Is Still Running",
+            message: "Quit WaveTerm, then relaunch RemoteTerm.",
+            detail: "RemoteTerm needs to move your WaveTerm data to its new location and cannot do that while WaveTerm is running.",
+        });
+        return false;
+    }
+    const { response } = await dialog.showMessageBox({
+        type: "warning",
+        buttons: ["Quit", "Migrate anyway"],
+        defaultId: 0,
+        cancelId: 0,
+        title: "WaveTerm May Still Be Running",
+        message: "RemoteTerm could not confirm that WaveTerm has quit.",
+        detail:
+            `${block.reason}.\n\n` +
+            "If WaveTerm is running, quit it and relaunch RemoteTerm: moving its data while it runs can break it. " +
+            "If you are sure WaveTerm is not running (for example after a crash), choose Migrate anyway.",
+    });
+    if (response !== 1) {
+        return false;
+    }
+    console.log("[migration] user chose to migrate despite a possibly running WaveTerm");
+    blockingLegacyInstance = null;
+    ignoreLegacyInstance = true;
+    performDataDirMigration();
+    return true;
 }
 
 function migrateDataRoot(spec: MigrationRootSpec) {
@@ -143,6 +267,14 @@ function migrateDataRoot(spec: MigrationRootSpec) {
         console.log(`[migration] skipping ${spec.name} root: ${spec.source} ${skipReason}`);
         return;
     }
+    const legacyInstance = ignoreLegacyInstance ? null : getLegacyInstanceState();
+    if (legacyInstance) {
+        blockingLegacyInstance = legacyInstance;
+        console.log(
+            `[migration] not migrating ${spec.name} root this launch: ${legacyInstance.reason}; will retry next launch`
+        );
+        return;
+    }
     if (existsSync(spec.dest)) {
         let destEntries: string[];
         try {
@@ -158,6 +290,9 @@ function migrateDataRoot(spec: MigrationRootSpec) {
                 recordMigrationFailure(`could not remove empty destination ${spec.dest} for ${spec.name} root`, e);
                 return;
             }
+        } else if (spec.canMergeIntoDest?.(destEntries)) {
+            mergeDataRoot(spec);
+            return;
         } else {
             recordMigrationFailure(
                 `${spec.name} root migration aborted: ${spec.dest} already exists and is not empty. Please merge ${spec.source} into ${spec.dest} manually.`
@@ -189,6 +324,64 @@ function migrateDataRoot(spec: MigrationRootSpec) {
     }
 }
 
+// Electron's userData (Chromium profile) is kept whole on whichever side already has it: mixing
+// files from two profiles is not a merge Chromium supports.
+const UnmergeableDirNames = new Set(["electron"]);
+
+type MergeResult = { merged: string[]; kept: string[] };
+
+function mergeTree(source: string, dest: string, rel: string, result: MergeResult) {
+    for (const ent of readdirSync(source, { withFileTypes: true })) {
+        const relPath = rel ? path.join(rel, ent.name) : ent.name;
+        const sourcePath = path.join(source, ent.name);
+        const destPath = path.join(dest, ent.name);
+        if (!existsSync(destPath)) {
+            renameSync(sourcePath, destPath);
+            result.merged.push(relPath);
+            continue;
+        }
+        const destIsDir = statSync(destPath).isDirectory();
+        if (ent.isDirectory() && destIsDir && !UnmergeableDirNames.has(relPath)) {
+            mergeTree(sourcePath, destPath, relPath, result);
+            continue;
+        }
+        result.kept.push(relPath);
+    }
+    if (rel && readdirSync(source).length === 0) {
+        rmdirSync(source);
+    }
+}
+
+// Moves every source entry the destination lacks into it and never overwrites a destination
+// entry. Whatever cannot be moved stays in the source; the marker is written regardless so the
+// state converges instead of re-reporting on every launch.
+function mergeDataRoot(spec: MigrationRootSpec) {
+    const result: MergeResult = { merged: [], kept: [] };
+    try {
+        mergeTree(spec.source, spec.dest, "", result);
+        writeFileSync(
+            path.join(spec.dest, MigrationMarkerFileName),
+            `merged-from:${spec.source}\n${new Date().toISOString()}\n`
+        );
+    } catch (e) {
+        recordMigrationFailure(
+            `error merging ${spec.name} root from ${spec.source} into ${spec.dest} (merged so far: ${result.merged.join(", ") || "nothing"})`,
+            e
+        );
+        return;
+    }
+    console.log(
+        `[migration] merged ${spec.name} root from ${spec.source} into existing ${spec.dest}: ` +
+            `merged [${result.merged.join(", ")}], kept destination copy of [${result.kept.join(", ")}]`
+    );
+    const keptUserFiles = result.kept.filter((p) => !UnmergeableDirNames.has(p));
+    if (keptUserFiles.length > 0) {
+        recordMigrationFailure(
+            `${spec.name} root: ${spec.dest} already had ${keptUserFiles.join(", ")}; the older copies were left in ${spec.source}. Compare and merge them manually if needed.`
+        );
+    }
+}
+
 function lockFileSkipReason(dir: string): string {
     return existsSync(path.join(dir, LegacyLockFileName)) ? null : `has no ${LegacyLockFileName}`;
 }
@@ -204,9 +397,11 @@ function legacyConfigSkipReason(dir: string): string {
         return `could not be read (${e})`;
     }
     const hasConfig = entries.some(
-        (ent) => (ent.isFile() && ent.name.endsWith(".json")) || (ent.isDirectory() && ent.name === "presets")
+        (ent) =>
+            (ent.isFile() && (ent.name.endsWith(".json") || ent.name === LegacySecretsFileName)) ||
+            (ent.isDirectory() && ent.name === "presets")
     );
-    return hasConfig ? null : "has no config files (*.json or presets/)";
+    return hasConfig ? null : `has no config files (*.json, ${LegacySecretsFileName} or presets/)`;
 }
 
 function performDataDirMigration() {
@@ -228,6 +423,8 @@ function performDataDirMigration() {
             dest: configOverride ?? configDest,
             overridden: configOverride != null,
             sourceSkipReason: () => legacyConfigSkipReason(configSource),
+            // Config files are plain files the merge never overwrites, so any destination is safe.
+            canMergeIntoDest: () => true,
         });
 
         const dataOverride = readOverrideEnvVar(RemoteTermDataHomeVarName, LegacyRemoteTermDataHomeVarName);
@@ -239,6 +436,8 @@ function performDataDirMigration() {
             dest: dataOverride ?? dataDest,
             overridden: dataOverride != null,
             sourceSkipReason: () => lockFileSkipReason(dataSource),
+            // Never merge next to a database the new build already created.
+            canMergeIntoDest: (destEntries) => destEntries.every((name) => EmainDataEntryNames.has(name)),
         });
 
         const homeOverride = readOverrideEnvVar(RemoteTermHomeVarName, LegacyRemoteTermHomeVarName);
