@@ -1047,28 +1047,66 @@ interface NumberControlProps {
     describedBy?: string;
 }
 
+// Number("") is 0, so an emptied field must be rejected explicitly rather than saved as 0.
+// Out-of-range values are clamped because consumers index arrays by some of these settings
+// (window:maxtabcachesize drives emain's tab-cache eviction).
+export function parseNumberInput(raw: string, min?: number, max?: number): number | null {
+    if (raw.trim() === "") {
+        return null;
+    }
+    let next = Number(raw);
+    if (!Number.isFinite(next)) {
+        return null;
+    }
+    if (min != null) next = Math.max(min, next);
+    if (max != null) next = Math.min(max, next);
+    return next;
+}
+
 const NumberControl = memo(
     ({ value, unit, min, max, step = 1, onChange, fieldLabel, labelledBy, describedBy }: NumberControlProps) => {
-        const bump = (delta: number) => {
-            let next = value + delta;
-            if (min != null) next = Math.max(min, next);
-            if (max != null) next = Math.min(max, next);
+        const [local, setLocal] = useState(String(value));
+        const [dirty, setDirty] = useState(false);
+
+        if (!dirty && local !== String(value)) {
+            setLocal(String(value));
+        }
+
+        const commit = () => {
+            setDirty(false);
+            const next = parseNumberInput(local, min, max);
+            if (next == null || next === value) {
+                setLocal(String(value));
+                return;
+            }
+            setLocal(String(next));
             onChange(next);
+        };
+
+        const bump = (delta: number) => {
+            setDirty(false);
+            onChange(parseNumberInput(String(value + delta), min, max));
         };
 
         return (
             <div className="flex items-center gap-1 shrink-0 bg-black/25 border border-border rounded-md pl-2.5 pr-1 py-0.5">
                 <input
                     type="number"
-                    value={value}
+                    value={local}
                     min={min}
                     max={max}
                     step={step}
                     aria-labelledby={labelledBy}
                     aria-describedby={describedBy}
                     onChange={(e) => {
-                        const next = Number(e.target.value);
-                        if (Number.isFinite(next)) onChange(next);
+                        setDirty(true);
+                        setLocal(e.target.value);
+                    }}
+                    onBlur={commit}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                            (e.target as HTMLInputElement).blur();
+                        }
                     }}
                     className="w-14 bg-transparent text-xs font-mono text-primary focus:outline-none"
                 />
