@@ -49,7 +49,7 @@ It has a TypeScript/React frontend and a Go backend. They talk together over `ws
 - We use **Tailwind v4** to style. Custom stuff is defined in frontend/tailwindsetup.css
 - _never_ use cursor-help, or cursor-not-allowed (it looks terrible)
 - We have custom CSS setup as well, so it is a hybrid system. For new code we prefer tailwind, and are working to migrate code to all use tailwind.
-- For accent buttons, use "bg-accent/80 text-primary rounded hover:bg-accent transition-colors cursor-pointer" (if you do "bg-accent hover:bg-accent/80" it looks weird as on hover the button gets darker instead of lighter)
+- For accent buttons, use "bg-accent/80 text-background rounded hover:bg-accent transition-colors cursor-pointer" (if you do "bg-accent hover:bg-accent/80" it looks weird as on hover the button gets darker instead of lighter). Use `text-background` (dark), not `text-primary` (white) — white-on-accent/80 computes to 3.02:1 against WCAG AA's 4.5:1 text-contrast minimum; `text-background` reaches 4.91:1 on the `/80` state and 6.91:1 on the solid `:hover` state.
 
 ### RPC System
 

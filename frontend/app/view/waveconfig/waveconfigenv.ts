@@ -18,6 +18,7 @@ export type WaveConfigEnv = WaveEnvSubset<{
         GetSecretsCommand: WaveEnv["rpc"]["GetSecretsCommand"];
         SetSecretsCommand: WaveEnv["rpc"]["SetSecretsCommand"];
         SetConnectionsConfigCommand: WaveEnv["rpc"]["SetConnectionsConfigCommand"];
+        SetConfigCommand: WaveEnv["rpc"]["SetConfigCommand"];
     };
     atoms: {
         fullConfigAtom: WaveEnv["atoms"]["fullConfigAtom"];
@@ -25,5 +26,6 @@ export type WaveConfigEnv = WaveEnvSubset<{
         workspaceId: WaveEnv["atoms"]["workspaceId"];
     };
     getBlockMetaKeyAtom: MetaKeyAtomFnType<"file">;
+    getTabMetaKeyAtom: MetaKeyAtomFnType<"tab:background">;
     isWindows: WaveEnv["isWindows"];
 }>;

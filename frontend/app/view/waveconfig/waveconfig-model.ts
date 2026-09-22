@@ -6,7 +6,9 @@ import { globalStore } from "@/app/store/jotaiStore";
 import type { TabModel } from "@/app/store/tab-model";
 import { makeORef } from "@/app/store/wos";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { BackgroundsContent } from "@/app/view/waveconfig/backgroundscontent";
 import { ConnectionsContent } from "@/app/view/waveconfig/connectionscontent";
+import { GeneralContent } from "@/app/view/waveconfig/generalcontent";
 import { SecretsContent } from "@/app/view/waveconfig/secretscontent";
 import { WaveConfigView } from "@/app/view/waveconfig/waveconfig";
 import type { WaveConfigEnv } from "@/app/view/waveconfig/waveconfigenv";
@@ -36,8 +38,7 @@ export type ConfigFile = {
 export const SecretNameRegex = /^[A-Za-z][A-Za-z0-9_]*$/;
 
 // Mirrors the Go userHostRe in pkg/remote/connutil.go ParseOpts() — keep in sync.
-export const ConnectionQuickAddRegex =
-    /^([a-zA-Z0-9][a-zA-Z0-9._@-]*@)?([a-zA-Z0-9][a-zA-Z0-9.-]*)(?::([0-9]+))?$/;
+export const ConnectionQuickAddRegex = /^([a-zA-Z0-9][a-zA-Z0-9._@-]*@)?([a-zA-Z0-9][a-zA-Z0-9.-]*)(?::([0-9]+))?$/;
 
 function makeConfigFiles(isWindows: boolean): ConfigFile[] {
     return [
@@ -47,6 +48,7 @@ function makeConfigFiles(isWindows: boolean): ConfigFile[] {
             language: "json",
             docsUrl: "https://docs.waveterm.dev/config",
             hasJsonView: true,
+            visualComponent: GeneralContent,
         },
         {
             name: "Connections",
@@ -71,6 +73,7 @@ function makeConfigFiles(isWindows: boolean): ConfigFile[] {
             language: "json",
             docsUrl: "https://docs.waveterm.dev/tab-backgrounds",
             hasJsonView: true,
+            visualComponent: BackgroundsContent,
         },
         {
             name: "Secrets",
@@ -141,6 +144,22 @@ export class WaveConfigViewModel implements ViewModel {
     widgetsOrderedAtom: Atom<[string, WidgetConfigType][]>;
     widgetsPreviewAtom: Atom<WidgetConfigType[]>;
     widgetsWriteQueueAtom: PrimitiveAtom<Promise<void>>;
+
+    backgroundsMapAtom: Atom<{ [key: string]: BackgroundConfigType }>;
+    backgroundsOrderedAtom: Atom<[string, BackgroundConfigType][]>;
+    activeTabBackgroundKeyAtom: Atom<string>;
+    backgroundsWriteQueueAtom: PrimitiveAtom<Promise<void>>;
+    backgroundsAddOpenAtom: PrimitiveAtom<boolean>;
+    backgroundsAddNameAtom: PrimitiveAtom<string>;
+    backgroundsAddBgAtom: PrimitiveAtom<string>;
+    backgroundsAddErrorAtom: PrimitiveAtom<string | null>;
+
+    settingsAtom: Atom<SettingsType>;
+    // Parsed from the raw settings.json content already loaded into originalContentAtom for
+    // the Raw JSON tab -- this is the *unmerged* on-disk file, needed to tell "user explicitly
+    // set this key" apart from "showing the merged-in default" (fullConfigAtom.settings always
+    // has defaults merged in, so it can't answer that question by itself).
+    generalRawSettingsAtom: Atom<SettingsType>;
 
     constructor({ blockId, nodeModel, tabModel, waveEnv }: ViewModelInitType) {
         this.blockId = blockId;
@@ -218,6 +237,44 @@ export class WaveConfigViewModel implements ViewModel {
             return sortByDisplayOrder(filtered);
         });
         this.widgetsWriteQueueAtom = atom<Promise<void>>(Promise.resolve());
+
+        this.backgroundsMapAtom = atom((get) => {
+            const fullConfig = get(this.env.atoms.fullConfigAtom);
+            return fullConfig?.backgrounds ?? {};
+        });
+        this.backgroundsOrderedAtom = atom((get) => {
+            const backgroundsMap = get(this.backgroundsMapAtom);
+            const entries = Object.entries(backgroundsMap);
+            entries.sort((a, b) => (a[1]["display:order"] ?? 0) - (b[1]["display:order"] ?? 0));
+            return entries;
+        });
+        this.activeTabBackgroundKeyAtom = atom((get) =>
+            get(this.env.getTabMetaKeyAtom(this.tabModel.tabId, "tab:background"))
+        );
+        this.backgroundsWriteQueueAtom = atom<Promise<void>>(Promise.resolve());
+        this.backgroundsAddOpenAtom = atom<boolean>(false);
+        this.backgroundsAddNameAtom = atom<string>("");
+        this.backgroundsAddBgAtom = atom<string>("");
+        this.backgroundsAddErrorAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+
+        this.settingsAtom = atom((get) => get(this.env.atoms.fullConfigAtom)?.settings ?? {});
+        this.generalRawSettingsAtom = atom((get) => {
+            const selectedFile = get(this.selectedFileAtom);
+            if (selectedFile?.path !== "settings.json") {
+                return {};
+            }
+            const content = get(this.originalContentAtom);
+            try {
+                const parsed = JSON.parse(content);
+                if (typeof parsed === "object" && parsed != null && !Array.isArray(parsed)) {
+                    return parsed as SettingsType;
+                }
+            } catch {
+                // fall through to empty -- an unparsable raw file just means we can't tell
+                // which keys are user-set, so every nullable field renders as "not set"
+            }
+            return {};
+        });
 
         this.checkPresetsJsonExists();
         this.initialize();
@@ -506,7 +563,8 @@ export class WaveConfigViewModel implements ViewModel {
         globalStore.set(this.errorMessageAtom, null);
 
         try {
-            await this.env.rpc.SetSecretsCommand(TabRpcClient, { [selectedSecret]: secretValue });            this.closeSecretView();
+            await this.env.rpc.SetSecretsCommand(TabRpcClient, { [selectedSecret]: secretValue });
+            this.closeSecretView();
         } catch (error) {
             globalStore.set(this.errorMessageAtom, `Failed to save secret: ${error.message}`);
         } finally {
@@ -576,7 +634,8 @@ export class WaveConfigViewModel implements ViewModel {
         globalStore.set(this.errorMessageAtom, null);
 
         try {
-            await this.env.rpc.SetSecretsCommand(TabRpcClient, { [name]: value });            globalStore.set(this.isAddingNewAtom, false);
+            await this.env.rpc.SetSecretsCommand(TabRpcClient, { [name]: value });
+            globalStore.set(this.isAddingNewAtom, false);
             globalStore.set(this.newSecretNameAtom, "");
             globalStore.set(this.newSecretValueAtom, "");
             await this.refreshSecrets();
@@ -605,10 +664,7 @@ export class WaveConfigViewModel implements ViewModel {
             return;
         }
         if (!ConnectionQuickAddRegex.test(value)) {
-            globalStore.set(
-                this.connectionsQuickAddErrorAtom,
-                "Invalid format: expected user@host or user@host:port"
-            );
+            globalStore.set(this.connectionsQuickAddErrorAtom, "Invalid format: expected user@host or user@host:port");
             return;
         }
         globalStore.set(this.connectionsQuickAddErrorAtom, null);
@@ -617,6 +673,42 @@ export class WaveConfigViewModel implements ViewModel {
             globalStore.set(this.connectionsQuickAddValueAtom, "");
         } catch (error) {
             globalStore.set(this.connectionsQuickAddErrorAtom, `Failed to add connection: ${error.message}`);
+        }
+    }
+
+    // settings.json merges per-top-level-key server-side (SetBaseConfigValue), so a single-key
+    // write here is already minimal-diff -- no read-modify-write queue needed the way widgets/
+    // backgrounds need one. `null` clears a key back to its default (MetaMapType merge semantics).
+    async setGeneralSetting(patch: SettingsType) {
+        globalStore.set(this.errorMessageAtom, null);
+        try {
+            await this.env.rpc.SetConfigCommand(TabRpcClient, patch);
+            await this.refreshGeneralRawContent();
+        } catch (err) {
+            globalStore.set(this.errorMessageAtom, `Failed to save setting: ${err.message || String(err)}`);
+        }
+    }
+
+    // Keeps originalContentAtom/fileContentAtom (and therefore generalRawSettingsAtom, and the
+    // Raw JSON tab) in sync after a visual-tab write, the same way writeWidgetPatch/
+    // writeBackgroundPatch do for their own files. Best-effort: setGeneralSetting's RPC already
+    // succeeded by the time this runs, so a refresh failure here isn't surfaced as an error.
+    async refreshGeneralRawContent() {
+        const selectedFile = globalStore.get(this.selectedFileAtom);
+        if (selectedFile?.path !== "settings.json") {
+            return;
+        }
+        try {
+            const fullPath = `${this.configDir}/settings.json`;
+            const fileData = await this.env.rpc.FileReadCommand(TabRpcClient, {
+                info: { path: fullPath },
+            });
+            const content = fileData?.data64 ? base64ToString(fileData.data64) : "";
+            const formatted = content.trim() === "" ? "{\n\n}" : content;
+            globalStore.set(this.originalContentAtom, formatted);
+            globalStore.set(this.fileContentAtom, formatted);
+        } catch {
+            // ignore -- best-effort refresh only
         }
     }
 
@@ -735,6 +827,161 @@ export class WaveConfigViewModel implements ViewModel {
         const widget = widgetsMap[key];
         if (widget == null) return;
         await this.persistWidgetPatch({ [key]: { ...widget, "display:hidden": !widget["display:hidden"] } });
+    }
+
+    // Same unmerged-read rationale as readRawWidgetsFile: fullConfig.backgrounds includes
+    // shipped defaultconfig presets, so writes must be computed against the user's own
+    // (possibly absent) backgrounds.json, or editing a default preset would fork every
+    // other default preset into the user's file too.
+    async readRawBackgroundsFile(): Promise<{ [key: string]: BackgroundConfigType } | null> {
+        const fullPath = `${this.configDir}/backgrounds.json`;
+        try {
+            const fileInfo = await this.env.rpc.FileInfoCommand(TabRpcClient, {
+                info: { path: fullPath },
+            });
+            if (fileInfo.notfound) {
+                return {};
+            }
+        } catch (err) {
+            globalStore.set(this.errorMessageAtom, `Failed to check backgrounds.json: ${err.message || String(err)}`);
+            return null;
+        }
+
+        try {
+            const fileData = await this.env.rpc.FileReadCommand(TabRpcClient, {
+                info: { path: fullPath },
+            });
+            const content = fileData?.data64 ? base64ToString(fileData.data64) : "";
+            if (content.trim() === "") {
+                return {};
+            }
+            const parsed = JSON.parse(content);
+            if (typeof parsed !== "object" || parsed == null || Array.isArray(parsed)) {
+                globalStore.set(this.errorMessageAtom, "backgrounds.json content is not a valid object");
+                return null;
+            }
+            return parsed;
+        } catch (err) {
+            globalStore.set(this.errorMessageAtom, `Failed to read backgrounds.json: ${err.message || String(err)}`);
+            return null;
+        }
+    }
+
+    async persistBackgroundPatch(updates: { [key: string]: BackgroundConfigType }) {
+        if (Object.keys(updates).length === 0) {
+            return;
+        }
+        const queue = globalStore.get(this.backgroundsWriteQueueAtom);
+        const nextWrite = queue.then(() => this.writeBackgroundPatch(updates));
+        globalStore.set(this.backgroundsWriteQueueAtom, nextWrite);
+        await nextWrite;
+    }
+
+    async writeBackgroundPatch(updates: { [key: string]: BackgroundConfigType }) {
+        globalStore.set(this.errorMessageAtom, null);
+        const rawContent = await this.readRawBackgroundsFile();
+        if (rawContent == null) {
+            return;
+        }
+        try {
+            const merged = { ...rawContent, ...updates };
+            const fullPath = `${this.configDir}/backgrounds.json`;
+            const formatted = JSON.stringify(merged, null, 2);
+            await this.env.rpc.FileWriteCommand(TabRpcClient, {
+                info: { path: fullPath },
+                data64: stringToBase64(formatted),
+            });
+            const selectedFile = globalStore.get(this.selectedFileAtom);
+            if (selectedFile?.path === "backgrounds.json") {
+                globalStore.set(this.originalContentAtom, formatted);
+                globalStore.set(this.fileContentAtom, formatted);
+            }
+        } catch (err) {
+            globalStore.set(this.errorMessageAtom, `Failed to save backgrounds.json: ${err.message || String(err)}`);
+        }
+    }
+
+    async applyBackgroundToTab(key: string | null) {
+        const oref = makeORef("tab", this.tabModel.tabId);
+        await this.env.rpc.SetMetaCommand(TabRpcClient, {
+            oref,
+            meta: { "bg:*": true, "tab:background": key },
+        });
+    }
+
+    async updateBackgroundOpacity(key: string, opacity: number) {
+        const backgroundsMap = globalStore.get(this.backgroundsMapAtom);
+        const background = backgroundsMap[key];
+        if (background == null) return;
+        await this.persistBackgroundPatch({ [key]: { ...background, "bg:opacity": opacity } });
+    }
+
+    async updateBackgroundBlendMode(key: string, blendMode: string) {
+        const backgroundsMap = globalStore.get(this.backgroundsMapAtom);
+        const background = backgroundsMap[key];
+        if (background == null) return;
+        await this.persistBackgroundPatch({ [key]: { ...background, "bg:blendmode": blendMode } });
+    }
+
+    async addBackground(displayName: string, bg: string) {
+        const name = displayName.trim();
+        if (!name) return;
+        const backgroundsMap = globalStore.get(this.backgroundsMapAtom);
+        const slug = name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/(^-|-$)/g, "");
+        let key = `bg@${slug || "custom"}`;
+        let suffix = 2;
+        while (backgroundsMap[key] != null) {
+            key = `bg@${slug || "custom"}-${suffix}`;
+            suffix++;
+        }
+        const maxOrder = Object.values(backgroundsMap).reduce(
+            (max, entry) => Math.max(max, entry["display:order"] ?? 0),
+            0
+        );
+        // 0.3 matches the shipped defaultconfig presets that (like a hand-typed quick-add)
+        // are a single flat CSS value rather than a multi-layer gradient — Rainbow, Green,
+        // Blue, and Red in pkg/wconfig/defaultconfig/backgrounds.json all use it, and none
+        // of those set bg:blendmode either.
+        await this.persistBackgroundPatch({
+            [key]: { "display:name": name, bg, "bg:opacity": 0.3, "display:order": maxOrder + 1 },
+        });
+        return key;
+    }
+
+    openBackgroundAdd() {
+        globalStore.set(this.backgroundsAddOpenAtom, true);
+        globalStore.set(this.backgroundsAddNameAtom, "");
+        globalStore.set(this.backgroundsAddBgAtom, "");
+        globalStore.set(this.backgroundsAddErrorAtom, null);
+    }
+
+    closeBackgroundAdd() {
+        globalStore.set(this.backgroundsAddOpenAtom, false);
+        globalStore.set(this.backgroundsAddNameAtom, "");
+        globalStore.set(this.backgroundsAddBgAtom, "");
+        globalStore.set(this.backgroundsAddErrorAtom, null);
+    }
+
+    async submitBackgroundAdd() {
+        const name = globalStore.get(this.backgroundsAddNameAtom).trim();
+        const bg = globalStore.get(this.backgroundsAddBgAtom).trim();
+        if (!name) {
+            globalStore.set(this.backgroundsAddErrorAtom, "Name cannot be empty");
+            return;
+        }
+        if (!bg) {
+            globalStore.set(this.backgroundsAddErrorAtom, "CSS background value cannot be empty");
+            return;
+        }
+        globalStore.set(this.backgroundsAddErrorAtom, null);
+        const key = await this.addBackground(name, bg);
+        this.closeBackgroundAdd();
+        if (key) {
+            await this.applyBackgroundToTab(key);
+        }
     }
 
     giveFocus(): boolean {
