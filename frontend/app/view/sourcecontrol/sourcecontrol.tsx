@@ -10,6 +10,7 @@ import * as jotai from "jotai";
 import * as monaco from "monaco-editor";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+import { ActionErrorBanner } from "./action-error";
 import { DiffGutter } from "./DiffGutter";
 import { ReviewMode } from "./review-mode";
 import type { SourceControlViewModel } from "./sourcecontrol-model";
@@ -767,6 +768,8 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
                     dirsOnly
                 />
             )}
+
+            <ActionErrorBanner errorAtom={model.actionErrorAtom} onDismiss={() => model.dismissActionError()} />
 
             {reviewMode ? (
                 <div className="flex-1 flex flex-col overflow-hidden min-h-0">
