@@ -124,13 +124,16 @@ const LegacyLockFileName = "wave.lock";
 // pkg/secretstore keeps the encrypted secret store in the config root.
 const LegacySecretsFileName = "secrets.enc";
 
-// Failures recorded here don't stop startup (the app can still run against whatever it can
+// Most failures recorded here don't stop startup (the app can still run against whatever it can
 // resolve), but they leave data unmigrated/orphaned and the failure becomes sticky (the next
 // launch's "destination already exists and is unmarked" abort branch fires permanently), so a
 // console.log alone isn't enough. getMigrationFailures() lets emain.ts surface these to the
 // user once Electron is actually ready to show a dialog (this module's own top level runs
 // before `app` is ready, so it can only log, not show UI).
 const migrationFailures: string[] = [];
+// Set when a root's legacy data was left unmoved or half-merged. Starting the server then would
+// create a fresh database in the destination that a later launch can no longer merge past.
+let migrationIncomplete = false;
 
 function recordMigrationFailure(message: string, err?: unknown) {
     migrationFailures.push(message);
@@ -141,8 +144,32 @@ function recordMigrationFailure(message: string, err?: unknown) {
     }
 }
 
+function recordIncompleteMigration(message: string, err?: unknown) {
+    migrationIncomplete = true;
+    recordMigrationFailure(message, err);
+}
+
 export function getMigrationFailures(): string[] {
     return [...migrationFailures];
+}
+
+/**
+ * Must be awaited before the server starts, after resolveLegacyInstanceBlock(). When a root's
+ * migration failed part-way, shows the failures and resolves false so this launch quits and the
+ * next one resumes against the destination as this one left it.
+ */
+export async function resolveIncompleteMigrationBlock(): Promise<boolean> {
+    if (!migrationIncomplete) {
+        return true;
+    }
+    await app.whenReady();
+    dialog.showErrorBox(
+        "RemoteTerm Data Migration Issue",
+        "RemoteTerm could not finish moving your existing data to its new storage location, so it will quit " +
+            "without opening it. Fix the problem below and relaunch RemoteTerm; the migration continues where it stopped.\n\n" +
+            migrationFailures.join("\n")
+    );
+    return false;
 }
 
 // The pre-rename app set its name to "waveterm/electron" in both dev and prod builds, so its
@@ -160,6 +187,8 @@ const LegacyExecutableNames: Record<string, { prod: string; dev: string }> = {
 type LegacyInstanceState = {
     // True only for a live pid on this host; otherwise liveness could not be determined.
     confirmedRunning: boolean;
+    // The holder is the other legacy flavour, which shares only the Electron profile with this one.
+    otherFlavour?: boolean;
     reason: string;
 };
 
@@ -228,16 +257,39 @@ function checkLegacyInstanceRunning(): LegacyInstanceState {
         return { confirmedRunning: false, reason: `pid ${pid} in ${lockPath} is running but could not be identified` };
     }
     const exeNames = LegacyExecutableNames[process.platform];
-    // Both flavours of the legacy app shared one userData dir and so one SingletonLock: the other
-    // flavour holding it means this flavour, the only one using the roots we move, is not running.
-    if (path.basename(exe) === exeNames?.[isDev ? "prod" : "dev"]) {
-        console.log(`[migration] ${lockPath} is held by the other legacy build (${exe}), not the one being migrated`);
-        return null;
-    }
-    if (path.basename(exe) !== exeNames?.[isDev ? "dev" : "prod"]) {
+    const exeName = path.basename(exe);
+    if (exeName !== exeNames?.prod && exeName !== exeNames?.dev) {
         return { confirmedRunning: false, reason: `pid ${pid} in ${lockPath} is running ${exe}` };
     }
-    return { confirmedRunning: true, reason: `pid ${pid} (${exe}) holds ${lockPath}` };
+    const holderIsDev = exeName === exeNames.dev;
+    // Both flavours of the legacy app shared one userData dir and so one SingletonLock: the other
+    // flavour holding it means this flavour is not running, but that profile (and its live lock)
+    // still sits inside some production roots (see legacyInstanceBlocksRoot).
+    const otherFlavour = holderIsDev !== isDev;
+    // Stock Electron is shared by every `electron .` process, so a reused pid would match too.
+    if (holderIsDev) {
+        return {
+            confirmedRunning: false,
+            otherFlavour,
+            reason: `pid ${pid} in ${lockPath} is running ${exe}, which could be the pre-rename dev build or any other Electron app`,
+        };
+    }
+    return { confirmedRunning: true, otherFlavour, reason: `pid ${pid} (${exe}) holds ${lockPath}` };
+}
+
+// The shared legacy profile is inside the Linux config root and the macOS data root; moving either
+// would move a running other-flavour app's profile and live SingletonLock into this build's userData.
+function legacyInstanceBlocksRoot(state: LegacyInstanceState, source: string): boolean {
+    if (!state.otherFlavour) {
+        return true;
+    }
+    const profileDir = path.join(app.getPath("appData"), ...LegacyElectronUserDataPath);
+    const rel = path.relative(source, profileDir);
+    if (rel === "" || (rel.split(path.sep)[0] !== ".." && !path.isAbsolute(rel))) {
+        return true;
+    }
+    console.log(`[migration] the lock is held by the other legacy build, whose profile is not in ${source}`);
+    return false;
 }
 
 function getLegacyInstanceState(): LegacyInstanceState {
@@ -321,7 +373,7 @@ function migrateDataRoot(spec: MigrationRootSpec) {
         return;
     }
     const legacyInstance = ignoreLegacyInstance ? null : getLegacyInstanceState();
-    if (legacyInstance) {
+    if (legacyInstance && legacyInstanceBlocksRoot(legacyInstance, spec.source)) {
         blockingLegacyInstance = legacyInstance;
         console.log(
             `[migration] not migrating ${spec.name} root this launch: ${legacyInstance.reason}; will retry next launch`
@@ -333,14 +385,14 @@ function migrateDataRoot(spec: MigrationRootSpec) {
         try {
             destEntries = readdirSync(spec.dest);
         } catch (e) {
-            recordMigrationFailure(`could not inspect existing destination ${spec.dest} for ${spec.name} root`, e);
+            recordIncompleteMigration(`could not inspect existing destination ${spec.dest} for ${spec.name} root`, e);
             return;
         }
         if (destEntries.length === 0) {
             try {
                 rmdirSync(spec.dest);
             } catch (e) {
-                recordMigrationFailure(`could not remove empty destination ${spec.dest} for ${spec.name} root`, e);
+                recordIncompleteMigration(`could not remove empty destination ${spec.dest} for ${spec.name} root`, e);
                 return;
             }
         } else if (resumeMerge || spec.canMergeIntoDest?.(destEntries)) {
@@ -373,13 +425,14 @@ function migrateDataRoot(spec: MigrationRootSpec) {
             );
             return;
         }
-        recordMigrationFailure(`error migrating ${spec.name} root from ${spec.source} to ${spec.dest}`, e);
+        recordIncompleteMigration(`error migrating ${spec.name} root from ${spec.source} to ${spec.dest}`, e);
     }
 }
 
 // Electron's userData (Chromium profile) is kept whole on whichever side already has it: mixing
 // files from two profiles is not a merge Chromium supports.
 const UnmergeableDirNames = new Set(["electron"]);
+const DatabaseDirName = "db";
 
 type MergeResult = { merged: string[]; kept: string[] };
 
@@ -412,6 +465,18 @@ function mergeTree(source: string, dest: string, rel: string, result: MergeResul
 function mergeDataRoot(spec: MigrationRootSpec) {
     const result: MergeResult = { merged: [], kept: [] };
     const inProgressFile = path.join(spec.dest, MigrationInProgressFileName);
+    const sourceDb = path.join(spec.source, DatabaseDirName);
+    const destDb = path.join(spec.dest, DatabaseDirName);
+    // A database cannot be merged file by file, and the destination's may be the only copy of
+    // work done since, so neither is touched.
+    if (existsSync(sourceDb) && existsSync(destDb)) {
+        recordIncompleteMigration(
+            `${spec.name} root: ${destDb} already exists while your existing database is still in ${sourceDb}. ` +
+                `RemoteTerm will not merge or delete either. If ${destDb} holds nothing you need (a failed earlier ` +
+                `migration can leave an empty one), move it out of ${spec.dest} and relaunch RemoteTerm.`
+        );
+        return;
+    }
     try {
         writeFileSync(inProgressFile, `merging-from:${spec.source}\n${new Date().toISOString()}\n`);
         mergeTree(spec.source, spec.dest, "", result);
@@ -420,7 +485,7 @@ function mergeDataRoot(spec: MigrationRootSpec) {
             `merged-from:${spec.source}\n${new Date().toISOString()}\n`
         );
     } catch (e) {
-        recordMigrationFailure(
+        recordIncompleteMigration(
             `error merging ${spec.name} root from ${spec.source} into ${spec.dest} (merged so far: ${result.merged.join(", ") || "nothing"})`,
             e
         );

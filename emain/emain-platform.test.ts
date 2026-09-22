@@ -22,6 +22,7 @@ let xdgConfig: string;
 let xdgData: string;
 let appDataDir: string;
 const showMessageBox = vi.fn();
+const showErrorBox = vi.fn();
 const savedEnv = { ...process.env };
 const savedPlatform = Object.getOwnPropertyDescriptor(process, "platform");
 
@@ -46,7 +47,7 @@ function mockElectron(isPackaged: boolean) {
             whenReady: async () => {},
             runningUnderARM64Translation: false,
         },
-        dialog: { showMessageBoxSync: () => 0, showMessageBox },
+        dialog: { showMessageBoxSync: () => 0, showMessageBox, showErrorBox },
         ipcMain: { on: () => {} },
         shell: { openExternal: async () => {} },
     }));
@@ -70,6 +71,7 @@ beforeEach(() => {
     vi.resetModules();
     showMessageBox.mockReset();
     showMessageBox.mockResolvedValue({ response: 0 });
+    showErrorBox.mockReset();
     tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "rt-emain-platform-"));
     xdgConfig = path.join(tmpHome, ".config");
     xdgData = path.join(tmpHome, ".local", "share");
@@ -89,6 +91,7 @@ afterEach(() => {
     vi.doUnmock("electron");
     vi.doUnmock("fs");
     vi.doUnmock("child_process");
+    vi.doUnmock("env-paths");
     Object.defineProperty(process, "platform", savedPlatform);
     process.env = { ...savedEnv };
     fs.rmSync(tmpHome, { recursive: true, force: true });
@@ -118,6 +121,19 @@ describe("combined-home fallback", () => {
         expect(mod.getRemoteTermConfigDir()).toBe(path.join(tmpHome, ".remoteterm", "config"));
     });
 });
+
+// env-paths reads the home dir once per process, so point it at this test's home instead.
+function mockMacEnvPaths() {
+    setPlatform("darwin");
+    delete process.env.XDG_CONFIG_HOME;
+    delete process.env.XDG_DATA_HOME;
+    appDataDir = path.join(tmpHome, "Library", "Application Support");
+    vi.doMock("env-paths", () => ({
+        default: (name: string, opts: { suffix?: string }) => ({
+            data: path.join(appDataDir, opts?.suffix ? `${name}-${opts.suffix}` : name),
+        }),
+    }));
+}
 
 function loggedLines(): string[] {
     const logSpy = vi.mocked(console.log);
@@ -270,6 +286,36 @@ describe("data-dir migration shim", () => {
         expect(fs.existsSync(path.join(newData(), MarkerFileName))).toBe(false);
         expect(mod.getMigrationFailures()).toHaveLength(1);
         expect(mod.getMigrationFailures()[0]).toMatch(/data root migration aborted/);
+        // Nothing was moved, so the server may still start; the failure is reported after it does.
+        expect(await mod.resolveIncompleteMigrationBlock()).toBe(true);
+        expect(showErrorBox).not.toHaveBeenCalled();
+    });
+
+    it("does not start the server after a failed move, so the next launch retries it", async () => {
+        makeDir(legacyData(), { "wave.lock": "", "db/waveterm.db": "live" });
+        const actualFs = await vi.importActual<typeof import("fs")>("fs");
+        vi.doMock("fs", () => ({
+            ...actualFs,
+            renameSync: (src: string, dest: string) => {
+                if (src === legacyData()) {
+                    throw Object.assign(new Error(`EACCES: rename '${src}'`), { code: "EACCES" });
+                }
+                return actualFs.renameSync(src, dest);
+            },
+        }));
+        let mod = await loadPlatform(true);
+        expect(mod.getMigrationFailures()).toHaveLength(1);
+        expect(await mod.resolveIncompleteMigrationBlock()).toBe(false);
+        expect(showErrorBox).toHaveBeenCalledTimes(1);
+        expect(showErrorBox.mock.calls[0][1]).toContain(mod.getMigrationFailures()[0]);
+
+        vi.doUnmock("fs");
+        vi.resetModules();
+        showErrorBox.mockReset();
+        mod = await loadPlatform(true);
+        expect(await mod.resolveIncompleteMigrationBlock()).toBe(true);
+        expect(fs.readFileSync(path.join(newData(), "db/waveterm.db"), "utf8")).toBe("live");
+        expect(mod.getMigrationFailures()).toEqual([]);
     });
 
     describe("ENOENT from rename", () => {
@@ -312,7 +358,7 @@ describe.skipIf(process.platform === "win32")("running legacy instance", () => {
     const newData = () => path.join(xdgData, "remoteterm");
     const legacyConfig = () => path.join(xdgConfig, "waveterm");
     const newConfig = () => path.join(xdgConfig, "remoteterm");
-    const singletonLock = () => path.join(xdgConfig, "waveterm", "electron", "SingletonLock");
+    const singletonLock = () => path.join(appDataDir, "waveterm", "electron", "SingletonLock");
     const LegacyPid = 424242;
 
     function writeSingletonLock(target: string) {
@@ -463,48 +509,124 @@ describe.skipIf(process.platform === "win32")("running legacy instance", () => {
     );
 
     // Both flavours of the legacy app shared <appData>/waveterm/electron, so the other flavour
-    // holding the lock means this flavour's legacy app is not running.
+    // holding the lock means this flavour's legacy app is not running. The -dev roots never
+    // contain that shared profile.
     it.each([
-        ["dev", "linux", "/opt/Wave/waveterm"],
-        ["dev", "darwin", "/Applications/Wave.app/Contents/MacOS/Wave"],
-        ["production", "linux", "/home/dev/waveterm/node_modules/electron/dist/electron"],
-        ["production", "darwin", "/w/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"],
-    ] as [string, NodeJS.Platform, string][])(
-        "a %s build migrates while the other flavour holds the lock (%s, %s)",
-        async (flavour, platform, exe) => {
-            const isPackaged = flavour === "production";
-            const suffix = isPackaged ? "" : "-dev";
-            makeDir(path.join(xdgData, `waveterm${suffix}`), { "wave.lock": "", "db/waveterm.db": "legacy" });
-            makeDir(path.join(xdgConfig, `waveterm${suffix}`), { "settings.json": "legacy" });
+        ["linux", "/opt/Wave/waveterm"],
+        ["darwin", "/Applications/Wave.app/Contents/MacOS/Wave"],
+    ] as [NodeJS.Platform, string][])(
+        "a dev build migrates while the production legacy app holds the lock (%s, %s)",
+        async (platform, exe) => {
+            makeDir(path.join(xdgData, "waveterm-dev"), { "wave.lock": "", "db/waveterm.db": "legacy" });
+            makeDir(path.join(xdgConfig, "waveterm-dev"), { "settings.json": "legacy" });
             writeSingletonLock(`${os.hostname()}-${LegacyPid}`);
             mockKill();
             mockProcessIdentity(exe);
             setPlatform(platform);
-            const mod = await loadPlatform(isPackaged);
+            const mod = await loadPlatform(false);
             expect(await mod.resolveLegacyInstanceBlock()).toBe(true);
             expect(showMessageBox).not.toHaveBeenCalled();
-            const newDataDir = path.join(xdgData, `remoteterm${suffix}`);
-            expect(fs.readFileSync(path.join(newDataDir, "db/waveterm.db"), "utf8")).toBe("legacy");
-            expect(fs.existsSync(path.join(xdgConfig, `remoteterm${suffix}`, "settings.json"))).toBe(true);
+            expect(fs.readFileSync(path.join(xdgData, "remoteterm-dev", "db/waveterm.db"), "utf8")).toBe("legacy");
+            expect(fs.existsSync(path.join(xdgConfig, "remoteterm-dev", "settings.json"))).toBe(true);
             expect(mod.getMigrationFailures()).toEqual([]);
         }
     );
 
+    // The shared profile, and so the running dev app's live SingletonLock, sits inside the Linux
+    // config root and the macOS data root; moving that root would move the profile out from under it.
+    describe("a production build with a stock Electron lock holder", () => {
+        const devExe = {
+            linux: "/home/dev/waveterm/node_modules/electron/dist/electron",
+            darwin: "/w/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron",
+        };
+
+        function setUp(platform: "linux" | "darwin") {
+            if (platform === "darwin") {
+                mockMacEnvPaths();
+            }
+            setPlatform(platform);
+            const dataRoot = path.join(platform === "darwin" ? appDataDir : xdgData, "waveterm");
+            const configRoot = path.join(platform === "darwin" ? path.join(tmpHome, ".config") : xdgConfig, "waveterm");
+            makeDir(dataRoot, { "wave.lock": "", "db/waveterm.db": "legacy" });
+            makeDir(configRoot, { "settings.json": "legacy" });
+            writeSingletonLock(`${os.hostname()}-${LegacyPid}`);
+            mockKill();
+            mockProcessIdentity(devExe[platform]);
+            const profileRoot = platform === "darwin" ? dataRoot : configRoot;
+            const otherRoot = platform === "darwin" ? configRoot : dataRoot;
+            const newRoot = (legacy: string) => path.join(path.dirname(legacy), "remoteterm");
+            return { profileRoot, otherRoot, newRoot };
+        }
+
+        it.each([["linux"], ["darwin"]] as ["linux" | "darwin"][])(
+            "blocks only the root holding the shared profile (%s)",
+            async (platform) => {
+                const { profileRoot, otherRoot, newRoot } = setUp(platform);
+                const liveLock = fs.readlinkSync(singletonLock());
+                const mod = await loadPlatform(true);
+                expect(await mod.resolveLegacyInstanceBlock()).toBe(false);
+                const opts = showMessageBox.mock.calls[0][0];
+                expect(opts.buttons).toEqual(["Quit", "Migrate anyway"]);
+                expect(opts.detail).toContain(devExe[platform]);
+                expect(fs.readlinkSync(singletonLock())).toBe(liveLock);
+                expect(fs.readdirSync(profileRoot).sort()).toContain("electron");
+                expect(fs.existsSync(path.join(newRoot(profileRoot), MarkerFileName))).toBe(false);
+                expect(fs.existsSync(path.join(newRoot(profileRoot), "electron", "SingletonLock"))).toBe(false);
+                expect(fs.existsSync(otherRoot)).toBe(false);
+                expect(fs.existsSync(path.join(newRoot(otherRoot), MarkerFileName))).toBe(true);
+                expect(mod.getMigrationFailures()).toEqual([]);
+            }
+        );
+
+        it.each([["linux"], ["darwin"]] as ["linux" | "darwin"][])(
+            "moves the profile root on Migrate anyway (%s)",
+            async (platform) => {
+                const { profileRoot, newRoot } = setUp(platform);
+                showMessageBox.mockResolvedValue({ response: 1 });
+                const mod = await loadPlatform(true);
+                expect(await mod.resolveLegacyInstanceBlock()).toBe(true);
+                expect(fs.existsSync(path.join(newRoot(profileRoot), MarkerFileName))).toBe(true);
+                expect(mod.getMigrationFailures()).toEqual([]);
+            }
+        );
+
+        it("migrates without a dialog when the profile root has nothing left to migrate (linux)", async () => {
+            const { profileRoot, otherRoot, newRoot } = setUp("linux");
+            makeDir(newRoot(profileRoot), { [MarkerFileName]: "done" });
+            const liveLock = fs.readlinkSync(singletonLock());
+            const mod = await loadPlatform(true);
+            expect(await mod.resolveLegacyInstanceBlock()).toBe(true);
+            expect(showMessageBox).not.toHaveBeenCalled();
+            expect(fs.readlinkSync(path.join(profileRoot, "electron", "SingletonLock"))).toBe(liveLock);
+            expect(fs.existsSync(otherRoot)).toBe(false);
+            expect(fs.existsSync(path.join(newRoot(otherRoot), MarkerFileName))).toBe(true);
+        });
+    });
+
+    // Every `electron .` process (any dev app, its helpers, a new-build dev instance) has this
+    // basename, so a reused pid cannot be told apart from the legacy dev app: never Quit-only.
     it.each([
         ["linux", "/home/dev/waveterm/node_modules/electron/dist/electron"],
         ["darwin", "/w/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"],
     ] as [NodeJS.Platform, string][])(
-        "a dev build is still blocked by the dev legacy app (%s)",
+        "a dev build is still blocked by a stock Electron holder, with Migrate anyway (%s)",
         async (platform, exe) => {
             makeDir(path.join(xdgData, "waveterm-dev"), { "wave.lock": "", "db/waveterm.db": "legacy" });
             writeSingletonLock(`${os.hostname()}-${LegacyPid}`);
             mockKill();
             mockProcessIdentity(exe);
             setPlatform(platform);
-            const mod = await loadPlatform(false);
+            let mod = await loadPlatform(false);
             expect(await mod.resolveLegacyInstanceBlock()).toBe(false);
-            expect(showMessageBox.mock.calls[0][0].buttons).toEqual(["Quit"]);
+            expect(showMessageBox.mock.calls[0][0].buttons).toEqual(["Quit", "Migrate anyway"]);
+            expect(showMessageBox.mock.calls[0][0].detail).toContain(exe);
             expect(fs.existsSync(path.join(xdgData, "waveterm-dev", "db/waveterm.db"))).toBe(true);
+
+            vi.resetModules();
+            showMessageBox.mockResolvedValue({ response: 1 });
+            mod = await loadPlatform(false);
+            expect(await mod.resolveLegacyInstanceBlock()).toBe(true);
+            expect(fs.readFileSync(path.join(xdgData, "remoteterm-dev", "db/waveterm.db"), "utf8")).toBe("legacy");
         }
     );
 
@@ -626,23 +748,6 @@ describe.skipIf(process.platform === "win32")("running legacy instance", () => {
 describe("what a blocked launch leaves in the data destination", () => {
     const newData = () => path.join(xdgData, "remoteterm");
 
-    // env-paths reads the home dir once per process, so point it at this test's home instead.
-    function mockMacEnvPaths() {
-        setPlatform("darwin");
-        delete process.env.XDG_CONFIG_HOME;
-        delete process.env.XDG_DATA_HOME;
-        appDataDir = path.join(tmpHome, "Library", "Application Support");
-        vi.doMock("env-paths", () => ({
-            default: (name: string, opts: { suffix?: string }) => ({
-                data: path.join(appDataDir, opts?.suffix ? `${name}-${opts.suffix}` : name),
-            }),
-        }));
-    }
-
-    afterEach(() => {
-        vi.doUnmock("env-paths");
-    });
-
     it("macOS: merges past the Electron userData a blocked launch created", async () => {
         mockMacEnvPaths();
         const legacyData = makeDir(path.join(appDataDir, "waveterm"), {
@@ -739,11 +844,19 @@ describe("interrupted data-root merge", () => {
         expect(fs.existsSync(path.join(legacyData(), "wave.lock"))).toBe(false);
         expect(fs.readFileSync(path.join(legacyData(), "db/waveterm.db"), "utf8")).toBe("live");
         expect(fs.existsSync(path.join(newData(), MarkerFileName))).toBe(false);
+        // The server would create an empty db/ in the half-merged destination.
+        expect(await mod.resolveIncompleteMigrationBlock()).toBe(false);
+        expect(showErrorBox).toHaveBeenCalledTimes(1);
+        expect(showErrorBox.mock.calls[0][1]).toContain(mod.getMigrationFailures()[0]);
+        expect(fs.existsSync(path.join(newData(), "db"))).toBe(false);
 
         vi.doUnmock("fs");
         vi.resetModules();
+        showErrorBox.mockReset();
         mod = await loadPlatform(true);
         expect(mod.getMigrationFailures()).toEqual([]);
+        expect(await mod.resolveIncompleteMigrationBlock()).toBe(true);
+        expect(showErrorBox).not.toHaveBeenCalled();
         expect(fs.readFileSync(path.join(newData(), "wave.lock"), "utf8")).toBe("legacy-lock");
         expect(fs.readFileSync(path.join(newData(), "db/waveterm.db"), "utf8")).toBe("live");
         expect(fs.readFileSync(path.join(newData(), "db/filestore.db"), "utf8")).toBe("files");
@@ -766,17 +879,52 @@ describe("interrupted data-root merge", () => {
         makeDir(newData(), { "rtapp.log": "" });
         let mod = await loadWithFailingDbRename();
         expect(mod.getMigrationFailures()).toHaveLength(1);
-        // Something the server wrote in between must survive the resumed merge.
-        makeDir(newData(), { "db/waveterm.db": "server-wrote-this" });
+        // A file that appeared in the destination in between must survive the resumed merge.
+        makeDir(newData(), { "notes.txt": "dest-notes" });
 
         vi.doUnmock("fs");
         vi.resetModules();
         mod = await loadPlatform(true);
-        expect(fs.readFileSync(path.join(newData(), "db/waveterm.db"), "utf8")).toBe("server-wrote-this");
-        expect(fs.readFileSync(path.join(legacyData(), "db/waveterm.db"), "utf8")).toBe("legacy");
-        expect(fs.readFileSync(path.join(newData(), "notes.txt"), "utf8")).toBe("legacy-notes");
+        expect(fs.readFileSync(path.join(newData(), "notes.txt"), "utf8")).toBe("dest-notes");
+        expect(fs.readFileSync(path.join(legacyData(), "notes.txt"), "utf8")).toBe("legacy-notes");
+        expect(fs.readFileSync(path.join(newData(), "db/waveterm.db"), "utf8")).toBe("legacy");
         expect(mod.getMigrationFailures()).toHaveLength(1);
-        expect(mod.getMigrationFailures()[0]).toContain(path.join("db", "waveterm.db"));
+        expect(mod.getMigrationFailures()[0]).toContain("notes.txt");
+        expect(fs.existsSync(path.join(newData(), MarkerFileName))).toBe(true);
+        expect(await mod.resolveIncompleteMigrationBlock()).toBe(true);
+    });
+
+    // A build without the startup block ran the server after a failed merge, creating an empty db/.
+    it("refuses to resume next to a db/ created after the failed merge and deletes neither", async () => {
+        makeDir(legacyData(), { "wave.lock": "", "db/waveterm.db": "legacy", "notes.txt": "legacy-notes" });
+        makeDir(newData(), { "rtapp.log": "" });
+        let mod = await loadWithFailingDbRename();
+        expect(mod.getMigrationFailures()).toHaveLength(1);
+        makeDir(newData(), { "db/filestore.db": "empty" });
+
+        vi.doUnmock("fs");
+        vi.resetModules();
+        mod = await loadPlatform(true);
+        expect(fs.readFileSync(path.join(newData(), "db/filestore.db"), "utf8")).toBe("empty");
+        expect(fs.readFileSync(path.join(legacyData(), "db/waveterm.db"), "utf8")).toBe("legacy");
+        expect(fs.existsSync(path.join(newData(), "db/waveterm.db"))).toBe(false);
+        expect(fs.existsSync(path.join(newData(), MarkerFileName))).toBe(false);
+        expect(mod.getMigrationFailures()).toHaveLength(1);
+        const failure = mod.getMigrationFailures()[0];
+        expect(failure).toContain(path.join(legacyData(), "db"));
+        expect(failure).toContain(path.join(newData(), "db"));
+        expect(await mod.resolveIncompleteMigrationBlock()).toBe(false);
+        expect(showErrorBox.mock.calls[0][1]).toContain(failure);
+
+        // The user moves the empty database aside, as the message asks.
+        fs.renameSync(path.join(newData(), "db"), path.join(tmpHome, "db-empty"));
+        vi.resetModules();
+        showErrorBox.mockReset();
+        mod = await loadPlatform(true);
+        expect(mod.getMigrationFailures()).toEqual([]);
+        expect(await mod.resolveIncompleteMigrationBlock()).toBe(true);
+        expect(fs.readFileSync(path.join(newData(), "db/waveterm.db"), "utf8")).toBe("legacy");
+        expect(fs.readFileSync(path.join(newData(), "notes.txt"), "utf8")).toBe("legacy-notes");
         expect(fs.existsSync(path.join(newData(), MarkerFileName))).toBe(true);
     });
 });

@@ -849,6 +849,18 @@ was added and is corrected here.
        parent), that file's presence makes the next launch run the same merge again, even though
        the destination no longer passes the check above and the legacy root may have lost its
        `wave.lock`; it moves what is left, overwrites nothing, then writes the marker.
+     - **The server does not start after a failed or incomplete migration.** If a root's move or
+       merge throws, or its destination cannot be inspected or emptied, `appMain()` awaits
+       `resolveIncompleteMigrationBlock()` (after `resolveLegacyInstanceBlock()`, before
+       `runRemoteTermSrv()`), which shows the "RemoteTerm Data Migration Issue" error box with the
+       failures and quits. The server would otherwise create an empty `db/` in the half-merged
+       destination and the resumed merge would keep it. A sticky abort (non-empty destination) and
+       a completed merge that kept destination copies do not block: nothing was left half-moved.
+     - **`db/` on both sides:** a merge (first or resumed) that finds `db/` in both the legacy
+       root and the destination moves nothing, deletes neither, and blocks startup as above with
+       both paths named, asking the user to move the destination's `db/` aside if it holds nothing
+       they need (a build without the startup block could leave an empty one). The next launch
+       then resumes. SQLite files are never merged.
    - **Concurrency:** the migration runs before
      `electronApp.requestSingleInstanceLock()` (`emain/emain.ts`, ~200 lines and one
      module-evaluation phase after the path getters), so two processes launched close together
@@ -872,10 +884,20 @@ was added and is corrected here.
        `ps -p <pid> -o comm=` on macOS. Expected basenames: production `waveterm` (Linux,
        electron-builder's `executableName` from package.json `name`) / `Wave` (macOS,
        `productName`); dev builds ran stock `electron` / `Electron`.
+       Stock Electron is shared by every `electron .` process, so a dev-flavour match cannot be
+       told apart from any other Electron app reusing the pid: it is never "confirmed running",
+       only "cannot be ruled out" (Quit / Migrate anyway). Only the production basenames get the
+       Quit-only dialog.
      - **Dev vs production scoping:** both legacy flavours set their name to
-       `waveterm/electron`, so they shared one lock. A dev build is blocked only by the dev
-       legacy app and a production build only by the production one; the other flavour holding
-       the lock means this flavour's legacy app is not running, and migration proceeds.
+       `waveterm/electron`, so they shared one lock and one profile,
+       `<appData>/waveterm/electron`. The other flavour holding the lock means this flavour's
+       legacy app is not running, but that profile sits inside the production Linux config root
+       (`~/.config/waveterm`) and macOS data root (`~/Library/Application Support/waveterm`), so
+       moving either would move a running legacy dev app's profile and live `SingletonLock` into
+       this build's userData. A root that contains the profile is therefore blocked by a holder
+       of either flavour (same dialogs as below); a root that does not contain it migrates
+       without a dialog when the holder is the other flavour. The `-dev` roots never contain it,
+       so a dev build with a production holder migrates everything.
      - When the legacy app is confirmed running, or cannot be ruled out (identity unreadable,
        e.g. another uid, or an unrelated executable; lock unreadable, unparseable or written by
        another host), nothing moves and no marker is written this launch. Before the server

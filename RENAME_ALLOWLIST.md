@@ -115,8 +115,9 @@ not fix a miss).
 - **Load-bearing old-brand image assets** (`assets/wave-{dark,light}.png`, `assets/wave-screenshot.webp`,
   `public/logos/wave-*.png`, `tsunami/frontend/public/wave-logo-256.png`): per Prerequisites
   decision 8, these need real new RemoteTerm artwork, not a rename — no design assets exist for
-  these specific paths yet (only `frontend/app/asset/logo.svg`/`logo-tile.svg` have shipped, for
-  different use sites). Already flagged as blocking by decision 8 itself; restated here since this
+  these specific paths yet (only `frontend/app/asset/logo.svg`/`logo-tile.svg`,
+  `public/logos/remoteterm-logo.png` (onboarding) and the `build/icons/*` renders have shipped,
+  for different use sites). Already flagged as blocking by decision 8 itself; restated here since this
   sweep is the gate that would otherwise miss it (image files carry no renameable text).
 - **`wsh`/`wps` acronym backronyms**: `.kilocode/rules/overview.md` (and other docs) describe
   `wsh` as "Wave Shell" and `wps` as "Wave PubSub" — both tools stay named `wsh`/`wps` per
