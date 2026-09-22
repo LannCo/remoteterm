@@ -99,12 +99,6 @@ func ConnDisconnectCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts)
 	return err
 }
 
-// command "connstopautoretry", wshserver.ConnStopAutoRetryCommand
-func ConnStopAutoRetryCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) error {
-	_, err := sendRpcRequestCallHelper[any](w, "connstopautoretry", data, opts)
-	return err
-}
-
 // command "connensure", wshserver.ConnEnsureCommand
 func ConnEnsureCommand(w *wshutil.WshRpc, data wshrpc.ConnExtData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "connensure", data, opts)
@@ -133,6 +127,12 @@ func ConnServerInitCommand(w *wshutil.WshRpc, data wshrpc.CommandConnServerInitD
 func ConnStatusCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) ([]wshrpc.ConnStatus, error) {
 	resp, err := sendRpcRequestCallHelper[[]wshrpc.ConnStatus](w, "connstatus", nil, opts)
 	return resp, err
+}
+
+// command "connstopautoretry", wshserver.ConnStopAutoRetryCommand
+func ConnStopAutoRetryCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "connstopautoretry", data, opts)
+	return err
 }
 
 // command "connupdatewsh", wshserver.ConnUpdateWshCommand
@@ -488,27 +488,27 @@ func GitDiffCommand(w *wshutil.WshRpc, data wshrpc.CommandGitDiffData, opts *wsh
 	return resp, err
 }
 
-// command "gitpush", wshserver.GitPushCommand
-func GitPushCommand(w *wshutil.WshRpc, data wshrpc.CommandGitPushData, opts *wshrpc.RpcOpts) (*wshrpc.GitPushResponse, error) {
-	resp, err := sendRpcRequestCallHelper[*wshrpc.GitPushResponse](w, "gitpush", data, opts)
-	return resp, err
-}
-
 // command "gitlookupcredentials", wshserver.GitLookupCredentialsCommand
 func GitLookupCredentialsCommand(w *wshutil.WshRpc, data wshrpc.CommandGitLookupCredentialsData, opts *wshrpc.RpcOpts) (*wshrpc.GitCredentials, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.GitCredentials](w, "gitlookupcredentials", data, opts)
 	return resp, err
 }
 
-// command "gitsavecredentials", wshserver.GitSaveCredentialsCommand
-func GitSaveCredentialsCommand(w *wshutil.WshRpc, data wshrpc.CommandGitSaveCredentialsData, opts *wshrpc.RpcOpts) error {
-	_, err := sendRpcRequestCallHelper[any](w, "gitsavecredentials", data, opts)
-	return err
+// command "gitpush", wshserver.GitPushCommand
+func GitPushCommand(w *wshutil.WshRpc, data wshrpc.CommandGitPushData, opts *wshrpc.RpcOpts) (*wshrpc.GitPushResponse, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.GitPushResponse](w, "gitpush", data, opts)
+	return resp, err
 }
 
 // command "gitreverthunk", wshserver.GitRevertHunkCommand
 func GitRevertHunkCommand(w *wshutil.WshRpc, data wshrpc.CommandGitRevertHunkData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "gitreverthunk", data, opts)
+	return err
+}
+
+// command "gitsavecredentials", wshserver.GitSaveCredentialsCommand
+func GitSaveCredentialsCommand(w *wshutil.WshRpc, data wshrpc.CommandGitSaveCredentialsData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "gitsavecredentials", data, opts)
 	return err
 }
 
