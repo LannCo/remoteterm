@@ -62,7 +62,9 @@ function setup({
     const writes = () => SetConfigCommand.mock.calls.map((c) => c[0][key]);
     const settled = () => waitFor(() => expect(inFlight).toBe(0), { timeout: 3000 });
     const eventsLanded = () =>
-        waitFor(() => expect(store.get(settingsAtom)[key]).toBe(writes().at(-1) ?? initial), { timeout: 3000 });
+        waitFor(() => expect(store.get(settingsAtom)[key]).toBe(writes().length ? writes().at(-1) : initial), {
+            timeout: 3000,
+        });
     return {
         writes,
         settled,
@@ -224,6 +226,22 @@ describe("NumberControl interaction", () => {
         await c.settled();
         await c.eventsLanded();
         expect(c.input().value).toBe("13");
+    });
+
+    it("Reset after queued spin clicks is sent last, so the field ends at the default", async () => {
+        const user = userEvent.setup();
+        const c = setup({ key: "window:zoom", label: "Window zoom", initial: 1, delayMs: 50 });
+        await user.click(c.up());
+        await user.click(c.up());
+        await user.click(c.up());
+        await user.click(c.reset());
+        await c.settled();
+        await c.eventsLanded();
+        expect(c.writes()).toHaveLength(4);
+        expect(c.writes()[3]).toBeNull();
+        expect(c.maxInFlight()).toBe(1);
+        expect(c.stored()).toBeNull();
+        expect(c.input().value).toBe("0.25");
     });
 
     it("a late echo of an earlier write from this control does not replace the value it wrote since", async () => {
