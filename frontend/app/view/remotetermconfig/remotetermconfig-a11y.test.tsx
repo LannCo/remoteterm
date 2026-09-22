@@ -3,11 +3,14 @@
 
 import { atom, createStore, Provider } from "jotai";
 import type { ComponentType } from "react";
+import { DndProvider } from "react-dnd";
+import { HTML5Backend } from "react-dnd-html5-backend";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { BackgroundsContent } from "./backgroundscontent";
 import { ConnectionsContent } from "./connectionscontent";
 import { SecretsContent } from "./secretscontent";
+import { WidgetsContent } from "./widgetscontent";
 
 vi.mock("@/app/view/remotetermconfig/remotetermconfig-model", () => ({
     SecretNameRegex: /^[A-Za-z][A-Za-z0-9_]*$/,
@@ -156,6 +159,30 @@ describe("Keychain rows", () => {
         expect(rows).toHaveLength(2);
         for (const row of rows) {
             expect(row).not.toMatch(/opacity-/);
+        }
+    });
+});
+
+describe("Widget order move buttons", () => {
+    it("are at least 24x24px (WCAG 2.5.8)", () => {
+        const widgets: [string, WidgetConfigType][] = [
+            ["w@a", { "display:order": 1, label: "a", icon: "globe" } as WidgetConfigType],
+            ["w@b", { "display:order": 2, label: "b", icon: "globe" } as WidgetConfigType],
+        ];
+        const model = makeModel({ widgetsOrderedAtom: widgets, widgetsPreviewAtom: widgets.map(([, w]) => w) });
+        const html = renderToStaticMarkup(
+            <DndProvider backend={HTML5Backend}>
+                <Provider store={createStore()}>
+                    <WidgetsContent model={model} />
+                </Provider>
+            </DndProvider>
+        );
+        const buttons = html.match(/<button[^>]*aria-label="Move [^"]+ (up|down)"[^>]*>/g);
+        expect(buttons).toHaveLength(4);
+        for (const button of buttons) {
+            const cls = button.match(/class="([^"]*)"/)[1].split(/\s+/);
+            expect(cls, button).toContain("w-6");
+            expect(cls, button).toContain("h-6");
         }
     });
 });
