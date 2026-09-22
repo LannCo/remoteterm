@@ -279,7 +279,7 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
                             )}
                             {errorMessage && (
                                 <div className="bg-error text-black px-4 py-2 border-b border-error flex items-center justify-between">
-                                    <span>{errorMessage}</span>
+                                    <span role="alert">{errorMessage}</span>
                                     <button
                                         onClick={() => model.clearError()}
                                         aria-label="Dismiss error"
@@ -291,7 +291,7 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
                             )}
                             {validationError && (
                                 <div className="bg-error text-black px-4 py-2 border-b border-error flex items-center justify-between">
-                                    <span>{validationError}</span>
+                                    <span role="alert">{validationError}</span>
                                     <button
                                         onClick={() => model.clearValidationError()}
                                         aria-label="Dismiss validation error"
@@ -329,7 +329,10 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
                 </div>
             </div>
             {configErrors?.length > 0 && (
-                <div className="bg-error text-black px-4 py-1 max-h-12 overflow-y-auto border-t border-error/50 shrink-0">
+                <div
+                    role="alert"
+                    className="bg-error text-black px-4 py-1 max-h-12 overflow-y-auto border-t border-error/50 shrink-0"
+                >
                     {configErrors.map((cerr, i) => (
                         <div key={i} className="text-sm">
                             <span className="font-semibold">Config Error: </span>

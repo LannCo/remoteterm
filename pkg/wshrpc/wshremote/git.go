@@ -336,9 +336,11 @@ func (impl *ServerImpl) GitRevertHunkCommand(ctx context.Context, data wshrpc.Co
 	if data.HunkIndex < 0 || data.HunkIndex >= len(hunks) {
 		return fmt.Errorf("hunk index %d out of range", data.HunkIndex)
 	}
-	// Build inverse patch (swap + and - lines)
-	patch := extractHunkInversePatch(diffOutput, data.Path, data.HunkIndex)
-	return applyPatch(ctx, data.Dir, patch)
+	// git apply -R rather than a hand-inverted patch: swapping +/- lines alone leaves the
+	// "-a,b +c,d" header describing the forward hunk, which git rejects as corrupt
+	// whenever the hunk adds or removes a different number of lines than it replaces.
+	patch := extractHunkPatch(diffOutput, data.Path, data.HunkIndex)
+	return applyPatchReverse(ctx, data.Dir, patch)
 }
 
 // GitCommitCommand commits staged changes with a message
@@ -1088,27 +1090,6 @@ func extractHunkPatch(diff string, path string, hunkIndex int) string {
 	return b.String()
 }
 
-// extractHunkInversePatch extracts a single hunk and builds an inverse patch (revert)
-func extractHunkInversePatch(diff string, path string, hunkIndex int) string {
-	lines := strings.Split(diff, "\n")
-	hunkLines := extractHunkLines(lines, hunkIndex)
-
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("--- a/%s\n", path))
-	b.WriteString(fmt.Sprintf("+++ b/%s\n", path))
-	for _, line := range hunkLines {
-		if strings.HasPrefix(line, "+") {
-			b.WriteString("-" + line[1:])
-		} else if strings.HasPrefix(line, "-") {
-			b.WriteString("+" + line[1:])
-		} else {
-			b.WriteString(line)
-		}
-		b.WriteString("\n")
-	}
-	return b.String()
-}
-
 // extractHunkLines extracts the lines of a specific hunk from diff output
 func extractHunkLines(lines []string, hunkIndex int) []string {
 	currentHunk := -1
@@ -1141,14 +1122,14 @@ func applyPatchCached(ctx context.Context, dir string, patch string) error {
 	return nil
 }
 
-// applyPatch applies a patch to the working tree via stdin
-func applyPatch(ctx context.Context, dir string, patch string) error {
-	cmd := exec.CommandContext(ctx, "git", "apply")
+// applyPatchReverse reverse-applies a patch to the working tree via stdin
+func applyPatchReverse(ctx context.Context, dir string, patch string) error {
+	cmd := exec.CommandContext(ctx, "git", "apply", "-R")
 	cmd.Dir = dir
 	cmd.Stdin = strings.NewReader(patch)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("git apply failed: %s %w", string(output), err)
+		return fmt.Errorf("git apply -R failed: %s %w", string(output), err)
 	}
 	return nil
 }

@@ -4,7 +4,7 @@
 import { SecretNameRegex, type RemoteTermConfigViewModel } from "@/app/view/remotetermconfig/remotetermconfig-model";
 import { cn } from "@/util/util";
 import { useAtomValue, useSetAtom } from "jotai";
-import { memo, useMemo } from "react";
+import { memo, useCallback, useId, useMemo } from "react";
 
 interface ErrorDisplayProps {
     message: string;
@@ -126,15 +126,23 @@ const AddSecretForm = memo(
         onSubmit,
     }: AddSecretFormProps) => {
         const isNameInvalid = newSecretName !== "" && !SecretNameRegex.test(newSecretName);
+        const nameId = useId();
+        const nameHintId = useId();
+        const valueId = useId();
 
         return (
             <div className="flex flex-col gap-3.5 h-full min-h-0">
                 <h3 className="text-sm font-semibold">Add New Secret</h3>
                 <div className="flex flex-col gap-1.5">
-                    <label className="text-caption text-muted">Name</label>
+                    <label htmlFor={nameId} className="text-caption text-muted">
+                        Name
+                    </label>
                     <input
+                        id={nameId}
                         type="text"
                         autoFocus
+                        aria-invalid={isNameInvalid || undefined}
+                        aria-describedby={nameHintId}
                         className={cn(
                             "px-2.5 py-1.5 bg-black/20 border rounded-md focus:outline-none font-mono text-xs",
                             isNameInvalid ? "border-error focus:border-error" : "border-border focus:border-accent"
@@ -144,13 +152,17 @@ const AddSecretForm = memo(
                         placeholder="MY_SECRET_NAME"
                         disabled={isLoading}
                     />
-                    <div className="text-caption text-muted">
+                    <div id={nameHintId} className={cn("text-caption", isNameInvalid ? "text-error" : "text-muted")}>
+                        {isNameInvalid && "Invalid name. "}
                         Must start with a letter and contain only letters, numbers, and underscores
                     </div>
                 </div>
                 <div className="flex flex-col gap-1.5">
-                    <label className="text-caption text-muted">Value</label>
+                    <label htmlFor={valueId} className="text-caption text-muted">
+                        Value
+                    </label>
                     <textarea
+                        id={valueId}
                         className="w-full px-2.5 py-1.5 bg-black/20 border border-border rounded-md focus:outline-none focus:border-accent font-mono text-xs"
                         value={newSecretValue}
                         onChange={(e) => onValueChange(e.target.value)}
@@ -199,6 +211,16 @@ const SecretDetailView = memo(({ model }: SecretDetailViewProps) => {
     const secretShown = useAtomValue(model.secretShownAtom);
     const isLoading = useAtomValue(model.isLoadingAtom);
     const setSecretValue = useSetAtom(model.secretValueAtom);
+    const valueId = useId();
+    // A stable callback ref runs once per mount; an inline ref gets a new identity on every
+    // render, so React re-invokes it and focus() would yank focus back from Reveal/Save/Delete.
+    const valueRef = useCallback(
+        (ref: HTMLTextAreaElement | null) => {
+            model.secretValueRef = ref;
+            ref?.focus();
+        },
+        [model]
+    );
 
     if (!secretName) {
         return null;
@@ -213,14 +235,12 @@ const SecretDetailView = memo(({ model }: SecretDetailViewProps) => {
                 <div className="font-mono text-sm font-semibold">{secretName}</div>
             </div>
             <div className="flex flex-col gap-1.5">
-                <label className="text-caption text-muted">Value</label>
+                <label htmlFor={valueId} className="text-caption text-muted">
+                    Value
+                </label>
                 <textarea
-                    ref={(ref) => {
-                        model.secretValueRef = ref;
-                        if (ref) {
-                            ref.focus();
-                        }
-                    }}
+                    id={valueId}
+                    ref={valueRef}
                     className="w-full px-2.5 py-1.5 bg-black/20 border border-border rounded-md focus:outline-none focus:border-accent font-mono text-xs"
                     value={secretValue}
                     onChange={(e) => setSecretValue(e.target.value)}

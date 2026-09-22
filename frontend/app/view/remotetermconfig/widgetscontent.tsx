@@ -140,13 +140,13 @@ const WidgetOrderRow = memo(
                     />
                 </div>
                 <span className="flex-1 text-xs truncate">{widgetLabel}</span>
-                <div className="flex flex-col shrink-0">
+                <div className="flex shrink-0">
                     <button
                         type="button"
                         aria-label={`Move ${widgetLabel} up`}
                         disabled={!canMoveUp}
                         onClick={() => onKeyboardMove(widgetKey, -1)}
-                        className="w-5 h-[13px] flex items-center justify-center text-secondary hover:text-primary disabled:opacity-30 disabled:cursor-default cursor-pointer"
+                        className="w-6 h-6 flex items-center justify-center rounded text-secondary hover:text-primary hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-default cursor-pointer"
                     >
                         <i aria-hidden="true" className="fa-sharp fa-solid fa-caret-up text-xxs" />
                     </button>
@@ -155,7 +155,7 @@ const WidgetOrderRow = memo(
                         aria-label={`Move ${widgetLabel} down`}
                         disabled={!canMoveDown}
                         onClick={() => onKeyboardMove(widgetKey, 1)}
-                        className="w-5 h-[13px] flex items-center justify-center text-secondary hover:text-primary disabled:opacity-30 disabled:cursor-default cursor-pointer"
+                        className="w-6 h-6 flex items-center justify-center rounded text-secondary hover:text-primary hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-default cursor-pointer"
                     >
                         <i aria-hidden="true" className="fa-sharp fa-solid fa-caret-down text-xxs" />
                     </button>

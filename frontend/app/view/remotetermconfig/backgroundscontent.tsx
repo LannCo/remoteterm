@@ -110,7 +110,11 @@ const AddBackgroundForm = memo(({ model }: AddBackgroundFormProps) => {
                     Cancel
                 </button>
             </div>
-            {error && <div className="text-xs text-error">{error}</div>}
+            {error && (
+                <div role="alert" className="text-xs text-error">
+                    {error}
+                </div>
+            )}
         </div>
     );
 });
