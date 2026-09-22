@@ -159,6 +159,7 @@ var (
 	reconcileOnUpTestHook         func(connName string)
 	reconcileOnDownTestHook       func(connName string)
 	hasRunningDurableJobsTestHook func(ctx context.Context, connName string) bool
+	resumeReconnectTestHook       func(ctx context.Context, connName string) error
 
 	// NeedsInteractiveAuthTestHook overrides the needsInteractiveAuth check
 	// inside startReconnectScheduler. Set from tests to control whether the
@@ -929,7 +930,12 @@ func HandleSystemResume(ctx context.Context) {
 			}()
 			reconnectCtx, cancelFn := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancelFn()
-			err := conncontroller.AttemptReconnect(reconnectCtx, cn)
+			var err error
+			if resumeReconnectTestHook != nil {
+				err = resumeReconnectTestHook(reconnectCtx, cn)
+			} else {
+				err = conncontroller.AttemptReconnect(reconnectCtx, cn)
+			}
 			if err != nil {
 				log.Printf("[system] fast-path reconnect for %s failed: %v", cn, err)
 			} else {
