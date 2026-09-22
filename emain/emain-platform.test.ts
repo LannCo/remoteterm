@@ -101,3 +101,49 @@ describe("combined-home fallback", () => {
         expect(mod.getRemoteTermConfigDir()).toBe(path.join(tmpHome, ".remoteterm", "config"));
     });
 });
+
+function loggedLines(): string[] {
+    const logSpy = vi.mocked(console.log);
+    const errSpy = vi.mocked(console.error);
+    return [...logSpy.mock.calls, ...errSpy.mock.calls].map((c) => String(c[0]));
+}
+
+describe("legacy config root validation", () => {
+    it.each([["connections.json"], ["widgets.json"], ["presets/ai.json"]])(
+        "migrates a root holding only %s",
+        async (fileName) => {
+            const legacy = makeDir(path.join(xdgConfig, "waveterm"), { [fileName]: "{}" });
+            const mod = await loadPlatform(true);
+            const configDir = mod.getRemoteTermConfigDir();
+            expect(configDir).toBe(path.join(xdgConfig, "remoteterm"));
+            expect(fs.existsSync(path.join(configDir, fileName))).toBe(true);
+            expect(fs.existsSync(path.join(configDir, MarkerFileName))).toBe(true);
+            expect(fs.existsSync(legacy)).toBe(false);
+            expect(mod.getMigrationFailures()).toEqual([]);
+        }
+    );
+
+    it("moves Electron userData along with a valid config root", async () => {
+        makeDir(path.join(xdgConfig, "waveterm"), { "settings.json": "{}", "electron/Preferences": "x" });
+        const mod = await loadPlatform(true);
+        expect(fs.existsSync(path.join(mod.getRemoteTermConfigDir(), "electron", "Preferences"))).toBe(true);
+    });
+
+    it("skips an Electron-only root and logs why", async () => {
+        const legacy = makeDir(path.join(xdgConfig, "waveterm"), { "electron/Preferences": "x" });
+        const mod = await loadPlatform(true);
+        expect(fs.existsSync(path.join(legacy, "electron", "Preferences"))).toBe(true);
+        expect(mod.getMigrationFailures()).toEqual([]);
+        const skipLines = loggedLines().filter((s) => s.includes("[migration]") && s.includes("skipping config root"));
+        expect(skipLines).toHaveLength(1);
+        expect(skipLines[0]).toContain(legacy);
+        expect(skipLines[0]).toMatch(/no config files/);
+    });
+
+    it("logs a skip when the legacy root is absent", async () => {
+        await loadPlatform(true);
+        const skipLines = loggedLines().filter((s) => s.includes("[migration]") && s.includes("skipping"));
+        expect(skipLines.some((s) => s.includes("config root") && s.includes("does not exist"))).toBe(true);
+        expect(skipLines.some((s) => s.includes("data root") && s.includes("does not exist"))).toBe(true);
+    });
+});

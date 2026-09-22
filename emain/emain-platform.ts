@@ -4,7 +4,7 @@
 import { fireAndForget } from "@/util/util";
 import { app, dialog, ipcMain, shell } from "electron";
 import envPaths from "env-paths";
-import { existsSync, mkdirSync, readdirSync, renameSync, rmdirSync, writeFileSync } from "fs";
+import { Dirent, existsSync, mkdirSync, readdirSync, renameSync, rmdirSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import { RemoteTermDevVarName, RemoteTermDevViteVarName } from "../frontend/util/isdev";
@@ -89,10 +89,12 @@ type MigrationRootSpec = {
     source: string;
     dest: string;
     overridden: boolean;
-    validateSource?: () => boolean;
+    // Returns why the existing source is not a real legacy root to migrate, or null if it is.
+    sourceSkipReason?: () => string;
 };
 
 const MigrationMarkerFileName = ".migrated-from-waveterm";
+const LegacyLockFileName = "wave.lock";
 
 // Failures recorded here don't stop startup (the app can still run against whatever it can
 // resolve), but they leave data unmigrated/orphaned and the failure becomes sticky (the next
@@ -132,7 +134,13 @@ function migrateDataRoot(spec: MigrationRootSpec) {
     if (existsSync(markerFile)) {
         return;
     }
-    if (!existsSync(spec.source) || (spec.validateSource && !spec.validateSource())) {
+    if (!existsSync(spec.source)) {
+        console.log(`[migration] skipping ${spec.name} root: ${spec.source} does not exist`);
+        return;
+    }
+    const skipReason = spec.sourceSkipReason?.();
+    if (skipReason) {
+        console.log(`[migration] skipping ${spec.name} root: ${spec.source} ${skipReason}`);
         return;
     }
     if (existsSync(spec.dest)) {
@@ -181,6 +189,26 @@ function migrateDataRoot(spec: MigrationRootSpec) {
     }
 }
 
+function lockFileSkipReason(dir: string): string {
+    return existsSync(path.join(dir, LegacyLockFileName)) ? null : `has no ${LegacyLockFileName}`;
+}
+
+// The Linux legacy config root also holds Electron's userData ("electron/"), which moves along with
+// a real config root but is not migrated on its own: it is cache and window state, and an
+// Electron-only root would otherwise abort permanently once the new build has created its own.
+function legacyConfigSkipReason(dir: string): string {
+    let entries: Dirent[];
+    try {
+        entries = readdirSync(dir, { withFileTypes: true });
+    } catch (e) {
+        return `could not be read (${e})`;
+    }
+    const hasConfig = entries.some(
+        (ent) => (ent.isFile() && ent.name.endsWith(".json")) || (ent.isDirectory() && ent.name === "presets")
+    );
+    return hasConfig ? null : "has no config files (*.json or presets/)";
+}
+
 function performDataDirMigration() {
     try {
         const homeDir = app.getPath("home");
@@ -199,7 +227,7 @@ function performDataDirMigration() {
             source: configOverride ?? configSource,
             dest: configOverride ?? configDest,
             overridden: configOverride != null,
-            validateSource: () => existsSync(path.join(configSource, "settings.json")),
+            sourceSkipReason: () => legacyConfigSkipReason(configSource),
         });
 
         const dataOverride = readOverrideEnvVar(RemoteTermDataHomeVarName, LegacyRemoteTermDataHomeVarName);
@@ -210,7 +238,7 @@ function performDataDirMigration() {
             source: dataOverride ?? dataSource,
             dest: dataOverride ?? dataDest,
             overridden: dataOverride != null,
-            validateSource: () => existsSync(path.join(dataSource, "wave.lock")),
+            sourceSkipReason: () => lockFileSkipReason(dataSource),
         });
 
         const homeOverride = readOverrideEnvVar(RemoteTermHomeVarName, LegacyRemoteTermHomeVarName);
@@ -221,7 +249,7 @@ function performDataDirMigration() {
             source: homeOverride ?? legacyHomeSource,
             dest: homeOverride ?? legacyHomeDest,
             overridden: homeOverride != null,
-            validateSource: () => existsSync(path.join(legacyHomeSource, "wave.lock")),
+            sourceSkipReason: () => lockFileSkipReason(legacyHomeSource),
         });
 
         // Best-effort fourth root: on Windows, Electron's own userData subtree (cookies, cache,
@@ -237,7 +265,6 @@ function performDataDirMigration() {
                 source: winSource,
                 dest: winDest,
                 overridden: false,
-                validateSource: () => existsSync(winSource),
             });
         }
     } catch (e) {
