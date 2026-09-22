@@ -186,6 +186,32 @@ const WidgetOrderPanel = memo(({ model }: WidgetOrderPanelProps) => {
     }, [orderedEntries]);
 
     const widgetByKey = new Map(orderedEntries);
+    const widgetByKeyRef = useRef(widgetByKey);
+    widgetByKeyRef.current = widgetByKey;
+
+    // toggleWidgetHidden persists straight to disk and the switch's real state only comes
+    // back once the write round-trips through the backend and the config-watcher push --
+    // pendingHidden makes the switch flip the instant the user clicks it instead of waiting
+    // on that round trip (moveRow/localKeys already does the equivalent for drag ordering).
+    const [pendingHidden, setPendingHidden] = useState<Map<string, boolean>>(new Map());
+
+    useEffect(() => {
+        if (pendingHidden.size === 0) {
+            return;
+        }
+        setPendingHidden((prev) => {
+            let changed = false;
+            const next = new Map(prev);
+            for (const [key, value] of prev) {
+                const confirmed = !!widgetByKey.get(key)?.["display:hidden"];
+                if (confirmed === value) {
+                    next.delete(key);
+                    changed = true;
+                }
+            }
+            return changed ? next : prev;
+        });
+    }, [orderedEntries]);
 
     const moveRow = useCallback((dragIndex: number, hoverIndex: number) => {
         isDraggingRef.current = true;
@@ -212,6 +238,8 @@ const WidgetOrderPanel = memo(({ model }: WidgetOrderPanelProps) => {
 
     const onToggleHidden = useCallback(
         (key: string) => {
+            const current = !!widgetByKeyRef.current.get(key)?.["display:hidden"];
+            setPendingHidden((prev) => new Map(prev).set(key, !current));
             model.toggleWidgetHidden(key);
         },
         [model]
@@ -247,11 +275,14 @@ const WidgetOrderPanel = memo(({ model }: WidgetOrderPanelProps) => {
                 if (widget == null) {
                     return null;
                 }
+                const effectiveWidget = pendingHidden.has(key)
+                    ? { ...widget, "display:hidden": pendingHidden.get(key) }
+                    : widget;
                 return (
                     <WidgetOrderRow
                         key={key}
                         widgetKey={key}
-                        widget={widget}
+                        widget={effectiveWidget}
                         index={idx}
                         canMoveUp={idx > 0}
                         canMoveDown={idx < localKeys.length - 1}
