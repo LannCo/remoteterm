@@ -556,3 +556,74 @@ describe.skipIf(process.platform === "win32")("running legacy instance", () => {
         expect(fs.existsSync(path.join(newConfig(), MarkerFileName))).toBe(true);
     });
 });
+
+describe("what a blocked launch leaves in the data destination", () => {
+    const newData = () => path.join(xdgData, "remoteterm");
+
+    // env-paths reads the home dir once per process, so point it at this test's home instead.
+    function mockMacEnvPaths() {
+        setPlatform("darwin");
+        delete process.env.XDG_CONFIG_HOME;
+        delete process.env.XDG_DATA_HOME;
+        appDataDir = path.join(tmpHome, "Library", "Application Support");
+        vi.doMock("env-paths", () => ({
+            default: (name: string, opts: { suffix?: string }) => ({
+                data: path.join(appDataDir, opts?.suffix ? `${name}-${opts.suffix}` : name),
+            }),
+        }));
+    }
+
+    afterEach(() => {
+        vi.doUnmock("env-paths");
+    });
+
+    it("macOS: merges past the Electron userData a blocked launch created", async () => {
+        mockMacEnvPaths();
+        const legacyData = makeDir(path.join(appDataDir, "waveterm"), {
+            "wave.lock": "",
+            "db/waveterm.db": "live",
+            "electron/Preferences": "legacy",
+        });
+        const macNewData = makeDir(path.join(appDataDir, "remoteterm"), {
+            "electron/Preferences": "new",
+            "logs/rtapp.1.log": "blocked-launch",
+            "rtapp.log": "blocked-launch",
+        });
+        const mod = await loadPlatform(true);
+        expect(mod.getMigrationFailures()).toEqual([]);
+        expect(mod.getRemoteTermDataDir()).toBe(macNewData);
+        expect(fs.readFileSync(path.join(macNewData, "db/waveterm.db"), "utf8")).toBe("live");
+        expect(fs.existsSync(path.join(macNewData, "wave.lock"))).toBe(true);
+        expect(fs.readFileSync(path.join(macNewData, "electron/Preferences"), "utf8")).toBe("new");
+        expect(fs.readFileSync(path.join(legacyData, "electron/Preferences"), "utf8")).toBe("legacy");
+        expect(fs.existsSync(path.join(macNewData, MarkerFileName))).toBe(true);
+    });
+
+    it.each([["db/remoteterm.db"], ["wave.lock"], ["remoteterm.lock"]])(
+        "macOS: still aborts when the server has run there (%s)",
+        async (serverFile) => {
+            mockMacEnvPaths();
+            makeDir(path.join(appDataDir, "waveterm"), { "wave.lock": "", "db/waveterm.db": "live" });
+            const macNewData = makeDir(path.join(appDataDir, "remoteterm"), {
+                "electron/Preferences": "new",
+                "rtapp.log": "",
+                [serverFile]: "server",
+            });
+            const mod = await loadPlatform(true);
+            expect(mod.getMigrationFailures()).toHaveLength(1);
+            expect(mod.getMigrationFailures()[0]).toMatch(/data root migration aborted/);
+            expect(fs.readFileSync(path.join(macNewData, serverFile), "utf8")).toBe("server");
+            expect(fs.existsSync(path.join(macNewData, "db/waveterm.db"))).toBe(false);
+            expect(fs.existsSync(path.join(macNewData, MarkerFileName))).toBe(false);
+        }
+    );
+
+    it("Linux: Electron userData is not created in the data destination, so it still aborts there", async () => {
+        makeDir(path.join(xdgData, "waveterm"), { "wave.lock": "", "db/waveterm.db": "live" });
+        makeDir(newData(), { "electron/Preferences": "x", "rtapp.log": "" });
+        const mod = await loadPlatform(true);
+        expect(mod.getMigrationFailures()).toHaveLength(1);
+        expect(mod.getMigrationFailures()[0]).toMatch(/data root migration aborted/);
+        expect(fs.existsSync(path.join(newData(), "db/waveterm.db"))).toBe(false);
+    });
+});

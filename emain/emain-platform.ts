@@ -25,7 +25,8 @@ import * as keyutil from "../frontend/util/keyutil";
 // On macOS, it will store to ~/Library/Application \Support/remoteterm/electron
 // On Linux, it will store to ~/.config/remoteterm/electron
 // On Windows, it will store to %LOCALAPPDATA%/remoteterm/electron
-app.setName("remoteterm/electron");
+const ElectronUserDataPath = ["remoteterm", "electron"];
+app.setName(ElectronUserDataPath.join("/"));
 
 const isDev = !app.isPackaged;
 const isDevVite = isDev && process.env.ELECTRON_RENDERER_URL;
@@ -469,6 +470,13 @@ function performDataDirMigration() {
         const dataOverride = readOverrideEnvVar(RemoteTermDataHomeVarName, LegacyRemoteTermDataHomeVarName);
         const dataSource = xdgDataHome ? path.join(xdgDataHome, legacyRemoteTermDirName) : legacyPaths.data;
         const dataDest = xdgDataHome ? path.join(xdgDataHome, remoteTermDirName) : paths.data;
+        // requestSingleInstanceLock() creates Electron's userData before a blocked launch quits; on
+        // macOS (without XDG_DATA_HOME) that directory is inside the data root.
+        const blockedLaunchDataEntryNames = new Set(EmainDataEntryNames);
+        const electronUserData = path.join(app.getPath("appData"), ...ElectronUserDataPath);
+        if (path.dirname(electronUserData) === dataDest) {
+            blockedLaunchDataEntryNames.add(path.basename(electronUserData));
+        }
         migrateDataRoot({
             name: "data",
             source: dataOverride ?? dataSource,
@@ -476,7 +484,7 @@ function performDataDirMigration() {
             overridden: dataOverride != null,
             sourceSkipReason: () => lockFileSkipReason(dataSource),
             // Never merge next to a database the new build already created.
-            canMergeIntoDest: (destEntries) => destEntries.every((name) => EmainDataEntryNames.has(name)),
+            canMergeIntoDest: (destEntries) => destEntries.every((name) => blockedLaunchDataEntryNames.has(name)),
         });
 
         const homeOverride = readOverrideEnvVar(RemoteTermHomeVarName, LegacyRemoteTermHomeVarName);
