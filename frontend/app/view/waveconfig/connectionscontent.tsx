@@ -168,7 +168,7 @@ const HostsList = memo(({ names, connStatusMap }: HostsListProps) => {
 
     return (
         <div className="flex-1 min-h-0 flex flex-col gap-1.5 overflow-y-auto">
-            <div className="grid grid-cols-[14px_20px_1fr_90px] gap-2.5 px-2 text-xxs font-semibold uppercase tracking-wide text-muted">
+            <div className="grid grid-cols-[14px_20px_1fr_90px] gap-2.5 px-2 text-caption font-semibold uppercase tracking-wide text-muted">
                 <span />
                 <span />
                 <span>Connection</span>
@@ -247,7 +247,7 @@ const KeychainView = memo(() => {
     return (
         <div className="flex flex-col gap-2.5">
             <KeychainBanner />
-            <div className="grid grid-cols-[22px_1.4fr_80px_1fr_80px_16px] gap-2.5 px-2.5 text-xxs font-semibold uppercase tracking-wide text-muted">
+            <div className="grid grid-cols-[22px_1.4fr_80px_1fr_80px_16px] gap-2.5 px-2.5 text-caption font-semibold uppercase tracking-wide text-muted">
                 <span />
                 <span>Key</span>
                 <span>Type</span>
