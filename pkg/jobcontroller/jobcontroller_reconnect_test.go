@@ -364,3 +364,169 @@ func TestStartJobFailureReleasesStream(t *testing.T) {
 		t.Errorf("stream id still registered after failed start")
 	}
 }
+
+// fakeConnServer stands in for the connserver on conn:<name>, accepting
+// RemoteReconnectToJobManager.
+type fakeConnServer struct {
+	lock           sync.Mutex
+	reconnectCount int
+}
+
+func (f *fakeConnServer) WshServerImpl() {}
+
+func (f *fakeConnServer) RemoteReconnectToJobManagerCommand(ctx context.Context, data wshrpc.CommandRemoteReconnectToJobManagerData) (*wshrpc.CommandRemoteReconnectToJobManagerRtnData, error) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+	f.reconnectCount++
+	return &wshrpc.CommandRemoteReconnectToJobManagerRtnData{Success: true}, nil
+}
+
+func (f *fakeConnServer) getReconnectCount() int {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+	return f.reconnectCount
+}
+
+func waitForCondition(t *testing.T, timeout time.Duration, cond func() bool) bool {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return cond()
+}
+
+func routeEventForJob(jobId string) *wps.WaveEvent {
+	return &wps.WaveEvent{Scopes: []string{"job:" + jobId}}
+}
+
+func TestHandleRouteUpWithoutStreamRestartsStream(t *testing.T) {
+	initStoreFixture(t)
+	jobId, blockId := makeRunningLocalJob(t)
+	fake := &fakeJobManager{jobId: jobId}
+	registerFakeJobManager(t, fake)
+
+	handleRouteEvent(routeEventForJob(jobId), JobConnStatus_Connected)
+
+	if got := GetJobConnStatus(jobId); got != JobConnStatus_Connected {
+		t.Fatalf("expected job Connected after route-up, got %q", got)
+	}
+	if got := lastStatusForBlock(blockId); got != "connected" {
+		t.Fatalf("expected route-up to publish connected, got %q", got)
+	}
+	restarted := waitForCondition(t, 3*time.Second, func() bool {
+		health, ok := jobStreamHealth.GetEx(jobId)
+		return fake.stats().startCount == 1 && hasActiveStream(health, ok)
+	})
+	if !restarted {
+		t.Fatalf("route-up with no active stream did not restart streaming: %+v", fake.stats())
+	}
+	if got := GetJobConnStatus(jobId); got != JobConnStatus_Connected {
+		t.Fatalf("expected job to stay Connected after restart, got %q", got)
+	}
+}
+
+func TestHandleRouteUpWithActiveStreamDoesNotRestart(t *testing.T) {
+	initStoreFixture(t)
+	jobId, _ := makeRunningLocalJob(t)
+	fake := &fakeJobManager{jobId: jobId}
+	registerFakeJobManager(t, fake)
+	jobStreamHealth.Set(jobId, streamHealthInfo{active: true, streamId: "existing-stream"})
+	t.Cleanup(func() { jobStreamHealth.Delete(jobId) })
+
+	handleRouteEvent(routeEventForJob(jobId), JobConnStatus_Connected)
+
+	if waitForCondition(t, 300*time.Millisecond, func() bool { return fake.stats().prepareCount > 0 }) {
+		t.Fatalf("route-up with an active stream sent JobPrepareConnect")
+	}
+	if got := GetJobConnStatus(jobId); got != JobConnStatus_Connected {
+		t.Fatalf("expected job Connected after route-up, got %q", got)
+	}
+}
+
+func TestHandleRouteDownMarksDisconnected(t *testing.T) {
+	initStoreFixture(t)
+	jobId, blockId := makeRunningLocalJob(t)
+	SetJobConnStatus(jobId, JobConnStatus_Connected)
+	// Inside the cooldown, so route-down does not spawn attemptAutoReconnect.
+	lastAutoReconnectAttempt.Set(jobId, time.Now().Unix())
+
+	handleRouteEvent(routeEventForJob(jobId), JobConnStatus_Disconnected)
+
+	if got := GetJobConnStatus(jobId); got != JobConnStatus_Disconnected {
+		t.Fatalf("expected job Disconnected after route-down, got %q", got)
+	}
+	if got := lastStatusForBlock(blockId); got != "disconnected" {
+		t.Fatalf("expected route-down to publish disconnected, got %q", got)
+	}
+}
+
+func TestDoReconnectJobConnectedNoStreamRestarts(t *testing.T) {
+	initStoreFixture(t)
+	ctx := context.Background()
+	jobId, _ := makeRunningLocalJob(t)
+	fake := &fakeJobManager{jobId: jobId}
+	registerFakeJobManager(t, fake)
+	SetJobConnStatus(jobId, JobConnStatus_Connected)
+
+	if err := doReconnectJob(ctx, jobId, nil); err != nil {
+		t.Fatalf("doReconnectJob: %v", err)
+	}
+	st := fake.stats()
+	if st.prepareCount != 1 || st.startCount != 1 {
+		t.Fatalf("expected the stream to be restarted once, got prepare=%d start=%d", st.prepareCount, st.startCount)
+	}
+	if got := GetJobConnStatus(jobId); got != JobConnStatus_Connected {
+		t.Fatalf("expected job to stay Connected, got %q", got)
+	}
+}
+
+func TestDoReconnectJobMarksConnectedOnlyAfterRestart(t *testing.T) {
+	initStoreFixture(t)
+	ctx := context.Background()
+	jobId, blockId := makeRunningLocalJob(t)
+	connSrv := &fakeConnServer{}
+	registerFakeRoute(t, connSrv, wshutil.MakeConnectionRouteId("local"))
+	fake := &fakeJobManager{jobId: jobId}
+	registerFakeJobManager(t, fake)
+
+	if err := doReconnectJob(ctx, jobId, nil); err != nil {
+		t.Fatalf("doReconnectJob: %v", err)
+	}
+	if connSrv.getReconnectCount() != 1 {
+		t.Fatalf("expected one RemoteReconnectToJobManager, got %d", connSrv.getReconnectCount())
+	}
+	st := fake.stats()
+	if len(st.statusAtPrepare) != 1 || st.statusAtPrepare[0] == JobConnStatus_Connected {
+		t.Fatalf("job was marked Connected before restartStreaming finished: statusAtPrepare=%v", st.statusAtPrepare)
+	}
+	if got := GetJobConnStatus(jobId); got != JobConnStatus_Connected {
+		t.Fatalf("expected job Connected after successful restart, got %q", got)
+	}
+	if got := lastStatusForBlock(blockId); got != "connected" {
+		t.Fatalf("expected connected to be published, got %q", got)
+	}
+}
+
+func TestDoReconnectJobRestartFailureLeavesDisconnected(t *testing.T) {
+	initStoreFixture(t)
+	ctx := context.Background()
+	jobId, blockId := makeRunningLocalJob(t)
+	connSrv := &fakeConnServer{}
+	registerFakeRoute(t, connSrv, wshutil.MakeConnectionRouteId("local"))
+	fake := &fakeJobManager{jobId: jobId, prepareErr: fmt.Errorf("fake prepare failure")}
+	registerFakeJobManager(t, fake)
+
+	if err := doReconnectJob(ctx, jobId, nil); err == nil {
+		t.Fatalf("expected doReconnectJob to fail when restartStreaming fails")
+	}
+	if got := GetJobConnStatus(jobId); got != JobConnStatus_Disconnected {
+		t.Fatalf("expected job Disconnected after failed restart, got %q", got)
+	}
+	if got := lastStatusForBlock(blockId); got != "disconnected" {
+		t.Fatalf("expected disconnected to be published, got %q", got)
+	}
+}
