@@ -247,7 +247,7 @@ const WaveConfigView = memo(({ blockId, model }: ViewComponentProps<WaveConfigVi
                                             model.discardChanges();
                                             setActiveTab("visual");
                                         }}
-                                        aria-selected={activeTab === "visual"}
+                                        aria-pressed={activeTab === "visual"}
                                         className={cn(
                                             "px-4 pt-1 pb-1.5 cursor-pointer transition-colors text-secondary",
                                             activeTab === "visual"
@@ -260,7 +260,7 @@ const WaveConfigView = memo(({ blockId, model }: ViewComponentProps<WaveConfigVi
                                     {/* No guard needed: visual tab saves changes immediately via RPC */}
                                     <button
                                         onClick={() => setActiveTab("json")}
-                                        aria-selected={activeTab === "json"}
+                                        aria-pressed={activeTab === "json"}
                                         className={cn(
                                             "px-4 pt-1 pb-1.5 cursor-pointer transition-colors text-secondary",
                                             activeTab === "json"
