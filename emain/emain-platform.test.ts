@@ -627,3 +627,90 @@ describe("what a blocked launch leaves in the data destination", () => {
         expect(fs.existsSync(path.join(newData(), "db/waveterm.db"))).toBe(false);
     });
 });
+
+describe("interrupted data-root merge", () => {
+    const legacyData = () => path.join(xdgData, "waveterm");
+    const newData = () => path.join(xdgData, "remoteterm");
+
+    // Moves wave.lock first, then fails on db/ the way a root-owned subdirectory would.
+    async function loadWithFailingDbRename() {
+        const actualFs = await vi.importActual<typeof import("fs")>("fs");
+        const nameOf = (ent: any) => (typeof ent === "string" ? ent : ent.name);
+        vi.doMock("fs", () => ({
+            ...actualFs,
+            readdirSync: (p: string, ...rest: any[]) => {
+                const entries = (actualFs.readdirSync as any)(p, ...rest);
+                if (p !== legacyData()) {
+                    return entries;
+                }
+                return entries.sort(
+                    (a: any, b: any) => Number(nameOf(b) === "wave.lock") - Number(nameOf(a) === "wave.lock")
+                );
+            },
+            renameSync: (src: string, dest: string) => {
+                if (src === path.join(legacyData(), "db")) {
+                    throw Object.assign(new Error(`EACCES: rename '${src}'`), { code: "EACCES" });
+                }
+                return actualFs.renameSync(src, dest);
+            },
+        }));
+        return await loadPlatform(true);
+    }
+
+    it("a later launch finishes the merge and then writes the marker", async () => {
+        makeDir(legacyData(), {
+            "wave.lock": "legacy-lock",
+            "db/waveterm.db": "live",
+            "db/filestore.db": "files",
+            "logs/waveapp.1.log": "old",
+        });
+        makeDir(newData(), { "rtapp.log": "blocked-launch", "logs/rtapp.1.log": "blocked-launch" });
+
+        let mod = await loadWithFailingDbRename();
+        expect(mod.getMigrationFailures()).toHaveLength(1);
+        expect(mod.getMigrationFailures()[0]).toMatch(/error merging data root/);
+        expect(fs.existsSync(path.join(newData(), "wave.lock"))).toBe(true);
+        expect(fs.existsSync(path.join(legacyData(), "wave.lock"))).toBe(false);
+        expect(fs.readFileSync(path.join(legacyData(), "db/waveterm.db"), "utf8")).toBe("live");
+        expect(fs.existsSync(path.join(newData(), MarkerFileName))).toBe(false);
+
+        vi.doUnmock("fs");
+        vi.resetModules();
+        mod = await loadPlatform(true);
+        expect(mod.getMigrationFailures()).toEqual([]);
+        expect(fs.readFileSync(path.join(newData(), "wave.lock"), "utf8")).toBe("legacy-lock");
+        expect(fs.readFileSync(path.join(newData(), "db/waveterm.db"), "utf8")).toBe("live");
+        expect(fs.readFileSync(path.join(newData(), "db/filestore.db"), "utf8")).toBe("files");
+        expect(fs.readFileSync(path.join(newData(), "logs/waveapp.1.log"), "utf8")).toBe("old");
+        expect(fs.readFileSync(path.join(newData(), "rtapp.log"), "utf8")).toBe("blocked-launch");
+        expect(fs.readFileSync(path.join(newData(), "logs/rtapp.1.log"), "utf8")).toBe("blocked-launch");
+        expect(fs.readFileSync(path.join(newData(), MarkerFileName), "utf8")).toMatch(
+            new RegExp(`^merged-from:${legacyData()}\n`)
+        );
+        expect(fs.readdirSync(newData()).filter((n) => n.startsWith("."))).toEqual([MarkerFileName]);
+        expect(fs.readdirSync(legacyData())).toEqual([]);
+
+        vi.resetModules();
+        mod = await loadPlatform(true);
+        expect(mod.getMigrationFailures()).toEqual([]);
+    });
+
+    it("never overwrites while resuming", async () => {
+        makeDir(legacyData(), { "wave.lock": "", "db/waveterm.db": "legacy", "notes.txt": "legacy-notes" });
+        makeDir(newData(), { "rtapp.log": "" });
+        let mod = await loadWithFailingDbRename();
+        expect(mod.getMigrationFailures()).toHaveLength(1);
+        // Something the server wrote in between must survive the resumed merge.
+        makeDir(newData(), { "db/waveterm.db": "server-wrote-this" });
+
+        vi.doUnmock("fs");
+        vi.resetModules();
+        mod = await loadPlatform(true);
+        expect(fs.readFileSync(path.join(newData(), "db/waveterm.db"), "utf8")).toBe("server-wrote-this");
+        expect(fs.readFileSync(path.join(legacyData(), "db/waveterm.db"), "utf8")).toBe("legacy");
+        expect(fs.readFileSync(path.join(newData(), "notes.txt"), "utf8")).toBe("legacy-notes");
+        expect(mod.getMigrationFailures()).toHaveLength(1);
+        expect(mod.getMigrationFailures()[0]).toContain(path.join("db", "waveterm.db"));
+        expect(fs.existsSync(path.join(newData(), MarkerFileName))).toBe(true);
+    });
+});

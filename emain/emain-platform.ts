@@ -14,6 +14,7 @@ import {
     renameSync,
     rmdirSync,
     statSync,
+    unlinkSync,
     writeFileSync,
 } from "fs";
 import os from "os";
@@ -115,6 +116,10 @@ type MigrationRootSpec = {
 const EmainDataEntryNames = new Set(["logs", "rtapp.log"]);
 
 const MigrationMarkerFileName = ".migrated-from-waveterm";
+// Present in a destination while a merge into it is unfinished. Once some entries have moved, the
+// destination no longer passes canMergeIntoDest and the source may have lost the file that
+// qualified it (wave.lock), so this marker alone lets a later launch finish the merge.
+const MigrationInProgressFileName = ".migrating-from-waveterm";
 const LegacyLockFileName = "wave.lock";
 // pkg/secretstore keeps the encrypted secret store in the config root.
 const LegacySecretsFileName = "secrets.enc";
@@ -302,7 +307,8 @@ function migrateDataRoot(spec: MigrationRootSpec) {
         console.log(`[migration] skipping ${spec.name} root: ${spec.source} does not exist`);
         return;
     }
-    const skipReason = spec.sourceSkipReason?.();
+    const resumeMerge = existsSync(path.join(spec.dest, MigrationInProgressFileName));
+    const skipReason = resumeMerge ? null : spec.sourceSkipReason?.();
     if (skipReason) {
         console.log(`[migration] skipping ${spec.name} root: ${spec.source} ${skipReason}`);
         return;
@@ -330,7 +336,7 @@ function migrateDataRoot(spec: MigrationRootSpec) {
                 recordMigrationFailure(`could not remove empty destination ${spec.dest} for ${spec.name} root`, e);
                 return;
             }
-        } else if (spec.canMergeIntoDest?.(destEntries)) {
+        } else if (resumeMerge || spec.canMergeIntoDest?.(destEntries)) {
             mergeDataRoot(spec);
             return;
         } else {
@@ -394,10 +400,13 @@ function mergeTree(source: string, dest: string, rel: string, result: MergeResul
 
 // Moves every source entry the destination lacks into it and never overwrites a destination
 // entry. Whatever cannot be moved stays in the source; the marker is written regardless so the
-// state converges instead of re-reporting on every launch.
+// state converges instead of re-reporting on every launch. A merge that throws part-way leaves
+// the in-progress marker, and the next launch runs the same merge again over what is left.
 function mergeDataRoot(spec: MigrationRootSpec) {
     const result: MergeResult = { merged: [], kept: [] };
+    const inProgressFile = path.join(spec.dest, MigrationInProgressFileName);
     try {
+        writeFileSync(inProgressFile, `merging-from:${spec.source}\n${new Date().toISOString()}\n`);
         mergeTree(spec.source, spec.dest, "", result);
         writeFileSync(
             path.join(spec.dest, MigrationMarkerFileName),
@@ -409,6 +418,11 @@ function mergeDataRoot(spec: MigrationRootSpec) {
             e
         );
         return;
+    }
+    try {
+        unlinkSync(inProgressFile);
+    } catch (e) {
+        console.log(`[migration] could not remove ${inProgressFile} (${e?.code ?? e})`);
     }
     console.log(
         `[migration] merged ${spec.name} root from ${spec.source} into existing ${spec.dest}: ` +
