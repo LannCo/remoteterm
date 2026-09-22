@@ -8,6 +8,7 @@ import { makeORef } from "@/app/store/wos";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { BackgroundsContent } from "@/app/view/waveconfig/backgroundscontent";
 import { ConnectionsContent } from "@/app/view/waveconfig/connectionscontent";
+import { GeneralContent } from "@/app/view/waveconfig/generalcontent";
 import { SecretsContent } from "@/app/view/waveconfig/secretscontent";
 import { WaveConfigView } from "@/app/view/waveconfig/waveconfig";
 import type { WaveConfigEnv } from "@/app/view/waveconfig/waveconfigenv";
@@ -37,8 +38,7 @@ export type ConfigFile = {
 export const SecretNameRegex = /^[A-Za-z][A-Za-z0-9_]*$/;
 
 // Mirrors the Go userHostRe in pkg/remote/connutil.go ParseOpts() — keep in sync.
-export const ConnectionQuickAddRegex =
-    /^([a-zA-Z0-9][a-zA-Z0-9._@-]*@)?([a-zA-Z0-9][a-zA-Z0-9.-]*)(?::([0-9]+))?$/;
+export const ConnectionQuickAddRegex = /^([a-zA-Z0-9][a-zA-Z0-9._@-]*@)?([a-zA-Z0-9][a-zA-Z0-9.-]*)(?::([0-9]+))?$/;
 
 function makeConfigFiles(isWindows: boolean): ConfigFile[] {
     return [
@@ -48,6 +48,7 @@ function makeConfigFiles(isWindows: boolean): ConfigFile[] {
             language: "json",
             docsUrl: "https://docs.waveterm.dev/config",
             hasJsonView: true,
+            visualComponent: GeneralContent,
         },
         {
             name: "Connections",
@@ -153,6 +154,13 @@ export class WaveConfigViewModel implements ViewModel {
     backgroundsAddBgAtom: PrimitiveAtom<string>;
     backgroundsAddErrorAtom: PrimitiveAtom<string | null>;
 
+    settingsAtom: Atom<SettingsType>;
+    // Parsed from the raw settings.json content already loaded into originalContentAtom for
+    // the Raw JSON tab -- this is the *unmerged* on-disk file, needed to tell "user explicitly
+    // set this key" apart from "showing the merged-in default" (fullConfigAtom.settings always
+    // has defaults merged in, so it can't answer that question by itself).
+    generalRawSettingsAtom: Atom<SettingsType>;
+
     constructor({ blockId, nodeModel, tabModel, waveEnv }: ViewModelInitType) {
         this.blockId = blockId;
         this.nodeModel = nodeModel;
@@ -248,6 +256,25 @@ export class WaveConfigViewModel implements ViewModel {
         this.backgroundsAddNameAtom = atom<string>("");
         this.backgroundsAddBgAtom = atom<string>("");
         this.backgroundsAddErrorAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+
+        this.settingsAtom = atom((get) => get(this.env.atoms.fullConfigAtom)?.settings ?? {});
+        this.generalRawSettingsAtom = atom((get) => {
+            const selectedFile = get(this.selectedFileAtom);
+            if (selectedFile?.path !== "settings.json") {
+                return {};
+            }
+            const content = get(this.originalContentAtom);
+            try {
+                const parsed = JSON.parse(content);
+                if (typeof parsed === "object" && parsed != null && !Array.isArray(parsed)) {
+                    return parsed as SettingsType;
+                }
+            } catch {
+                // fall through to empty -- an unparsable raw file just means we can't tell
+                // which keys are user-set, so every nullable field renders as "not set"
+            }
+            return {};
+        });
 
         this.checkPresetsJsonExists();
         this.initialize();
@@ -536,7 +563,8 @@ export class WaveConfigViewModel implements ViewModel {
         globalStore.set(this.errorMessageAtom, null);
 
         try {
-            await this.env.rpc.SetSecretsCommand(TabRpcClient, { [selectedSecret]: secretValue });            this.closeSecretView();
+            await this.env.rpc.SetSecretsCommand(TabRpcClient, { [selectedSecret]: secretValue });
+            this.closeSecretView();
         } catch (error) {
             globalStore.set(this.errorMessageAtom, `Failed to save secret: ${error.message}`);
         } finally {
@@ -606,7 +634,8 @@ export class WaveConfigViewModel implements ViewModel {
         globalStore.set(this.errorMessageAtom, null);
 
         try {
-            await this.env.rpc.SetSecretsCommand(TabRpcClient, { [name]: value });            globalStore.set(this.isAddingNewAtom, false);
+            await this.env.rpc.SetSecretsCommand(TabRpcClient, { [name]: value });
+            globalStore.set(this.isAddingNewAtom, false);
             globalStore.set(this.newSecretNameAtom, "");
             globalStore.set(this.newSecretValueAtom, "");
             await this.refreshSecrets();
@@ -635,10 +664,7 @@ export class WaveConfigViewModel implements ViewModel {
             return;
         }
         if (!ConnectionQuickAddRegex.test(value)) {
-            globalStore.set(
-                this.connectionsQuickAddErrorAtom,
-                "Invalid format: expected user@host or user@host:port"
-            );
+            globalStore.set(this.connectionsQuickAddErrorAtom, "Invalid format: expected user@host or user@host:port");
             return;
         }
         globalStore.set(this.connectionsQuickAddErrorAtom, null);
@@ -647,6 +673,42 @@ export class WaveConfigViewModel implements ViewModel {
             globalStore.set(this.connectionsQuickAddValueAtom, "");
         } catch (error) {
             globalStore.set(this.connectionsQuickAddErrorAtom, `Failed to add connection: ${error.message}`);
+        }
+    }
+
+    // settings.json merges per-top-level-key server-side (SetBaseConfigValue), so a single-key
+    // write here is already minimal-diff -- no read-modify-write queue needed the way widgets/
+    // backgrounds need one. `null` clears a key back to its default (MetaMapType merge semantics).
+    async setGeneralSetting(patch: SettingsType) {
+        globalStore.set(this.errorMessageAtom, null);
+        try {
+            await this.env.rpc.SetConfigCommand(TabRpcClient, patch);
+            await this.refreshGeneralRawContent();
+        } catch (err) {
+            globalStore.set(this.errorMessageAtom, `Failed to save setting: ${err.message || String(err)}`);
+        }
+    }
+
+    // Keeps originalContentAtom/fileContentAtom (and therefore generalRawSettingsAtom, and the
+    // Raw JSON tab) in sync after a visual-tab write, the same way writeWidgetPatch/
+    // writeBackgroundPatch do for their own files. Best-effort: setGeneralSetting's RPC already
+    // succeeded by the time this runs, so a refresh failure here isn't surfaced as an error.
+    async refreshGeneralRawContent() {
+        const selectedFile = globalStore.get(this.selectedFileAtom);
+        if (selectedFile?.path !== "settings.json") {
+            return;
+        }
+        try {
+            const fullPath = `${this.configDir}/settings.json`;
+            const fileData = await this.env.rpc.FileReadCommand(TabRpcClient, {
+                info: { path: fullPath },
+            });
+            const content = fileData?.data64 ? base64ToString(fileData.data64) : "";
+            const formatted = content.trim() === "" ? "{\n\n}" : content;
+            globalStore.set(this.originalContentAtom, formatted);
+            globalStore.set(this.fileContentAtom, formatted);
+        } catch {
+            // ignore -- best-effort refresh only
         }
     }
 
