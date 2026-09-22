@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { fireAndForget } from "@/util/util";
+import { execFileSync } from "child_process";
 import { app, dialog, ipcMain, shell } from "electron";
 import envPaths from "env-paths";
 import {
@@ -142,6 +143,12 @@ export function getMigrationFailures(): string[] {
 // Electron userData (and Chromium's SingletonLock) is at <appData>/waveterm/electron.
 const LegacyElectronUserDataPath = ["waveterm", "electron"];
 const SingletonLockFileName = "SingletonLock";
+// Basename of the legacy app's main-process executable. electron-builder named the Linux binary
+// after package.json "name" and the macOS one after "productName"; dev builds ran stock Electron.
+const LegacyExecutableNames: Record<string, { prod: string; dev: string }> = {
+    linux: { prod: "waveterm", dev: "electron" },
+    darwin: { prod: "Wave", dev: "Electron" },
+};
 
 type LegacyInstanceState = {
     // True only for a live pid on this host; otherwise liveness could not be determined.
@@ -154,9 +161,31 @@ let legacyInstanceState: LegacyInstanceState = null;
 let blockingLegacyInstance: LegacyInstanceState = null;
 let ignoreLegacyInstance = false;
 
+// Returns null when the executable cannot be read (another uid, exited, unsupported platform).
+function readProcessExecutable(pid: number): string {
+    try {
+        if (process.platform === "linux") {
+            return readlinkSync(`/proc/${pid}/exe`).replace(/ \(deleted\)$/, "");
+        }
+        if (process.platform === "darwin") {
+            const out = execFileSync("ps", ["-p", String(pid), "-o", "comm="], {
+                encoding: "utf8",
+                stdio: ["ignore", "pipe", "ignore"],
+                timeout: 2000,
+            });
+            return out.trim() || null;
+        }
+    } catch (e) {
+        console.log(`[migration] could not read the executable of pid ${pid} (${e?.code ?? e})`);
+    }
+    return null;
+}
+
 // Node has no portable flock, so liveness comes from the legacy Electron process instead: Chromium
-// keeps SingletonLock as a symlink to "<hostname>-<pid>" for as long as that app runs. Windows is
-// not checked: renaming a root fails there while the legacy app holds files open in it.
+// keeps SingletonLock as a symlink to "<hostname>-<pid>" for as long as that app runs. A lock left
+// by a crash can name a pid the OS has since given to an unrelated process, so a live pid counts
+// as the legacy app only if its executable is the legacy app's. Windows is not checked: renaming
+// a root fails there while the legacy app holds files open in it.
 function checkLegacyInstanceRunning(): LegacyInstanceState {
     if (process.platform === "win32") {
         return null;
@@ -187,7 +216,15 @@ function checkLegacyInstanceRunning(): LegacyInstanceState {
             return null;
         }
     }
-    return { confirmedRunning: true, reason: `WaveTerm is running (pid ${pid}, per ${lockPath})` };
+    const exe = readProcessExecutable(pid);
+    if (exe == null) {
+        return { confirmedRunning: false, reason: `pid ${pid} in ${lockPath} is running but could not be identified` };
+    }
+    const expectedName = LegacyExecutableNames[process.platform]?.[isDev ? "dev" : "prod"];
+    if (path.basename(exe) !== expectedName) {
+        return { confirmedRunning: false, reason: `pid ${pid} in ${lockPath} is running ${exe}` };
+    }
+    return { confirmedRunning: true, reason: `pid ${pid} (${exe}) holds ${lockPath}` };
 }
 
 function getLegacyInstanceState(): LegacyInstanceState {
@@ -215,7 +252,9 @@ export async function resolveLegacyInstanceBlock(): Promise<boolean> {
             buttons: ["Quit"],
             title: "WaveTerm Is Still Running",
             message: "Quit WaveTerm, then relaunch RemoteTerm.",
-            detail: "RemoteTerm needs to move your WaveTerm data to its new location and cannot do that while WaveTerm is running.",
+            detail:
+                "RemoteTerm needs to move your WaveTerm data to its new location and cannot do that while WaveTerm is running.\n\n" +
+                `${block.reason}.`,
         });
         return false;
     }

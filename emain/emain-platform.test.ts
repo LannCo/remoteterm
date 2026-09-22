@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { spawn } from "child_process";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -19,8 +20,14 @@ const MarkerFileName = ".migrated-from-waveterm";
 let tmpHome: string;
 let xdgConfig: string;
 let xdgData: string;
+let appDataDir: string;
 const showMessageBox = vi.fn();
 const savedEnv = { ...process.env };
+const savedPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+
+function setPlatform(platform: NodeJS.Platform) {
+    Object.defineProperty(process, "platform", { ...savedPlatform, value: platform });
+}
 
 function mockElectron(isPackaged: boolean) {
     vi.doMock("electron", () => ({
@@ -28,7 +35,7 @@ function mockElectron(isPackaged: boolean) {
             isPackaged,
             getPath: (name: string) => {
                 if (name === "appData") {
-                    return xdgConfig;
+                    return appDataDir;
                 }
                 if (name !== "home") {
                     throw new Error(`unexpected getPath(${name})`);
@@ -66,6 +73,7 @@ beforeEach(() => {
     tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "rt-emain-platform-"));
     xdgConfig = path.join(tmpHome, ".config");
     xdgData = path.join(tmpHome, ".local", "share");
+    appDataDir = xdgConfig;
     process.env.HOME = tmpHome;
     process.env.XDG_CONFIG_HOME = xdgConfig;
     process.env.XDG_DATA_HOME = xdgData;
@@ -80,6 +88,8 @@ afterEach(() => {
     vi.restoreAllMocks();
     vi.doUnmock("electron");
     vi.doUnmock("fs");
+    vi.doUnmock("child_process");
+    Object.defineProperty(process, "platform", savedPlatform);
     process.env = { ...savedEnv };
     fs.rmSync(tmpHome, { recursive: true, force: true });
 });
@@ -319,6 +329,49 @@ describe.skipIf(process.platform === "win32")("running legacy instance", () => {
         });
     }
 
+    // What the legacy pid resolves to: an executable path, or the error code reading it fails with.
+    // Every other /proc read fails with EACCES, so no test reads a real process's /proc entry.
+    function mockProcessIdentity(identity: string | { code: string }) {
+        const fail = (what: string, code: string) => {
+            throw Object.assign(new Error(`${code}: ${what}`), { code });
+        };
+        const resolve = (what: string) => (typeof identity === "string" ? identity : fail(what, identity.code));
+        vi.doMock("fs", async () => {
+            const actualFs = await vi.importActual<typeof import("fs")>("fs");
+            return {
+                ...actualFs,
+                readlinkSync: (p: string, ...rest: any[]) => {
+                    if (p === `/proc/${LegacyPid}/exe`) {
+                        return resolve(p);
+                    }
+                    if (String(p).startsWith("/proc/")) {
+                        return fail(p, "EACCES");
+                    }
+                    return (actualFs.readlinkSync as any)(p, ...rest);
+                },
+            };
+        });
+        vi.doMock("child_process", async () => {
+            const actualCp = await vi.importActual<typeof import("child_process")>("child_process");
+            return {
+                ...actualCp,
+                execFileSync: (cmd: string, args: string[]) => {
+                    if (cmd !== "ps") {
+                        return fail(cmd, "ENOENT");
+                    }
+                    if (!args.includes(String(LegacyPid))) {
+                        return fail(`ps ${args.join(" ")}`, "EPERM");
+                    }
+                    return `${resolve(`ps ${args.join(" ")}`)}\n`;
+                },
+            };
+        });
+    }
+
+    beforeEach(() => {
+        mockProcessIdentity({ code: "ENOENT" });
+    });
+
     function makePendingRoots() {
         makeDir(legacyData(), { "wave.lock": "", "db/waveterm.db": "live" });
         makeDir(legacyConfig(), { "settings.json": "legacy" });
@@ -331,25 +384,83 @@ describe.skipIf(process.platform === "win32")("running legacy instance", () => {
         expect(fs.existsSync(path.join(newConfig(), MarkerFileName))).toBe(false);
     }
 
-    it.each([[null], ["EPERM"]])("quits without a choice when the lock's pid is live (kill error %s)", async (err) => {
-        makePendingRoots();
-        const legacyHome = makeDir(path.join(tmpHome, ".waveterm"), { "wave.lock": "" });
-        writeSingletonLock(`${os.hostname()}-${LegacyPid}`);
-        const kill = mockKill(err);
-        const mod = await loadPlatform(true);
-        expect(kill).toHaveBeenCalledWith(LegacyPid, 0);
-        expectNothingMoved();
-        expect(fs.existsSync(path.join(legacyHome, "wave.lock"))).toBe(true);
-        expect(fs.existsSync(path.join(tmpHome, ".remoteterm"))).toBe(false);
-        expect(loggedLines().some((s) => s.includes("[migration]") && s.includes("retry next launch"))).toBe(true);
+    it.each([
+        ["linux", "/opt/Wave/waveterm"],
+        ["linux", "/opt/Wave/waveterm (deleted)"],
+        ["darwin", "/Applications/Wave.app/Contents/MacOS/Wave"],
+    ] as [NodeJS.Platform, string][])(
+        "quits without a choice when the lock's live pid is Wave Terminal (%s, %s)",
+        async (platform, exe) => {
+            makePendingRoots();
+            const legacyHome = makeDir(path.join(tmpHome, ".waveterm"), { "wave.lock": "" });
+            writeSingletonLock(`${os.hostname()}-${LegacyPid}`);
+            const kill = mockKill();
+            mockProcessIdentity(exe);
+            setPlatform(platform);
+            const mod = await loadPlatform(true);
+            expect(kill).toHaveBeenCalledWith(LegacyPid, 0);
+            expectNothingMoved();
+            expect(fs.existsSync(path.join(legacyHome, "wave.lock"))).toBe(true);
+            expect(fs.existsSync(path.join(tmpHome, ".remoteterm"))).toBe(false);
+            expect(loggedLines().some((s) => s.includes("[migration]") && s.includes("retry next launch"))).toBe(true);
 
-        expect(await mod.resolveLegacyInstanceBlock()).toBe(false);
-        expect(showMessageBox).toHaveBeenCalledTimes(1);
-        expect(showMessageBox.mock.calls[0][0].buttons).toEqual(["Quit"]);
-        expect(showMessageBox.mock.calls[0][0].message).toMatch(/Quit WaveTerm, then relaunch RemoteTerm/);
-        expectNothingMoved();
-        expect(mod.getMigrationFailures()).toEqual([]);
-    });
+            expect(await mod.resolveLegacyInstanceBlock()).toBe(false);
+            expect(showMessageBox).toHaveBeenCalledTimes(1);
+            const opts = showMessageBox.mock.calls[0][0];
+            expect(opts.buttons).toEqual(["Quit"]);
+            expect(opts.message).toMatch(/then relaunch RemoteTerm/);
+            expect(opts.detail).toContain(singletonLock());
+            expect(opts.detail).toContain(String(LegacyPid));
+            expectNothingMoved();
+            expect(mod.getMigrationFailures()).toEqual([]);
+        }
+    );
+
+    it.each([
+        ["linux", null, "/usr/lib/systemd/systemd-journald"],
+        ["linux", "EPERM", { code: "EACCES" }],
+        ["linux", null, { code: "ENOENT" }],
+        ["darwin", null, "/usr/sbin/cupsd"],
+        ["darwin", "EPERM", { code: "EPERM" }],
+    ] as [NodeJS.Platform, string, string | { code: string }][])(
+        "offers Migrate anyway when the lock's live pid is not identified as Wave Terminal (%s, kill %s, %j)",
+        async (platform, killErr, identity) => {
+            makePendingRoots();
+            writeSingletonLock(`${os.hostname()}-${LegacyPid}`);
+            mockKill(killErr);
+            mockProcessIdentity(identity);
+            setPlatform(platform);
+            showMessageBox.mockResolvedValue({ response: 1 });
+            const mod = await loadPlatform(true);
+            expectNothingMoved();
+            expect(await mod.resolveLegacyInstanceBlock()).toBe(true);
+            const opts = showMessageBox.mock.calls[0][0];
+            expect(opts.buttons).toEqual(["Quit", "Migrate anyway"]);
+            expect(opts.detail).toContain(singletonLock());
+            expect(fs.readFileSync(path.join(newData(), "db/waveterm.db"), "utf8")).toBe("live");
+            expect(mod.getMigrationFailures()).toEqual([]);
+        }
+    );
+
+    it.runIf(process.platform === "linux")(
+        "does not confirm a live unrelated process from its real /proc entry",
+        async () => {
+            vi.doUnmock("fs");
+            vi.doUnmock("child_process");
+            const child = spawn("sleep", ["30"], { stdio: "ignore" });
+            try {
+                makePendingRoots();
+                writeSingletonLock(`${os.hostname()}-${child.pid}`);
+                const mod = await loadPlatform(true);
+                expectNothingMoved();
+                expect(await mod.resolveLegacyInstanceBlock()).toBe(false);
+                expect(showMessageBox.mock.calls[0][0].buttons).toEqual(["Quit", "Migrate anyway"]);
+                expect(showMessageBox.mock.calls[0][0].detail).toMatch(/sleep/);
+            } finally {
+                child.kill();
+            }
+        }
+    );
 
     it("migrates past a stale lock whose pid is gone", async () => {
         makePendingRoots();
