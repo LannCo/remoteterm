@@ -536,4 +536,38 @@ describe("SourceControlViewModel — review mode", () => {
             expect(model.diffCacheAtom._value.has("a.ts|unstaged|")).toBe(false);
         });
     });
+
+    // ---- revertHunk errors ----
+
+    describe("revertHunk errors", () => {
+        const PartialRevertError =
+            "hunk unstaged, but the working tree has since changed and was left as is: git apply failed";
+
+        it("shows a failed staged-hunk revert to the user, and the status refresh after it keeps it", async () => {
+            model.disposed = false;
+            model.env.rpc.GitRevertHunkCommand.mockRejectedValue(new Error(PartialRevertError));
+            model.env.rpc.GitStatusCommand.mockResolvedValue(makeStatusResponse());
+            vi.spyOn(console, "error").mockImplementation(() => {});
+
+            await model.revertHunk("a.ts", 0, true);
+
+            expect(model.env.rpc.GitStatusCommand).toHaveBeenCalled();
+            expect(model.actionErrorAtom?._value).toBe(`Failed to revert hunk: ${PartialRevertError}`);
+            expect(model.stagingAtom._value).toBe(false);
+        });
+
+        it("a later successful revert leaves an earlier error until it is dismissed", async () => {
+            model.disposed = false;
+            model.env.rpc.GitStatusCommand.mockResolvedValue(makeStatusResponse());
+            model.env.rpc.GitRevertHunkCommand.mockRejectedValueOnce(new Error(PartialRevertError));
+            vi.spyOn(console, "error").mockImplementation(() => {});
+
+            await model.revertHunk("a.ts", 1, true);
+            await model.revertHunk("a.ts", 0, true);
+            expect(model.actionErrorAtom._value).toBe(`Failed to revert hunk: ${PartialRevertError}`);
+
+            model.dismissActionError();
+            expect(model.actionErrorAtom._value).toBeNull();
+        });
+    });
 });
