@@ -1,0 +1,28 @@
+# round5-security-auditor report
+**Target:** `git diff 60f923d2 72b21bd9` on `qa/fleet-2026-09-22` (RemoteTerm, fourth fix wave)
+**Started:** 2026-09-22T00:00:00Z
+**Status:** IN PROGRESS
+
+## Findings
+<!-- appended one at a time, as found -->
+
+_None._
+
+## Verified OK
+<!-- appended as checked -->
+
+- `emain/emain-platform.ts:465-478` (`mergeDataRoot`, new `db/`-on-both-sides guard): `existsSync(sourceDb) && existsSync(destDb)` refuses the merge outright (`recordIncompleteMigration`, returns before `mergeTree`) instead of merging or deleting either database directory — matches the brief's "refuse when `db/` is on both sides". Message embeds only `spec.dest`/`spec.source`/`spec.name` (fixed, locally-derived paths), never `e.message`/`e.stack`.
+- `emain/emain-platform.ts:266-296` (`legacyInstanceBlocksRoot`, new): fails closed — `!state.otherFlavour` (same-flavour holder, or the pre-refactor "definitely blocks everything" case) returns `true` (block) unconditionally. For the new `otherFlavour` case, `path.relative(source, profileDir)` blocks (`true`) whenever `profileDir` equals or is nested inside `source` (`rel === ""` or first segment isn't `".."` and not absolute), and only unblocks a specific root when the shared legacy profile provably sits outside it. Confirmed callers: `migrateDataRoot:373-378` only skips `blockingLegacyInstance`/abort when `legacyInstanceBlocksRoot` returns `false`; `confirmedRunning` (used only for `resolveLegacyInstanceBlock`'s dialog copy in `emain.ts`, unchanged this diff) is orthogonal to whether the root itself is blocked, so a `false`-`confirmedRunning`-but-uncertain state still blocks the containing root via the same fail-closed object-truthiness gate as round1-3's already-reviewed design (`emain-platform.ts:373`: `if (legacyInstance && legacyInstanceBlocksRoot(...))`).
+- Same function: string-based `path.relative` containment check does not resolve symlinks, so a symlinked `source` or a symlinked ancestor of `profileDir` could in principle defeat the containment test. Requires attacker write access to the user's own `appData`/config tree to plant such a symlink — the same standing precondition as the open, not-re-litigated `R3-SEC-1` (symlink-following in `mergeTree`/`mergeDataRoot`), not a new boundary.
+- `emain/emain-platform.ts:186-244` (`checkLegacyInstanceRunning` refactor): `exeName` is validated against `exeNames.prod`/`exeNames.dev` before any branch runs (unchanged gate from round4); the new `holderIsDev`/`otherFlavour` split only changes what `LegacyInstanceState` is *returned*, not the pid/exe validation reviewed in round4 — `readProcessExecutable` and the integer-`pid` gate are untouched by this diff (`diff` shows no edits to those lines).
+- `emain/emain-platform.ts:157-172` (`resolveIncompleteMigrationBlock`, new): `dialog.showErrorBox` is a native OS dialog (not HTML-rendered), so no injection surface regardless of content; content is `migrationFailures` entries, all fixed template strings interpolating only `spec.source`/`spec.dest`/`spec.name`/`result.merged` (local filesystem paths and root names already known to the local user) — grepped every `recordMigrationFailure`/`recordIncompleteMigration` call site (13 total) and confirmed none interpolates `e.message`/`e.stack`/`String(e)`; the caught error object is passed only as the separate `err` parameter, which reaches `console.error` (local log), never the `message` string stored in `migrationFailures` and joined into the dialog.
+- `emain/emain.ts:280-284`: `resolveIncompleteMigrationBlock()` is awaited and gates `electronApp.quit()` the same way `resolveLegacyInstanceBlock()` already does above it — no server/window creation happens before this check, so a half-merged root cannot reach `wshserver` startup.
+- `frontend/app/view/sourcecontrol/action-error.tsx`, `sourcecontrol-model.ts`, `sourcecontrol.tsx`: the diff only adds a `focusAnchorRef.current?.focus()` call before dismiss and three new `globalStore.set(this.actionErrorAtom, ...)` call sites (stage/unstage/hunk failure paths); the error-text JSX rendering itself (`{error}` as text content, no `dangerouslySetInnerHTML`) is untouched by this diff and was already verified XSS-safe in round4 — new messages are template strings (`` `Failed to stage files: ${e?.message ?? String(e)}` ``) flowing into that same safe sink.
+- `frontend/app/onboarding/onboarding-command.tsx`: single-line alias rename (`wave` → `rt`) in a static bashrc-snippet string shown to the user to copy/paste; not attacker-influenced, no new data flow.
+- `frontend/app/view/remotetermconfig/generalcontent.tsx`, `remotetermconfig.tsx`: `grep`'d diff for `innerHTML`/`dangerouslySetInnerHTML`/`eval(`/`exec(` — only hit is `RegExp.prototype.exec` in a numeric-precision parser (`generalcontent.tsx`), not command/process execution. Rest of diff is spin-button focus/precision fixes per commit message, no new data flow into a dangerous sink.
+- `RENAME_ALLOWLIST.md`, `RENAME_PLAN.md`: docs only.
+
+## Completion
+**Status:** COMPLETE
+**Findings:** 0 (0 Critical, 0 High, 0 Medium, 0 Low)
+**Not checked / out of scope:** No live-app runtime verification (live-system rule), no `go build`. Test-file diffs (`emain-platform.test.ts`, `emain-startup-order.test.ts`, `*.test.tsx`) skimmed for coverage shape only, not treated as a security surface. Windows migration path unaffected (`checkLegacyInstanceRunning` still returns `null` on `win32` before any new code runs, so `legacyInstanceBlocksRoot` is never invoked there). Round3's `R3-SEC-1` (symlink-following in `mergeTree`) and round4's completion notes left open/unchanged, not re-litigated.
