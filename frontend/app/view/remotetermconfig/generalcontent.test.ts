@@ -94,6 +94,21 @@ test("bumpNumberInput falls back to the committed value for an empty or invalid 
     assert.strictEqual(bumpNumberInput("abc", 10, -1), 9);
 });
 
+test("bumpNumberInput does not accumulate float error from a fractional step", () => {
+    let v = 1;
+    for (const expected of [1.05, 1.1, 1.15, 1.2]) {
+        v = bumpNumberInput("", v, 0.05, 0.25, 3);
+        assert.strictEqual(v, expected);
+    }
+    assert.strictEqual(bumpNumberInput("0.3", 1, -0.1), 0.2);
+});
+
+test("bumpNumberInput keeps a typed draft's own precision", () => {
+    assert.strictEqual(bumpNumberInput("1.123", 1, 0.05), 1.173);
+    assert.strictEqual(bumpNumberInput("12.5", 12, 1), 13.5);
+    assert.strictEqual(bumpNumberInput("1e-7", 0, 1), 1.0000001);
+});
+
 test("bumpNumberInput clamps the stepped value", () => {
     assert.strictEqual(bumpNumberInput("20", 10, 1, 0, 20), 20);
     assert.strictEqual(bumpNumberInput("0", 10, -1, 0, 20), 0);

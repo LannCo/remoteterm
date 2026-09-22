@@ -237,11 +237,22 @@ describe("NumberControl interaction", () => {
         await user.click(c.reset());
         await c.settled();
         await c.eventsLanded();
-        expect(c.writes()).toHaveLength(4);
-        expect(c.writes()[3]).toBeNull();
+        expect(c.writes()).toEqual([1.05, 1.1, 1.15, null]);
         expect(c.maxInFlight()).toBe(1);
         expect(c.stored()).toBeNull();
         expect(c.input().value).toBe("0.25");
+    });
+
+    it("repeated fractional steps are written and shown without float error", async () => {
+        const user = userEvent.setup();
+        const c = setup({ key: "window:zoom", label: "Window zoom", initial: 1, delayMs: 20 });
+        await user.click(c.up());
+        await user.click(c.up());
+        await user.click(c.up());
+        await c.settled();
+        await c.eventsLanded();
+        expect(c.writes()).toEqual([1.05, 1.1, 1.15]);
+        expect(c.input().value).toBe("1.15");
     });
 
     it("a late echo of an earlier write from this control does not replace the value it wrote since", async () => {

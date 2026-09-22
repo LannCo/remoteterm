@@ -1065,11 +1065,19 @@ export function parseNumberInput(raw: string, min?: number, max?: number): numbe
     return next;
 }
 
+function decimalPlaces(n: number): number {
+    const m = /(?:\.(\d+))?(?:e([+-]\d+))?$/i.exec(String(n));
+    return Math.min(100, Math.max(0, (m[1]?.length ?? 0) - Number(m[2] ?? 0)));
+}
+
 // Step from the typed draft, not `value`: `value` only catches up after the settings
 // round-trip, so stepping from it would discard an uncommitted draft.
+// The sum is rounded to the finer of the step's and the base's precision: 1.1 + 0.05 is
+// 1.1500000000000001 in binary floating point, and that literal would be shown and stored.
 export function bumpNumberInput(draft: string, value: number, delta: number, min?: number, max?: number): number {
     const base = parseNumberInput(draft, min, max) ?? value;
-    return parseNumberInput(String(base + delta), min, max);
+    const decimals = Math.max(decimalPlaces(base), decimalPlaces(delta));
+    return parseNumberInput((base + delta).toFixed(decimals), min, max);
 }
 
 const NumberControl = memo(
