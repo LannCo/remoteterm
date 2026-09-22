@@ -1,13 +1,14 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+/// <reference types="electron-vite/node" />
+
 import { ClientService, ObjectService, WindowService, WorkspaceService } from "@/app/store/services";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { fireAndForget } from "@/util/util";
 import { BaseWindow, BaseWindowConstructorOptions, dialog, globalShortcut, ipcMain, screen, webContents } from "electron";
 import { globalEvents } from "emain/emain-events";
-import path from "path";
 import { debounce } from "throttle-debounce";
 import {
     getGlobalIsQuitting,
@@ -17,10 +18,11 @@ import {
     setWasInFg,
 } from "./emain-activity";
 import { log } from "./emain-log";
-import { getElectronAppBasePath, isDev, unamePlatform } from "./emain-platform";
+import { isDev, unamePlatform } from "./emain-platform";
 import { getOrCreateWebViewForTab, getRemoteTermTabViewByWebContentsId, RemoteTermTabView } from "./emain-tabview";
 import { delay, ensureBoundsAreVisible, remoteTermKeyToElectronKey } from "./emain-util";
 import { ElectronWshClient } from "./emain-wsh";
+import linuxWindowIconPath from "../build/icons/256x256.png?asset";
 
 
 const DevInitTimeoutMs = 5000;
@@ -33,6 +35,9 @@ export type WindowOpts = {
 
 export const MinWindowWidth = 800;
 export const MinWindowHeight = 500;
+// ?asset is emitted beside the main bundle in dev and packaged builds, so this path always
+// exists, unlike a hand-built path into the renderer's public dir.
+export const LinuxWindowIconPath = linuxWindowIconPath;
 
 export function calculateWindowBounds(
     winSize?: { width?: number; height?: number },
@@ -190,7 +195,7 @@ export class RemoteTermBrowserWindow extends BaseWindow {
                 symbolColor: "white",
                 color: "#00000000",
             };
-            winOpts.icon = path.join(getElectronAppBasePath(), "public/logos/wave-logo-dark.png");
+            winOpts.icon = LinuxWindowIconPath;
             winOpts.autoHideMenuBar = !settings?.["window:showmenubar"];
             if (isTransparent) {
                 winOpts.transparent = true;
