@@ -788,6 +788,11 @@ declare global {
         "conn:ignoresshconfig"?: boolean;
         "conn:stallautodisconnect"?: boolean;
         "conn:stalldisconnectthreshold"?: number;
+        "conn:keepaliveinterval"?: number;
+        "conn:stallthreshold"?: number;
+        "conn:reconnecttimeout"?: number;
+        "conn:reconnectinterval"?: number;
+        "conn:reconnectaggressiveinterval"?: number;
         "conn:connectcount"?: number;
         "conn:lastconnecttime"?: number;
         "conn:authpromptused"?: boolean;

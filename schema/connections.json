@@ -24,6 +24,21 @@
         "conn:stalldisconnectthreshold": {
           "type": "integer"
         },
+        "conn:keepaliveinterval": {
+          "type": "integer"
+        },
+        "conn:stallthreshold": {
+          "type": "integer"
+        },
+        "conn:reconnecttimeout": {
+          "type": "integer"
+        },
+        "conn:reconnectinterval": {
+          "type": "integer"
+        },
+        "conn:reconnectaggressiveinterval": {
+          "type": "integer"
+        },
         "conn:connectcount": {
           "type": "integer"
         },

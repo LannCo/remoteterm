@@ -22,7 +22,6 @@ type ConnMonitor struct {
 	Conn              *SSHConn    // always non-nil, set at creation
 	Client            *ssh.Client // always non-nil, set at creation
 	LastActivityTime  atomic.Int64
-	LastInputTime     atomic.Int64
 	KeepAliveSentTime atomic.Int64
 	KeepAliveInFlight bool
 	StallStartTime    atomic.Int64 // when stall was first detected (UnixMilli)
@@ -64,20 +63,41 @@ func (cm *ConnMonitor) UpdateLastActivityTime() {
 }
 
 func (cm *ConnMonitor) NotifyInput() {
-	inputTime := time.Now().UnixMilli()
-	cm.LastInputTime.Store(inputTime)
 	select {
-	case cm.inputNotifyCh <- inputTime:
+	case cm.inputNotifyCh <- time.Now().UnixMilli():
 	default:
 	}
 }
 
-func (cm *ConnMonitor) isUrgent() bool {
-	lastInput := cm.LastInputTime.Load()
-	if lastInput == 0 {
-		return false
+// getIntConfig reads a per-connection integer config value, falling back to
+// defaultVal when unset, invalid (<=0), or when no connection config exists.
+func (cm *ConnMonitor) getIntConfig(key string, defaultVal int) int {
+	connConfig, ok := cm.Conn.getConnectionConfig()
+	if !ok {
+		return defaultVal
 	}
-	return time.Now().UnixMilli()-lastInput < 10000
+	switch key {
+	case "keepaliveinterval":
+		if connConfig.ConnKeepaliveIntervalSec != nil && *connConfig.ConnKeepaliveIntervalSec > 0 {
+			return *connConfig.ConnKeepaliveIntervalSec
+		}
+	case "stallthreshold":
+		if connConfig.ConnStallThresholdSec != nil && *connConfig.ConnStallThresholdSec > 0 {
+			return *connConfig.ConnStallThresholdSec
+		}
+	}
+	return defaultVal
+}
+
+// getTickerInterval returns how often keepAliveMonitor's ticker fires. It is
+// capped at 1s so a long configured keepalive interval is still detected
+// promptly, since checkConnection() itself is cheap to run every tick.
+func (cm *ConnMonitor) getTickerInterval() time.Duration {
+	interval := time.Duration(cm.getIntConfig("keepaliveinterval", 3)) * time.Second
+	if interval > time.Second {
+		return time.Second
+	}
+	return interval
 }
 
 func (cm *ConnMonitor) setKeepAliveInFlight() bool {
@@ -137,27 +157,19 @@ func (cm *ConnMonitor) checkConnection() {
 	if lastActivity == 0 {
 		return
 	}
-	urgent := cm.isUrgent()
 	timeSinceActivity := time.Now().UnixMilli() - lastActivity
 
-	keepAliveThreshold := int64(3000)
-	if urgent {
-		keepAliveThreshold = 1000
-	}
+	keepAliveThreshold := int64(cm.getIntConfig("keepaliveinterval", 3)) * 1000
 	if timeSinceActivity > keepAliveThreshold {
 		cm.SendKeepAlive()
 	}
 
-	stalledThreshold := int64(3000)
-	if urgent {
-		stalledThreshold = 2000
-	}
+	stalledThreshold := int64(cm.getIntConfig("stallthreshold", 3)) * 1000
 	timeSinceKeepAlive := cm.getTimeSinceKeepAlive()
 	if timeSinceKeepAlive > stalledThreshold {
 		cm.setConnHealthStatus(ConnHealthStatus_Stalled)
 
 		// Auto-disconnect on persistent stall (Phase 1: Gap C)
-		// Note: disconnect regardless of 'urgent' — stalled means keystrokes aren't reaching remote anyway
 		stallStart := cm.StallStartTime.Load()
 		now := time.Now().UnixMilli()
 		if stallStart == 0 {
@@ -179,7 +191,7 @@ func (cm *ConnMonitor) keepAliveMonitor() {
 	defer func() {
 		panichandler.PanicHandler("conncontroller:keepAliveMonitor", recover())
 	}()
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(cm.getTickerInterval())
 	defer ticker.Stop()
 
 	for {
@@ -192,17 +204,9 @@ func (cm *ConnMonitor) keepAliveMonitor() {
 		case <-ticker.C:
 			cm.checkConnection()
 
-		case inputTime := <-cm.inputNotifyCh:
-			select {
-			case <-time.After(1 * time.Second):
-				if cm.LastActivityTime.Load() >= inputTime {
-					break
-				}
-				cm.setConnHealthStatus(ConnHealthStatus_Degraded)
-				cm.checkConnection()
-			case <-cm.ctx.Done():
-				return
-			}
+		case <-cm.inputNotifyCh:
+			// Immediate keepalive on input; no "degraded" state.
+			cm.SendKeepAlive()
 
 		case <-cm.ctx.Done():
 			return

@@ -233,6 +233,17 @@ type ConnKeywords struct {
 	ConnIgnoreSshConfig          *bool `json:"conn:ignoresshconfig,omitempty"`
 	ConnStallAutoDisconnect      *bool `json:"conn:stallautodisconnect,omitempty"`
 	ConnStallDisconnectThreshold *int  `json:"conn:stalldisconnectthreshold,omitempty"`
+
+	// Keepalive interval and stall-detection threshold for the connection monitor,
+	// and timing for the reconnect scheduler (issue #19). ConnStallAutoDisconnect /
+	// ConnStallDisconnectThreshold above already cover the monitor's auto-disconnect
+	// toggle and threshold, so they are reused rather than duplicated here.
+	ConnKeepaliveIntervalSec           *int `json:"conn:keepaliveinterval,omitempty"`
+	ConnStallThresholdSec              *int `json:"conn:stallthreshold,omitempty"`
+	ConnReconnectTimeoutSec            *int `json:"conn:reconnecttimeout,omitempty"`
+	ConnReconnectIntervalSec           *int `json:"conn:reconnectinterval,omitempty"`
+	ConnReconnectAggressiveIntervalSec *int `json:"conn:reconnectaggressiveinterval,omitempty"`
+
 	ConnConnectCount        *int64 `json:"conn:connectcount,omitempty"`
 	ConnLastConnectTime     *int64 `json:"conn:lastconnecttime,omitempty"`
 	// ConnAuthPromptUsed records whether the last successful SSH handshake required
