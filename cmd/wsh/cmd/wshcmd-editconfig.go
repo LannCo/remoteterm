@@ -46,7 +46,7 @@ func editConfigRun(cmd *cobra.Command, args []string) (rtnErr error) {
 		TabId: tabId,
 		BlockDef: &remotetermobj.BlockDef{
 			Meta: map[string]interface{}{
-				remotetermobj.MetaKey_View: "waveconfig",
+				remotetermobj.MetaKey_View: "remotetermconfig",
 				remotetermobj.MetaKey_File: configFile,
 			},
 		},

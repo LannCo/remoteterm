@@ -108,7 +108,7 @@ export class BuilderAppPanelModel {
         await this.loadEnvVars(builderId);
 
         this.appGoUpdateUnsubFn = waveEventSubscribeSingle({
-            eventType: "waveapp:appgoupdated",
+            eventType: "rtapp:appgoupdated",
             scope: appId,
             handler: () => {
                 this.loadAppFile(appId);

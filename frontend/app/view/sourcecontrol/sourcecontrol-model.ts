@@ -4,7 +4,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { getFocusedTerminalCwd } from "@/store/global";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { WaveEnv } from "@/app/waveenv/waveenv";
+import { WaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { makeConnRoute, isBlank } from "@/util/util";
 import * as jotai from "jotai";
 import { createRef } from "react";

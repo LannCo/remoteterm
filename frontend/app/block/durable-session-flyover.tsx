@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { TermViewModel } from "@/app/view/term/term-model";
-import { useWaveEnv } from "@/app/waveenv/waveenv";
+import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 import * as util from "@/util/util";
 import { cn } from "@/util/util";
 import {

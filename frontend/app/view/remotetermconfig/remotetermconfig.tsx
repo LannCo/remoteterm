@@ -5,9 +5,9 @@ import { Tooltip } from "@/app/element/tooltip";
 import { globalStore } from "@/app/store/jotaiStore";
 import { tryReinjectKey } from "@/app/store/keymodel";
 import { CodeEditor } from "@/app/view/codeeditor/codeeditor";
-import type { ConfigFile, WaveConfigViewModel } from "@/app/view/waveconfig/waveconfig-model";
-import type { WaveConfigEnv } from "@/app/view/waveconfig/waveconfigenv";
-import { useWaveEnv } from "@/app/waveenv/waveenv";
+import type { ConfigFile, WaveConfigViewModel } from "@/app/view/remotetermconfig/remotetermconfig-model";
+import type { WaveConfigEnv } from "@/app/view/remotetermconfig/remotetermconfigenv";
+import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { adaptFromReactOrNativeKeyEvent, checkKeyPressed, keydownWrapper } from "@/util/keyutil";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
@@ -192,7 +192,7 @@ const WaveConfigView = memo(({ blockId, model }: ViewComponentProps<WaveConfigVi
                                     {selectedFile.docsUrl && (
                                         <Tooltip content="View documentation">
                                             <a
-                                                href={`${selectedFile.docsUrl}?ref=waveconfig`}
+                                                href={`${selectedFile.docsUrl}?ref=remotetermconfig`}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 className="!text-muted-foreground hover:!text-primary transition-colors ml-1 shrink-0 cursor-pointer"

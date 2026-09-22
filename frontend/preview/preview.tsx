@@ -7,7 +7,7 @@ import { getAtoms, initGlobalAtoms } from "@/app/store/global-atoms";
 import { GlobalModel } from "@/app/store/global-model";
 import { globalStore } from "@/app/store/jotaiStore";
 import { getTabModelByTabId, TabModelContext } from "@/app/store/tab-model";
-import { WaveEnvContext } from "@/app/waveenv/waveenv";
+import { WaveEnvContext } from "@/app/remotetermenv/remotetermenv";
 import { loadFonts } from "@/util/fontutil";
 import { Provider } from "jotai";
 import React, { lazy, Suspense, useRef } from "react";

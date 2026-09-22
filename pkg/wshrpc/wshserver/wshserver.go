@@ -1332,7 +1332,7 @@ func (ws *WshServer) PathCommand(ctx context.Context, data wshrpc.PathCommandDat
 	case "data":
 		path = remotetermbase.GetWaveDataDir()
 	case "log":
-		path = filepath.Join(remotetermbase.GetWaveDataDir(), "waveapp.log")
+		path = filepath.Join(remotetermbase.GetWaveDataDir(), "rtapp.log")
 	}
 
 	if openInternal && openExternal {

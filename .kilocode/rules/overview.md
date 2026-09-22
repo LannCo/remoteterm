@@ -66,7 +66,7 @@ frontend/
 │   │   ├── tsunami/    # Tsunami builder view
 │   │   ├── vdom/       # Virtual DOM view
 │   │   ├── waveai/     # AI chat integration
-│   │   ├── waveconfig/ # Config editor view
+│   │   ├── remotetermconfig/ # Config editor view
 │   │   └── webview/    # Web view
 │   └── workspace/      # Workspace management
 ├── builder/            # Builder app entry

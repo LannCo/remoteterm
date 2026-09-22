@@ -5,54 +5,54 @@ import * as electron from "electron";
 import * as child_process from "node:child_process";
 import * as readline from "readline";
 import { WebServerEndpointVarName, WSServerEndpointVarName } from "../frontend/util/endpoints";
-import { AuthKey, WaveAuthKeyEnv } from "./authkey";
+import { AuthKey, RemoteTermAuthKeyEnv } from "./authkey";
 import { setForceQuit, setUserConfirmedQuit } from "./emain-activity";
 import {
     getElectronAppResourcesPath,
     getElectronAppUnpackedBasePath,
-    getWaveConfigDir,
-    getWaveDataDir,
-    getWaveSrvCwd,
-    getWaveSrvPath,
+    getRemoteTermConfigDir,
+    getRemoteTermDataDir,
+    getRemoteTermSrvCwd,
+    getRemoteTermSrvPath,
     getXdgCurrentDesktop,
-    WaveConfigHomeVarName,
-    WaveDataHomeVarName,
+    RemoteTermConfigHomeVarName,
+    RemoteTermDataHomeVarName,
 } from "./emain-platform";
 import {
     getElectronExecPath,
-    WaveAppElectronExecPath,
-    WaveAppPathVarName,
-    WaveAppResourcesPathVarName,
+    RemoteTermAppElectronExecPath,
+    RemoteTermAppPathVarName,
+    RemoteTermAppResourcesPathVarName,
 } from "./emain-util";
 
 
-let isWaveSrvDead = false;
-let waveSrvProc: child_process.ChildProcessWithoutNullStreams | null = null;
-let WaveVersion = "unknown"; // set by WAVESRV-ESTART
-let WaveBuildTime = 0; // set by WAVESRV-ESTART
+let isRemoteTermSrvDead = false;
+let remoteTermSrvProc: child_process.ChildProcessWithoutNullStreams | null = null;
+let RemoteTermVersion = "unknown"; // set by WAVESRV-ESTART
+let RemoteTermBuildTime = 0; // set by WAVESRV-ESTART
 
-export function getWaveVersion(): { version: string; buildTime: number } {
-    return { version: WaveVersion, buildTime: WaveBuildTime };
+export function getRemoteTermVersion(): { version: string; buildTime: number } {
+    return { version: RemoteTermVersion, buildTime: RemoteTermBuildTime };
 }
 
-let waveSrvReadyResolve = (value: boolean) => {};
-const waveSrvReady: Promise<boolean> = new Promise((resolve, _) => {
-    waveSrvReadyResolve = resolve;
+let remoteTermSrvReadyResolve = (value: boolean) => {};
+const remoteTermSrvReady: Promise<boolean> = new Promise((resolve, _) => {
+    remoteTermSrvReadyResolve = resolve;
 });
 
-export function getWaveSrvReady(): Promise<boolean> {
-    return waveSrvReady;
+export function getRemoteTermSrvReady(): Promise<boolean> {
+    return remoteTermSrvReady;
 }
 
-export function getWaveSrvProc(): child_process.ChildProcessWithoutNullStreams | null {
-    return waveSrvProc;
+export function getRemoteTermSrvProc(): child_process.ChildProcessWithoutNullStreams | null {
+    return remoteTermSrvProc;
 }
 
-export function getIsWaveSrvDead(): boolean {
-    return isWaveSrvDead;
+export function getIsRemoteTermSrvDead(): boolean {
+    return isRemoteTermSrvDead;
 }
 
-export function runWaveSrv(handleWSEvent: (evtMsg: WSEventType) => void): Promise<boolean> {
+export function runRemoteTermSrv(handleWSEvent: (evtMsg: WSEventType) => void): Promise<boolean> {
     let pResolve: (value: boolean) => void;
     let pReject: (reason?: any) => void;
     const rtnPromise = new Promise<boolean>((argResolve, argReject) => {
@@ -64,31 +64,31 @@ export function runWaveSrv(handleWSEvent: (evtMsg: WSEventType) => void): Promis
     if (xdgCurrentDesktop != null) {
         envCopy["XDG_CURRENT_DESKTOP"] = xdgCurrentDesktop;
     }
-    envCopy[WaveAppPathVarName] = getElectronAppUnpackedBasePath();
-    envCopy[WaveAppResourcesPathVarName] = getElectronAppResourcesPath();
-    envCopy[WaveAppElectronExecPath] = getElectronExecPath();
-    envCopy[WaveAuthKeyEnv] = AuthKey;
-    envCopy[WaveDataHomeVarName] = getWaveDataDir();
-    envCopy[WaveConfigHomeVarName] = getWaveConfigDir();
-    const waveSrvCmd = getWaveSrvPath();
-    console.log("trying to run local server", waveSrvCmd);
-    const proc = child_process.spawn(getWaveSrvPath(), {
-        cwd: getWaveSrvCwd(),
+    envCopy[RemoteTermAppPathVarName] = getElectronAppUnpackedBasePath();
+    envCopy[RemoteTermAppResourcesPathVarName] = getElectronAppResourcesPath();
+    envCopy[RemoteTermAppElectronExecPath] = getElectronExecPath();
+    envCopy[RemoteTermAuthKeyEnv] = AuthKey;
+    envCopy[RemoteTermDataHomeVarName] = getRemoteTermDataDir();
+    envCopy[RemoteTermConfigHomeVarName] = getRemoteTermConfigDir();
+    const remoteTermSrvCmd = getRemoteTermSrvPath();
+    console.log("trying to run local server", remoteTermSrvCmd);
+    const proc = child_process.spawn(getRemoteTermSrvPath(), {
+        cwd: getRemoteTermSrvCwd(),
         env: envCopy,
     });
     proc.on("exit", (e) => {
-        console.log("wavesrv exited, shutting down");
+        console.log("remotetermsrv exited, shutting down");
         setForceQuit(true);
-        isWaveSrvDead = true;
+        isRemoteTermSrvDead = true;
         electron.app.quit();
     });
     proc.on("spawn", (e) => {
-        console.log("spawned wavesrv");
-        waveSrvProc = proc;
+        console.log("spawned remotetermsrv");
+        remoteTermSrvProc = proc;
         pResolve(true);
     });
     proc.on("error", (e) => {
-        console.log("error running wavesrv", e);
+        console.log("error running remotetermsrv", e);
         pReject(e);
     });
     const rlStdout = readline.createInterface({
@@ -115,9 +115,9 @@ export function runWaveSrv(handleWSEvent: (evtMsg: WSEventType) => void): Promis
             }
             process.env[WSServerEndpointVarName] = startParams[1];
             process.env[WebServerEndpointVarName] = startParams[2];
-            WaveVersion = startParams[3];
-            WaveBuildTime = parseInt(startParams[4]);
-            waveSrvReadyResolve(true);
+            RemoteTermVersion = startParams[3];
+            RemoteTermBuildTime = parseInt(startParams[4]);
+            remoteTermSrvReadyResolve(true);
             return;
         }
         if (line.startsWith("WAVESRV-EVENT:")) {

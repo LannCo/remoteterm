@@ -11,17 +11,17 @@ import { isDev, unamePlatform } from "./emain-platform";
 import { clearTabCache } from "./emain-tabview";
 import { decreaseZoomLevel, increaseZoomLevel, resetZoomLevel } from "./emain-util";
 import {
-    createNewWaveWindow,
+    createNewRemoteTermWindow,
     createWorkspace,
-    focusedWaveWindow,
-    getAllWaveWindows,
-    getWaveWindowByWorkspaceId,
+    focusedRemoteTermWindow,
+    getAllRemoteTermWindows,
+    getRemoteTermWindowByWorkspaceId,
     relaunchBrowserWindows,
-    WaveBrowserWindow,
+    RemoteTermBrowserWindow,
 } from "./emain-window";
 import { ElectronWshClient } from "./emain-wsh";
 type AppMenuCallbacks = {
-    createNewWaveWindow: () => Promise<void>;
+    createNewRemoteTermWindow: () => Promise<void>;
     relaunchBrowserWindows: () => Promise<void>;
 };
 
@@ -33,8 +33,8 @@ function getWindowWebContents(window: electron.BaseWindow): electron.WebContents
     if (window instanceof electron.BrowserWindow) {
         return window.webContents;
     }
-    // Check WaveBrowserWindow (for main Wave windows with tab views)
-    if (window instanceof WaveBrowserWindow) {
+    // Check RemoteTermBrowserWindow (for main RemoteTerm windows with tab views)
+    if (window instanceof RemoteTermBrowserWindow) {
         if (window.activeTabView) {
             return window.activeTabView.webContents;
         }
@@ -43,12 +43,12 @@ function getWindowWebContents(window: electron.BaseWindow): electron.WebContents
     return null;
 }
 
-async function getWorkspaceMenu(ww?: WaveBrowserWindow): Promise<Electron.MenuItemConstructorOptions[]> {
+async function getWorkspaceMenu(ww?: RemoteTermBrowserWindow): Promise<Electron.MenuItemConstructorOptions[]> {
     const workspaceList = await RpcApi.WorkspaceListCommand(ElectronWshClient);
     const workspaceMenu: Electron.MenuItemConstructorOptions[] = [
         {
             label: "Create Workspace",
-            click: (_, window) => fireAndForget(() => createWorkspace((window as WaveBrowserWindow) ?? ww)),
+            click: (_, window) => fireAndForget(() => createWorkspace((window as RemoteTermBrowserWindow) ?? ww)),
         },
     ];
     function getWorkspaceSwitchAccelerator(i: number): string {
@@ -63,7 +63,7 @@ async function getWorkspaceMenu(ww?: WaveBrowserWindow): Promise<Electron.MenuIt
                 return {
                     label: `${workspace.workspacedata.name}`,
                     click: (_, window) => {
-                        ((window as WaveBrowserWindow) ?? ww)?.switchWorkspace(workspace.workspacedata.oid);
+                        ((window as RemoteTermBrowserWindow) ?? ww)?.switchWorkspace(workspace.workspacedata.oid);
                     },
                     accelerator: getWorkspaceSwitchAccelerator(i),
                 };
@@ -124,7 +124,7 @@ function makeEditMenu(fullConfig?: FullConfigType): Electron.MenuItemConstructor
 }
 
 function makeFileMenu(
-    numWaveWindows: number,
+    numRemoteTermWindows: number,
     callbacks: AppMenuCallbacks,
     fullConfig: FullConfigType
 ): Electron.MenuItemConstructorOptions[] {
@@ -132,13 +132,13 @@ function makeFileMenu(
         {
             label: "New Window",
             accelerator: "CommandOrControl+Shift+N",
-            click: () => fireAndForget(callbacks.createNewWaveWindow),
+            click: () => fireAndForget(callbacks.createNewRemoteTermWindow),
         },
         {
             role: "close",
             accelerator: "",
             click: () => {
-                focusedWaveWindow?.close();
+                focusedRemoteTermWindow?.close();
             },
         },
     ];
@@ -150,20 +150,20 @@ function makeFileMenu(
             click: () => openBuilderWindow(""),
         });
     }
-    if (numWaveWindows == 0) {
+    if (numRemoteTermWindows == 0) {
         fileMenu.push({
             label: "New Window (hidden-1)",
             accelerator: unamePlatform === "darwin" ? "Command+N" : "Alt+N",
             acceleratorWorksWhenHidden: true,
             visible: false,
-            click: () => fireAndForget(callbacks.createNewWaveWindow),
+            click: () => fireAndForget(callbacks.createNewRemoteTermWindow),
         });
         fileMenu.push({
             label: "New Window (hidden-2)",
             accelerator: unamePlatform === "darwin" ? "Command+T" : "Alt+T",
             acceleratorWorksWhenHidden: true,
             visible: false,
-            click: () => fireAndForget(callbacks.createNewWaveWindow),
+            click: () => fireAndForget(callbacks.createNewRemoteTermWindow),
         });
     }
     return fileMenu;
@@ -308,7 +308,7 @@ function makeViewMenu(
             label: "Toggle Widgets Bar",
             click: () => {
                 fireAndForget(async () => {
-                    const workspaceId = focusedWaveWindow?.workspaceId;
+                    const workspaceId = focusedRemoteTermWindow?.workspaceId;
                     if (!workspaceId) return;
                     const oref = `workspace:${workspaceId}`;
                     const meta = await RpcApi.GetMetaCommand(ElectronWshClient, { oref });
@@ -321,7 +321,7 @@ function makeViewMenu(
 }
 
 async function makeFullAppMenu(callbacks: AppMenuCallbacks, workspaceOrBuilderId?: string): Promise<Electron.Menu> {
-    const numWaveWindows = getAllWaveWindows().length;
+    const numRemoteTermWindows = getAllRemoteTermWindows().length;
     const webContents = workspaceOrBuilderId && getWebContentsByWorkspaceOrBuilderId(workspaceOrBuilderId);
     const appMenuItems = makeAppMenuItems(webContents);
 
@@ -335,7 +335,7 @@ async function makeFullAppMenu(callbacks: AppMenuCallbacks, workspaceOrBuilderId
         console.error("Error fetching config:", e);
     }
     const editMenu = makeEditMenu(fullConfig);
-    const fileMenu = makeFileMenu(numWaveWindows, callbacks, fullConfig);
+    const fileMenu = makeFileMenu(numRemoteTermWindows, callbacks, fullConfig);
     const viewMenu = makeViewMenu(webContents, callbacks, isBuilderWindowFocused, fullscreenOnLaunch);
     let workspaceMenu: Electron.MenuItemConstructorOptions[] = null;
     try {
@@ -372,7 +372,7 @@ async function makeFullAppMenu(callbacks: AppMenuCallbacks, workspaceOrBuilderId
 export function instantiateAppMenu(workspaceOrBuilderId?: string): Promise<electron.Menu> {
     return makeFullAppMenu(
         {
-            createNewWaveWindow,
+            createNewRemoteTermWindow,
             relaunchBrowserWindows,
         },
         workspaceOrBuilderId
@@ -398,7 +398,7 @@ function initMenuEventSubscriptions() {
 }
 
 function getWebContentsByWorkspaceOrBuilderId(workspaceOrBuilderId: string): electron.WebContents {
-    const ww = getWaveWindowByWorkspaceId(workspaceOrBuilderId);
+    const ww = getRemoteTermWindowByWorkspaceId(workspaceOrBuilderId);
     if (ww) {
         return ww.activeTabView?.webContents;
     }
@@ -497,7 +497,7 @@ const dockMenu = electron.Menu.buildFromTemplate([
     {
         label: "New Window",
         click() {
-            fireAndForget(createNewWaveWindow);
+            fireAndForget(createNewRemoteTermWindow);
         },
     },
 ]);

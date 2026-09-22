@@ -17,7 +17,7 @@ import {
 } from "@/app/store/global";
 import { AllServiceImpls } from "@/app/store/services";
 import { RpcApi } from "@/app/store/wshclientapi";
-import { WaveEnv } from "@/app/waveenv/waveenv";
+import { WaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { isMacOS, isWindows, PLATFORM } from "@/util/platformutil";
 
 export function makeWaveEnvImpl(): WaveEnv {

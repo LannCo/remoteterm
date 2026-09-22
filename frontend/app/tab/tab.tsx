@@ -5,7 +5,7 @@ import { getTabBadgeAtom } from "@/app/store/badge";
 import { refocusNode } from "@/app/store/global";
 import { getTabModelByTabId } from "@/app/store/tab-model";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { WaveEnv, WaveEnvSubset, useWaveEnv } from "@/app/waveenv/waveenv";
+import { WaveEnv, WaveEnvSubset, useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { Button } from "@/element/button";
 import { validateCssColor } from "@/util/color-validator";
 import { fireAndForget } from "@/util/util";

@@ -13,8 +13,8 @@ import {
     SuggestionControlNoData,
     SuggestionControlNoResults,
 } from "@/app/suggestion/suggestion";
-import { MockBoundary } from "@/app/waveenv/mockboundary";
-import { useWaveEnv } from "@/app/waveenv/waveenv";
+import { MockBoundary } from "@/app/remotetermenv/mockboundary";
+import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { openLink } from "@/store/global";
 import { adaptFromReactOrNativeKeyEvent, checkKeyPressed } from "@/util/keyutil";
 import { fireAndForget, useAtomValueSafe } from "@/util/util";

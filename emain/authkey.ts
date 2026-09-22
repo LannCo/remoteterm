@@ -5,7 +5,7 @@ import { ipcMain } from "electron";
 import { getWebServerEndpoint, getWSServerEndpoint } from "../frontend/util/endpoints";
 
 const AuthKeyHeader = "X-AuthKey";
-export const WaveAuthKeyEnv = "REMOTETERM_AUTH_KEY";
+export const RemoteTermAuthKeyEnv = "REMOTETERM_AUTH_KEY";
 export const AuthKey = crypto.randomUUID();
 
 ipcMain.on("get-auth-key", (event) => {

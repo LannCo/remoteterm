@@ -4,7 +4,7 @@
 import { loadBadges, LoadBadgesEnv } from "@/app/store/badge";
 import { VTabBar } from "@/app/tab/vtabbar";
 import { VTabBarEnv } from "@/app/tab/vtabbarenv";
-import { useWaveEnv, WaveEnvContext } from "@/app/waveenv/waveenv";
+import { useWaveEnv, WaveEnvContext } from "@/app/remotetermenv/remotetermenv";
 import { MockWaveEnv } from "@/preview/mock/mockwaveenv";
 import { makeTabBarMockEnv, TabBarMockWorkspaceId } from "@/preview/mock/tabbar-mock";
 import { PlatformLinux, PlatformMacOS, PlatformWindows } from "@/util/platformutil";

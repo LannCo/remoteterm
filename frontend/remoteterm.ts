@@ -38,7 +38,7 @@ import { createRoot } from "react-dom/client";
 
 const platform = getApi().getPlatform();
 document.title = `RemoteTerm`;
-let savedInitOpts: WaveInitOpts = null;
+let savedInitOpts: RemoteTermInitOpts = null;
 
 (window as any).WOS = WOS;
 (window as any).globalStore = globalStore;
@@ -61,10 +61,10 @@ async function initBare() {
     document.body.style.visibility = "hidden";
     document.body.style.opacity = "0";
     document.body.classList.add("is-transparent");
-    getApi().onWaveInit(initWaveWrap);
+    getApi().onRemoteTermInit(initWaveWrap);
     getApi().onBuilderInit(initBuilderWrap);
-    getApi().onWaveResize(() => {
-        window.dispatchEvent(new CustomEvent("wave-resize"));
+    getApi().onRemoteTermResize(() => {
+        window.dispatchEvent(new CustomEvent("remoteterm-resize"));
     });
     setKeyUtilPlatform(platform);
     loadFonts();
@@ -80,7 +80,7 @@ async function initBare() {
 
 document.addEventListener("DOMContentLoaded", initBare);
 
-async function initWaveWrap(initOpts: WaveInitOpts) {
+async function initWaveWrap(initOpts: RemoteTermInitOpts) {
     try {
         if (savedInitOpts) {
             await reinitWave();
@@ -117,7 +117,7 @@ async function reinitWave() {
     await WOS.reloadWaveObject<LayoutState>(WOS.makeORef("layout", initialTab.layoutstate));
     reloadAllWorkspaceTabs(ws);
     document.title = `RemoteTerm - ${initialTab.name}`; // TODO update with tab name change
-    getApi().setWindowInitStatus("wave-ready");
+    getApi().setWindowInitStatus("remoteterm-ready");
     globalStore.set(atoms.reinitVersion, globalStore.get(atoms.reinitVersion) + 1);
     setTimeout(() => {
         globalRefocus();
@@ -142,7 +142,7 @@ function loadAllWorkspaceTabs(ws: Workspace) {
     });
 }
 
-async function initWave(initOpts: WaveInitOpts) {
+async function initWave(initOpts: RemoteTermInitOpts) {
     getApi().sendLog("Init Wave " + JSON.stringify(initOpts));
     const globalInitOpts: GlobalInitOptions = {
         tabId: initOpts.tabId,
@@ -187,7 +187,7 @@ async function initWave(initOpts: WaveInitOpts) {
         document.title = `RemoteTerm - ${initialTab.name}`; // TODO update with tab name change
     } catch (e) {
         console.error("Failed initialization error", e);
-        getApi().sendLog("Error in initialization (wave.ts, loading required objects) " + e.message + "\n" + e.stack);
+        getApi().sendLog("Error in initialization (remoteterm.ts, loading required objects) " + e.message + "\n" + e.stack);
     }
     registerGlobalKeys();
     registerElectronReinjectKeyHandler();
@@ -207,7 +207,7 @@ async function initWave(initOpts: WaveInitOpts) {
     root.render(reactElem);
     await firstRenderPromise;
     console.log("Wave First Render Done");
-    getApi().setWindowInitStatus("wave-ready");
+    getApi().setWindowInitStatus("remoteterm-ready");
 }
 
 async function initBuilderWrap(initOpts: BuilderInitOpts) {

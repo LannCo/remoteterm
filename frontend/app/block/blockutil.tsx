@@ -6,7 +6,7 @@ import {
     MetaKeyAtomFnType,
     WaveEnv,
     WaveEnvSubset,
-} from "@/app/waveenv/waveenv";
+} from "@/app/remotetermenv/remotetermenv";
 import { IconButton, ToggleIconButton } from "@/element/iconbutton";
 import { MagnifyIcon } from "@/element/magnify";
 import { MenuButton } from "@/element/menubutton";
