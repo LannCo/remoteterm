@@ -25,7 +25,7 @@ afterEach(() => {
     model?.stopPolling();
 });
 
-it("a failed staged-hunk revert shows a dismissible alert in the source control view", async () => {
+async function renderView(rpc: Record<string, (...args: any[]) => Promise<unknown>>) {
     const { SourceControlViewModel } = await import("./sourcecontrol-model");
     const { SourceControlView } = await import("./sourcecontrol");
     const status = {
@@ -42,9 +42,7 @@ it("a failed staged-hunk revert shows a dismissible alert in the source control 
             rpc: {
                 GitStatusCommand: vi.fn(async () => status),
                 GitDiffCommand: vi.fn(async () => null),
-                GitRevertHunkCommand: vi.fn(async () => {
-                    throw new Error(PartialRevertError);
-                }),
+                ...rpc,
             },
         } as any,
     } as any);
@@ -56,6 +54,15 @@ it("a failed staged-hunk revert shows a dismissible alert in the source control 
     );
     await waitFor(() => expect(screen.getByText("main")).toBeTruthy());
     expect(screen.queryByRole("alert")).toBeNull();
+}
+
+const rejects = (message: string) =>
+    vi.fn(async () => {
+        throw new Error(message);
+    });
+
+it("a failed staged-hunk revert shows a dismissible alert in the source control view", async () => {
+    await renderView({ GitRevertHunkCommand: rejects(PartialRevertError) });
 
     await act(() => model.revertHunk("a.ts", 0, true));
     await act(() => model.fetchStatus());
@@ -65,4 +72,17 @@ it("a failed staged-hunk revert shows a dismissible alert in the source control 
 
     await userEvent.setup().click(screen.getByRole("button", { name: "Dismiss error" }));
     expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it.each([
+    ["stage files", "GitStageCommand", (m: any) => m.stageFiles(["a.ts"])],
+    ["unstage files", "GitUnstageCommand", (m: any) => m.unstageFiles(["a.ts"])],
+    ["stage hunk", "GitStageHunkCommand", (m: any) => m.stageHunk("a.ts", 0)],
+])("a failed %s action shows the alert, and a later status poll leaves it up", async (what, rpcName, run) => {
+    await renderView({ [rpcName]: rejects("index.lock exists") });
+
+    await act(() => run(model));
+    await act(() => model.fetchStatus());
+
+    expect(screen.getByRole("alert").textContent).toContain(`Failed to ${what}: index.lock exists`);
 });

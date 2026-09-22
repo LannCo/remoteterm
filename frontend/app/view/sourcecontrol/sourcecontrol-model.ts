@@ -348,6 +348,7 @@ export class SourceControlViewModel implements ViewModel {
             await this.fetchDiffForSelected();
         } catch (e) {
             console.error("[SCM] stageFiles failed:", e);
+            globalStore.set(this.actionErrorAtom, `Failed to stage files: ${e?.message ?? String(e)}`);
             await this.fetchStatus();
         } finally {
             globalStore.set(this.stagingAtom, false);
@@ -365,6 +366,7 @@ export class SourceControlViewModel implements ViewModel {
             await this.fetchDiffForSelected();
         } catch (e) {
             console.error("Failed to unstage files:", e);
+            globalStore.set(this.actionErrorAtom, `Failed to unstage files: ${e?.message ?? String(e)}`);
             await this.fetchStatus();
         } finally {
             globalStore.set(this.stagingAtom, false);
@@ -381,6 +383,7 @@ export class SourceControlViewModel implements ViewModel {
             await this.fetchDiffForSelected();
         } catch (e) {
             console.error("Failed to stage hunk:", e);
+            globalStore.set(this.actionErrorAtom, `Failed to stage hunk: ${e?.message ?? String(e)}`);
             await this.fetchStatus();
         } finally {
             globalStore.set(this.stagingAtom, false);
