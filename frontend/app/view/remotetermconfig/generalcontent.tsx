@@ -63,7 +63,7 @@ export const FieldSchemas: FieldSchema[] = [
         label: "Confirm before quitting",
         category: "Appearance",
         control: "toggle",
-        description: "Shows a confirmation dialog before quitting Wave Terminal. Requires an app restart.",
+        description: "Shows a confirmation dialog before quitting RemoteTerm. Requires an app restart.",
         nullable: true,
         defaultDisplay: "on",
     },
@@ -72,7 +72,7 @@ export const FieldSchemas: FieldSchema[] = [
         label: "Global hotkey",
         category: "Appearance",
         control: "text",
-        description: "A systemwide key combination (e.g. Ctrl:Option:e) that opens your most recent Wave window.",
+        description: "A systemwide key combination (e.g. Ctrl:Option:e) that opens your most recent RemoteTerm window.",
         placeholder: "e.g. Cmd+Shift+Space",
     },
     {
@@ -117,7 +117,7 @@ export const FieldSchemas: FieldSchema[] = [
         category: "Appearance",
         control: "toggle",
         description:
-            "Suppresses the startup warning shown when Wave is running under architecture translation (e.g. ARM64 emulation).",
+            "Suppresses the startup warning shown when RemoteTerm is running under architecture translation (e.g. ARM64 emulation).",
     },
     {
         key: "app:showoverlayblocknums",
@@ -141,11 +141,11 @@ export const FieldSchemas: FieldSchema[] = [
     },
     {
         key: "feature:rtappbuilder",
-        label: "RT app builder feature",
+        label: "RTApp Builder feature",
         category: "Appearance",
         control: "toggle",
         description:
-            "Shows the RT app builder entry points in the widget bar and app menu. Always shown in dev builds regardless of this setting.",
+            "Shows the RTApp Builder entry points in the widget bar and app menu. Always shown in dev builds regardless of this setting.",
     },
     {
         key: "window:transparent",
@@ -193,7 +193,7 @@ export const FieldSchemas: FieldSchema[] = [
         category: "Appearance",
         control: "toggle",
         description:
-            "Uses the OS-native title bar instead of Wave's overlay. Windows and Linux only, requires app restart.",
+            "Uses the OS-native title bar instead of RemoteTerm's overlay. Windows and Linux only, requires app restart.",
     },
     {
         key: "window:showmenubar",
@@ -557,7 +557,7 @@ export const FieldSchemas: FieldSchema[] = [
         label: "Open links in-app",
         category: "Editor & Web",
         control: "toggle",
-        description: "Opens web links inside Wave's web widget instead of the external browser.",
+        description: "Opens web links inside RemoteTerm's web widget instead of the external browser.",
     },
     {
         key: "web:defaulturl",
@@ -755,7 +755,7 @@ export const FieldSchemas: FieldSchema[] = [
         label: "Tsunami scaffold path",
         category: "Advanced",
         control: "text",
-        description: "Overrides the path to the local Tsunami app scaffold used when building Wave apps.",
+        description: "Overrides the path to the local Tsunami app scaffold used when building RTApps.",
         placeholder: "path",
     },
     {
@@ -764,7 +764,7 @@ export const FieldSchemas: FieldSchema[] = [
         category: "Advanced",
         control: "text",
         description:
-            "Sets a local filesystem path used as a Go module replace directive for the Tsunami SDK when building Wave apps.",
+            "Sets a local filesystem path used as a Go module replace directive for the Tsunami SDK when building RTApps.",
         placeholder: "path",
     },
     {
@@ -772,7 +772,7 @@ export const FieldSchemas: FieldSchema[] = [
         label: "Tsunami SDK version",
         category: "Advanced",
         control: "text",
-        description: "Overrides the Tsunami SDK version used when building Wave apps.",
+        description: "Overrides the Tsunami SDK version used when building RTApps.",
         placeholder: "e.g. v0.1.0",
     },
     {
@@ -780,7 +780,7 @@ export const FieldSchemas: FieldSchema[] = [
         label: "Tsunami Go path",
         category: "Advanced",
         control: "text",
-        description: "Overrides the Go path used when building Tsunami-based Wave apps.",
+        description: "Overrides the Go path used when building Tsunami-based RTApps.",
         placeholder: "path",
     },
 ];

@@ -70,3 +70,10 @@ test("parseNumberInput leaves an unbounded side alone", () => {
     assert.equal(parseNumberInput("-5", undefined, undefined), -5);
     assert.equal(parseNumberInput("99999", 0, undefined), 99999);
 });
+
+test("no FieldSchema label or description uses the upstream Wave product name", () => {
+    for (const schema of FieldSchemas) {
+        const text = `${schema.label} ${schema.description}`;
+        assert(!/\bWave\b/.test(text), `${String(schema.key)} still says "Wave": ${text}`);
+    }
+});
