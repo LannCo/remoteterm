@@ -442,7 +442,7 @@ func serverRun(cmd *cobra.Command, args []string) error {
 	var logFile *os.File
 	if connServerDev {
 		var err error
-		logFilePath := fmt.Sprintf("/tmp/waveterm-connserver-%d.log", os.Getuid())
+		logFilePath := fmt.Sprintf("/tmp/remoteterm-connserver-%d.log", os.Getuid())
 		logFile, err = os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to open log file: %v\n", err)
