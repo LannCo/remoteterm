@@ -147,3 +147,98 @@ describe("legacy config root validation", () => {
         expect(skipLines.some((s) => s.includes("data root") && s.includes("does not exist"))).toBe(true);
     });
 });
+
+describe("data-dir migration shim", () => {
+    const legacyData = () => path.join(xdgData, "waveterm");
+    const newData = () => path.join(xdgData, "remoteterm");
+
+    it("writes the marker after the move and does not migrate again", async () => {
+        makeDir(legacyData(), { "wave.lock": "", "db/remoteterm.db": "first" });
+        let mod = await loadPlatform(true);
+        expect(fs.readFileSync(path.join(newData(), "db/remoteterm.db"), "utf8")).toBe("first");
+        const marker = fs.readFileSync(path.join(newData(), MarkerFileName), "utf8");
+        expect(marker).toMatch(new RegExp(`^moved-from:${legacyData()}\n`));
+        expect(fs.existsSync(legacyData())).toBe(false);
+        expect(mod.getMigrationFailures()).toEqual([]);
+
+        makeDir(legacyData(), { "wave.lock": "", "db/remoteterm.db": "second" });
+        vi.resetModules();
+        mod = await loadPlatform(true);
+        expect(fs.readFileSync(path.join(newData(), "db/remoteterm.db"), "utf8")).toBe("first");
+        expect(fs.existsSync(path.join(legacyData(), "db/remoteterm.db"))).toBe(true);
+        expect(mod.getMigrationFailures()).toEqual([]);
+    });
+
+    it.each([["REMOTETERM_DATA_HOME"], ["WAVETERM_DATA_HOME"]])(
+        "%s override short-circuits the data root without moving legacy data",
+        async (varName) => {
+            makeDir(legacyData(), { "wave.lock": "" });
+            const override = path.join(tmpHome, "custom-data");
+            process.env[varName] = override;
+            let mod = await loadPlatform(true);
+            const markerFile = path.join(override, MarkerFileName);
+            expect(fs.readFileSync(markerFile, "utf8")).toMatch(/^no-migration-needed:override\n/);
+            expect(fs.existsSync(path.join(legacyData(), "wave.lock"))).toBe(true);
+            expect(fs.existsSync(newData())).toBe(false);
+            expect(mod.getRemoteTermDataDir()).toBe(override);
+
+            fs.writeFileSync(markerFile, "sentinel");
+            vi.resetModules();
+            mod = await loadPlatform(true);
+            expect(fs.readFileSync(markerFile, "utf8")).toBe("sentinel");
+            expect(mod.getMigrationFailures()).toEqual([]);
+        }
+    );
+
+    it("replaces an empty destination", async () => {
+        makeDir(legacyData(), { "wave.lock": "" });
+        makeDir(newData());
+        const mod = await loadPlatform(true);
+        expect(fs.existsSync(path.join(newData(), "wave.lock"))).toBe(true);
+        expect(mod.getMigrationFailures()).toEqual([]);
+    });
+
+    it("aborts and reports when the destination is not empty", async () => {
+        makeDir(legacyData(), { "wave.lock": "" });
+        makeDir(newData(), { "remoteterm.lock": "" });
+        const mod = await loadPlatform(true);
+        expect(fs.existsSync(path.join(legacyData(), "wave.lock"))).toBe(true);
+        expect(fs.existsSync(path.join(newData(), MarkerFileName))).toBe(false);
+        expect(mod.getMigrationFailures()).toHaveLength(1);
+        expect(mod.getMigrationFailures()[0]).toMatch(/data root migration aborted/);
+    });
+
+    describe("ENOENT from rename", () => {
+        async function loadWithRacingRename(otherProcessWritesMarker: boolean) {
+            const actualFs = await vi.importActual<typeof import("fs")>("fs");
+            vi.doMock("fs", () => ({
+                ...actualFs,
+                renameSync: (src: string, dest: string) => {
+                    if (src === legacyData()) {
+                        actualFs.renameSync(src, otherProcessWritesMarker ? dest : path.join(tmpHome, "elsewhere"));
+                        if (otherProcessWritesMarker) {
+                            actualFs.writeFileSync(path.join(dest, MarkerFileName), "moved-by-other-process\n");
+                        }
+                        throw Object.assign(new Error(`ENOENT: rename '${src}'`), { code: "ENOENT" });
+                    }
+                    return actualFs.renameSync(src, dest);
+                },
+            }));
+            return await loadPlatform(true);
+        }
+
+        it("treats the move as done when another process left the marker", async () => {
+            makeDir(legacyData(), { "wave.lock": "" });
+            const mod = await loadWithRacingRename(true);
+            expect(mod.getMigrationFailures()).toEqual([]);
+            expect(fs.readFileSync(path.join(newData(), MarkerFileName), "utf8")).toBe("moved-by-other-process\n");
+        });
+
+        it("reports a failure when no marker was left", async () => {
+            makeDir(legacyData(), { "wave.lock": "" });
+            const mod = await loadWithRacingRename(false);
+            expect(mod.getMigrationFailures()).toHaveLength(1);
+            expect(mod.getMigrationFailures()[0]).toMatch(/ENOENT and no completion marker/);
+        });
+    });
+});
