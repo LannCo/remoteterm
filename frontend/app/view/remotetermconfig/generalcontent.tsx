@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { WaveConfigViewModel } from "@/app/view/waveconfig/waveconfig-model";
+import type { RemoteTermConfigViewModel } from "@/app/view/remotetermconfig/remotetermconfig-model";
 import { cn } from "@/util/util";
 import { useAtomValue, useSetAtom } from "jotai";
 import { memo, useState } from "react";
@@ -42,7 +42,7 @@ interface FieldSchema {
 const Categories = ["Appearance", "Terminal", "Editor & Web", "Tabs & Widgets", "Connections", "Advanced"] as const;
 
 // Grouping and control-type mapping follow WAVE_CONFIG_RESKIN_PLAN.md's Task 5 section exactly,
-// derived from SettingsType in pkg/wconfig/settingsconfig.go. `feature:waveappbuilder` has no
+// derived from SettingsType in pkg/rtconfig/settingsconfig.go. `feature:rtappbuilder` has no
 // category assignment in the plan's grouping list (only in its raw field dump) -- it's an
 // app-level feature toggle with no better home, so it's grouped into Appearance here.
 export const FieldSchemas: FieldSchema[] = [
@@ -140,12 +140,12 @@ export const FieldSchemas: FieldSchema[] = [
         ],
     },
     {
-        key: "feature:waveappbuilder",
-        label: "Wave app builder feature",
+        key: "feature:rtappbuilder",
+        label: "RT app builder feature",
         category: "Appearance",
         control: "toggle",
         description:
-            "Shows the Wave app builder entry points in the widget bar and app menu. Always shown in dev builds regardless of this setting.",
+            "Shows the RT app builder entry points in the widget bar and app menu. Always shown in dev builds regardless of this setting.",
     },
     {
         key: "window:transparent",
@@ -830,7 +830,7 @@ function groupFieldsByCategory(schemas: FieldSchema[]): [string, FieldSchema[]][
 
 // Two fields have a real but non-static default (platform-dependent or computed at runtime) --
 // resolved here instead of in the schema table, which only holds fixed display strings.
-function resolveDefaultDisplay(schema: FieldSchema, model: WaveConfigViewModel): string | undefined {
+function resolveDefaultDisplay(schema: FieldSchema, model: RemoteTermConfigViewModel): string | undefined {
     if (schema.key === "app:ctrlvpaste") {
         return model.env.isWindows() ? "on (Windows)" : "off (this platform)";
     }
@@ -1143,7 +1143,7 @@ SliderControl.displayName = "SliderControl";
 
 interface FieldControlProps {
     schema: FieldSchema;
-    model: WaveConfigViewModel;
+    model: RemoteTermConfigViewModel;
     settings: SettingsType;
     isSet: boolean;
 }
@@ -1294,7 +1294,7 @@ FieldControl.displayName = "FieldControl";
 
 interface FieldsListProps {
     fields: FieldSchema[];
-    model: WaveConfigViewModel;
+    model: RemoteTermConfigViewModel;
     settings: SettingsType;
     rawSettings: SettingsType;
 }
@@ -1316,7 +1316,7 @@ FieldsList.displayName = "FieldsList";
 
 interface CategoryPanelProps {
     category: string;
-    model: WaveConfigViewModel;
+    model: RemoteTermConfigViewModel;
     settings: SettingsType;
     rawSettings: SettingsType;
 }
@@ -1337,7 +1337,7 @@ CategoryPanel.displayName = "CategoryPanel";
 
 interface SearchResultsPanelProps {
     query: string;
-    model: WaveConfigViewModel;
+    model: RemoteTermConfigViewModel;
     settings: SettingsType;
     rawSettings: SettingsType;
 }
@@ -1394,7 +1394,7 @@ const CategoryRail = memo(({ active, onSelect }: CategoryRailProps) => (
 CategoryRail.displayName = "CategoryRail";
 
 interface GeneralContentProps {
-    model: WaveConfigViewModel;
+    model: RemoteTermConfigViewModel;
 }
 
 export const GeneralContent = memo(({ model }: GeneralContentProps) => {
