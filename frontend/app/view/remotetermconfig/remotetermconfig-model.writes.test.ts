@@ -186,3 +186,140 @@ describe("RemoteTermConfigViewModel — queued widget/background writes", () => 
         expect(model.backgroundsAddNameAtom._value).toBe("Mine");
     });
 });
+
+describe("RemoteTermConfigViewModel — readRawBackgroundsFile", () => {
+    beforeEach(() => {
+        vi.resetModules();
+        atomStore.clear();
+        atomCounter = 0;
+    });
+
+    it("treats a missing file as empty and writes only the touched key", async () => {
+        const disk: Disk = {};
+        const { model } = await makeModel(disk);
+        expect(await model.readRawBackgroundsFile()).toEqual({});
+        await model.updateBackgroundOpacity("bg@x", 0.5);
+        expect(Object.keys(disk["/config/backgrounds.json"])).toEqual(["bg@x"]);
+    });
+
+    it("returns null on a read failure and aborts the write instead of treating it as empty", async () => {
+        const disk: Disk = { "/config/backgrounds.json": { "bg@keep": { bg: "green" } } };
+        const { model, rpc } = await makeModel(disk, { failInfo: "/config/backgrounds.json" });
+        expect(await model.readRawBackgroundsFile()).toBeNull();
+        await model.updateBackgroundOpacity("bg@x", 0.5);
+        expect(rpc.FileWriteCommand).not.toHaveBeenCalled();
+        expect(disk["/config/backgrounds.json"]).toEqual({ "bg@keep": { bg: "green" } });
+        expect(model.errorMessageAtom._value).toMatch(/Failed to check backgrounds\.json/);
+    });
+
+    it("returns null for a non-object file and aborts the write", async () => {
+        const disk: Disk = { "/config/backgrounds.json": [1, 2] };
+        const { model, rpc } = await makeModel(disk);
+        await model.updateBackgroundBlendMode("bg@x", "multiply");
+        expect(rpc.FileWriteCommand).not.toHaveBeenCalled();
+        expect(model.errorMessageAtom._value).toBe("backgrounds.json content is not a valid object");
+    });
+
+    it("merges into an existing file without dropping other keys", async () => {
+        const disk: Disk = { "/config/backgrounds.json": { "bg@keep": { bg: "green" } } };
+        const { model } = await makeModel(disk);
+        await model.updateBackgroundOpacity("bg@x", 0.5);
+        expect(disk["/config/backgrounds.json"]["bg@keep"]).toEqual({ bg: "green" });
+        expect(disk["/config/backgrounds.json"]["bg@x"]["bg:opacity"]).toBe(0.5);
+    });
+});
+
+describe("RemoteTermConfigViewModel — secrets", () => {
+    beforeEach(() => {
+        vi.resetModules();
+        atomStore.clear();
+        atomCounter = 0;
+    });
+
+    it("saveSecret writes the edited value and closes the view", async () => {
+        const { model, rpc, secrets } = await makeModel({}, { secrets: { API_KEY: "old" } });
+        model.selectedSecretAtom._value = "API_KEY";
+        model.secretValueAtom._value = "new";
+        await model.saveSecret();
+        expect(rpc.SetSecretsCommand).toHaveBeenCalledWith({}, { API_KEY: "new" });
+        expect(secrets.API_KEY).toBe("new");
+        expect(model.selectedSecretAtom._value).toBeNull();
+        expect(model.isLoadingAtom._value).toBe(false);
+    });
+
+    it("saveSecret surfaces an RPC failure and keeps the view open", async () => {
+        const { model, rpc } = await makeModel({}, { secrets: { API_KEY: "old" } });
+        rpc.SetSecretsCommand.mockRejectedValueOnce(new Error("locked"));
+        model.selectedSecretAtom._value = "API_KEY";
+        await model.saveSecret();
+        expect(model.errorMessageAtom._value).toBe("Failed to save secret: locked");
+        expect(model.selectedSecretAtom._value).toBe("API_KEY");
+        expect(model.isLoadingAtom._value).toBe(false);
+    });
+
+    it("saveSecret does nothing without a selected secret", async () => {
+        const { model, rpc } = await makeModel({});
+        await model.saveSecret();
+        expect(rpc.SetSecretsCommand).not.toHaveBeenCalled();
+    });
+
+    it("deleteSecret sends a null value and refreshes the list", async () => {
+        const { model, rpc } = await makeModel({}, { secrets: { A: "1", B: "2" } });
+        model.selectedSecretAtom._value = "A";
+        await model.deleteSecret();
+        expect(rpc.SetSecretsCommand).toHaveBeenCalledWith({}, { A: null });
+        expect(model.secretNamesAtom._value).toEqual(["B"]);
+        expect(model.selectedSecretAtom._value).toBeNull();
+    });
+
+    it("deleteSecret surfaces an RPC failure", async () => {
+        const { model, rpc } = await makeModel({}, { secrets: { A: "1" } });
+        rpc.SetSecretsCommand.mockRejectedValueOnce(new Error("denied"));
+        model.selectedSecretAtom._value = "A";
+        await model.deleteSecret();
+        expect(model.errorMessageAtom._value).toBe("Failed to delete secret: denied");
+        expect(model.selectedSecretAtom._value).toBe("A");
+    });
+
+    it("addNewSecret rejects empty, invalid and duplicate names without calling the RPC", async () => {
+        const { model, rpc } = await makeModel({}, { secrets: { TAKEN: "x" } });
+        model.secretNamesAtom._value = ["TAKEN"];
+
+        model.newSecretNameAtom._value = "   ";
+        await model.addNewSecret();
+        expect(model.errorMessageAtom._value).toBe("Secret name cannot be empty");
+
+        model.newSecretNameAtom._value = "1bad-name";
+        await model.addNewSecret();
+        expect(model.errorMessageAtom._value).toMatch(/^Invalid secret name/);
+
+        model.newSecretNameAtom._value = "TAKEN";
+        await model.addNewSecret();
+        expect(model.errorMessageAtom._value).toBe('Secret "TAKEN" already exists');
+
+        expect(rpc.SetSecretsCommand).not.toHaveBeenCalled();
+    });
+
+    it("addNewSecret stores a trimmed valid name, resets the form and refreshes the list", async () => {
+        const { model, rpc } = await makeModel({});
+        model.isAddingNewAtom._value = true;
+        model.newSecretNameAtom._value = "  NEW_ONE ";
+        model.newSecretValueAtom._value = "v";
+        await model.addNewSecret();
+        expect(rpc.SetSecretsCommand).toHaveBeenCalledWith({}, { NEW_ONE: "v" });
+        expect(model.isAddingNewAtom._value).toBe(false);
+        expect(model.newSecretNameAtom._value).toBe("");
+        expect(model.secretNamesAtom._value).toEqual(["NEW_ONE"]);
+        expect(model.errorMessageAtom._value).toBeNull();
+    });
+
+    it("addNewSecret surfaces an RPC failure and keeps the form open", async () => {
+        const { model, rpc } = await makeModel({});
+        rpc.SetSecretsCommand.mockRejectedValueOnce(new Error("no backend"));
+        model.isAddingNewAtom._value = true;
+        model.newSecretNameAtom._value = "OK_NAME";
+        await model.addNewSecret();
+        expect(model.errorMessageAtom._value).toBe("Failed to add secret: no backend");
+        expect(model.isAddingNewAtom._value).toBe(true);
+    });
+});
