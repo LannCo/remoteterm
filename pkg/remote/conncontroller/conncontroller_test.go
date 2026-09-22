@@ -139,6 +139,37 @@ func waitForStatus(t *testing.T, conn *SSHConn, want string) {
 	t.Fatalf("timed out waiting for status %q, got %q", want, conn.GetStatus())
 }
 
+// shortenHysteresis shrinks ReconnectHysteresisDuration for one test and returns
+// the restore func. Callers must hold reconnectTestMu.
+func shortenHysteresis() func() {
+	orig := ReconnectHysteresisDuration
+	ReconnectHysteresisDuration = 50 * time.Millisecond
+	return func() { ReconnectHysteresisDuration = orig }
+}
+
+// awaitHysteresisSettled blocks until the goroutine an involuntary close spawns
+// has published its delayed disconnected event and released lifecycleLock.
+// Without this it outlives the test and reads package-level test hooks while a
+// later test writes them.
+func awaitHysteresisSettled(t *testing.T, conn *SSHConn, obs *fakeBrokerClient) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for obs.disconnectedCount() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("no delayed disconnected event for %s", conn.GetName())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	conn.lifecycleLock.Lock()
+	defer conn.lifecycleLock.Unlock()
+}
+
+func isKeepAliveInFlight(cm *ConnMonitor) bool {
+	cm.lock.Lock()
+	defer cm.lock.Unlock()
+	return cm.KeepAliveInFlight
+}
+
 // TestAttemptReconnectLocalConn verifies that local connections return nil immediately.
 func TestAttemptReconnectLocalConn(t *testing.T) {
 	t.Parallel()
@@ -284,14 +315,18 @@ func TestShouldAutoDisconnectOnStallRespectsConfig(t *testing.T) {
 
 // TestDisconnectOnStallChangesStatus verifies that disconnectOnStall sets Status=Disconnected.
 func TestDisconnectOnStallChangesStatus(t *testing.T) {
-	conn := makeTestConn(Status_Connected)
+	reconnectTestMu.Lock()
+	defer reconnectTestMu.Unlock()
+	defer shortenHysteresis()()
+	conn := makeUniqueTestConn("stall-status-host", Status_Connected)
 	defer cleanupTestConn(conn)
+	conn.authPromptState.Store(authPromptNone)
 	cm := makeTestMonitor(conn)
+	obs, unsubscribe := observeConnEvents(t, conn.GetName())
+	defer unsubscribe()
 
 	cm.disconnectOnStall()
-
-	// Allow the goroutine inside disconnectOnStall to run
-	time.Sleep(100 * time.Millisecond)
+	awaitHysteresisSettled(t, conn, obs)
 
 	status := conn.GetStatus()
 	if status != Status_Disconnected {
@@ -428,7 +463,7 @@ func TestCheckConnectionRespectsConfiguredKeepaliveInterval(t *testing.T) {
 	conn := makeTestConn(Status_Connected)
 	defer cleanupTestConn(conn)
 	cm := makeTestMonitor(conn)
-	client, _ := newMockSSHClient()
+	client, mockConn := newMockSSHClient()
 	cm.Client = client
 
 	keepalive := 10
@@ -439,14 +474,25 @@ func TestCheckConnectionRespectsConfiguredKeepaliveInterval(t *testing.T) {
 
 	cm.LastActivityTime.Store(time.Now().UnixMilli() - 5000)
 	cm.checkConnection()
-	if cm.KeepAliveInFlight {
+	if isKeepAliveInFlight(cm) {
 		t.Fatalf("expected no keepalive at 5s stale with 10s configured interval")
 	}
 
 	cm.LastActivityTime.Store(time.Now().UnixMilli() - 11000)
 	cm.checkConnection()
-	if !cm.KeepAliveInFlight {
+	if !isKeepAliveInFlight(cm) {
 		t.Fatalf("expected keepalive triggered at 11s stale with 10s configured interval")
+	}
+
+	// The keepalive request blocks on the mock conn; closing it fails the request
+	// so the SendKeepAlive goroutine clears the flag and exits within this test.
+	mockConn.Close()
+	deadline := time.Now().Add(2 * time.Second)
+	for isKeepAliveInFlight(cm) {
+		if time.Now().After(deadline) {
+			t.Fatalf("keepalive goroutine did not finish after mock conn close")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
@@ -648,6 +694,9 @@ func TestWaitForDisconnect_NormalDisconnect_NoGuard(t *testing.T) {
 
 	conn := makeTestConn(Status_Connected)
 	defer cleanupTestConn(conn)
+	// Not auto-reconnectable, so the disconnect is not deferred by hysteresis and
+	// no goroutine outlives this test reading hooks that later tests write.
+	conn.authPromptState.Store(authPromptUsed)
 
 	clientA, mockConnA := newMockSSHClient()
 	conn.WithLock(func() {
@@ -1248,7 +1297,8 @@ func TestCachedPasswordClearedOnDisconnect(t *testing.T) {
 }
 
 func TestCachedPasswordPreservedOnHandshakeFailed(t *testing.T) {
-	t.Parallel()
+	reconnectTestMu.Lock()
+	defer reconnectTestMu.Unlock()
 	conn := makeTestConn(Status_Disconnected)
 	defer cleanupTestConn(conn)
 
@@ -2143,8 +2193,13 @@ func TestNeedsInteractiveAuth_UnknownConservative(t *testing.T) {
 // password: an involuntary disconnect must preserve it so reconnect can reuse
 // it silently.
 func TestCloseInvoluntary_PreservesCachedPassword(t *testing.T) {
-	conn := makeTestConn(Status_Connected)
+	reconnectTestMu.Lock()
+	defer reconnectTestMu.Unlock()
+	defer shortenHysteresis()()
+	conn := makeUniqueTestConn("involuntary-pw-host", Status_Connected)
 	defer cleanupTestConn(conn)
+	obs, unsubscribe := observeConnEvents(t, conn.GetName())
+	defer unsubscribe()
 
 	conn.cachePassword("secret123")
 	if pw := conn.getCachedPassword(); pw == nil {
@@ -2152,7 +2207,7 @@ func TestCloseInvoluntary_PreservesCachedPassword(t *testing.T) {
 	}
 
 	conn.CloseInvoluntary()
-	time.Sleep(100 * time.Millisecond)
+	awaitHysteresisSettled(t, conn, obs)
 
 	if pw := conn.getCachedPassword(); pw == nil {
 		t.Fatal("expected cached password to be PRESERVED after CloseInvoluntary")
@@ -2172,9 +2227,14 @@ func TestCloseInvoluntary_PreservesCachedPassword(t *testing.T) {
 // cached password, turning a reconnectable password connection into one that
 // requires a prompt.
 func TestDisconnectOnStall_PreservesCachedPassword(t *testing.T) {
-	conn := makeTestConn(Status_Connected)
+	reconnectTestMu.Lock()
+	defer reconnectTestMu.Unlock()
+	defer shortenHysteresis()()
+	conn := makeUniqueTestConn("stall-pw-host", Status_Connected)
 	defer cleanupTestConn(conn)
 	cm := makeTestMonitor(conn)
+	obs, unsubscribe := observeConnEvents(t, conn.GetName())
+	defer unsubscribe()
 
 	conn.cachePassword("stall-secret")
 	if pw := conn.getCachedPassword(); pw == nil {
@@ -2182,7 +2242,7 @@ func TestDisconnectOnStall_PreservesCachedPassword(t *testing.T) {
 	}
 
 	cm.disconnectOnStall()
-	time.Sleep(100 * time.Millisecond)
+	awaitHysteresisSettled(t, conn, obs)
 
 	if status := conn.GetStatus(); status != Status_Disconnected {
 		t.Fatalf("expected Status=Disconnected after stall disconnect, got %s", status)
@@ -2244,12 +2304,17 @@ func TestClose_SetsSuppressAutoReconnect(t *testing.T) {
 
 // TestCloseInvoluntary_DoesNotSetSuppress (0.1.3): stall path must not suppress.
 func TestCloseInvoluntary_DoesNotSetSuppress(t *testing.T) {
-	conn := makeTestConn(Status_Connected)
+	reconnectTestMu.Lock()
+	defer reconnectTestMu.Unlock()
+	defer shortenHysteresis()()
+	conn := makeUniqueTestConn("involuntary-suppress-host", Status_Connected)
 	defer cleanupTestConn(conn)
+	obs, unsubscribe := observeConnEvents(t, conn.GetName())
+	defer unsubscribe()
 
 	conn.cachePassword("keep-me")
 	conn.CloseInvoluntary()
-	time.Sleep(50 * time.Millisecond)
+	awaitHysteresisSettled(t, conn, obs)
 
 	if conn.IsSuppressAutoReconnect() {
 		t.Fatal("expected SuppressAutoReconnect=false after CloseInvoluntary")
@@ -2366,8 +2431,14 @@ func TestClose_InvokesOnUserSuppressCallback(t *testing.T) {
 
 // TestCloseInvoluntary_DoesNotInvokeOnUserSuppressCallback.
 func TestCloseInvoluntary_DoesNotInvokeOnUserSuppressCallback(t *testing.T) {
-	conn := makeTestConn(Status_Connected)
+	reconnectTestMu.Lock()
+	defer reconnectTestMu.Unlock()
+	defer shortenHysteresis()()
+	conn := makeUniqueTestConn("involuntary-callback-host", Status_Connected)
 	defer cleanupTestConn(conn)
+	conn.authPromptState.Store(authPromptNone)
+	obs, unsubscribe := observeConnEvents(t, conn.GetName())
+	defer unsubscribe()
 
 	called := false
 	prev := OnUserSuppressAutoReconnect
@@ -2375,7 +2446,7 @@ func TestCloseInvoluntary_DoesNotInvokeOnUserSuppressCallback(t *testing.T) {
 	defer func() { OnUserSuppressAutoReconnect = prev }()
 
 	conn.CloseInvoluntary()
-	time.Sleep(50 * time.Millisecond)
+	awaitHysteresisSettled(t, conn, obs)
 
 	if called {
 		t.Fatal("CloseInvoluntary must not invoke OnUserSuppressAutoReconnect")
@@ -2760,6 +2831,7 @@ func TestConnectCount_ZeroByDefault(t *testing.T) {
 func TestRecordConnectionUsage_IncrementsCount(t *testing.T) {
 	testOpts := &remote.SSHOpts{SSHHost: "usage-count-test-host", SSHUser: "u", SSHPort: "2222"}
 	conn := GetConn(testOpts)
+	defer cleanupTestConn(conn)
 	if conn.ConnectCount != 0 {
 		t.Fatalf("expected ConnectCount=0 initially, got %d", conn.ConnectCount)
 	}
