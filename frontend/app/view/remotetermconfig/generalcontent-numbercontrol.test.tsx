@@ -108,6 +108,20 @@ describe("NumberControl interaction", () => {
         expect(c.input().value).toBe("21");
     });
 
+    it("the spin buttons are wired to stepping: no draft, one click each way", async () => {
+        const user = userEvent.setup();
+        const c = setup({ delayMs: 0 });
+        await user.click(c.up());
+        await c.settled();
+        await c.eventsLanded();
+        expect(c.writes()).toEqual([13]);
+        await user.click(c.down());
+        await c.settled();
+        await c.eventsLanded();
+        expect(c.writes()).toEqual([13, 12]);
+        expect(c.input().value).toBe("12");
+    });
+
     it("rapid plain spin clicks during a slow round-trip each step from the last shown value", async () => {
         const user = userEvent.setup();
         const c = setup({ delayMs: 200 });
