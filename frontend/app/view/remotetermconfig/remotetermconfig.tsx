@@ -12,7 +12,7 @@ import { adaptFromReactOrNativeKeyEvent, checkKeyPressed, keydownWrapper } from 
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import type * as MonacoTypes from "monaco-editor";
-import { memo, useCallback, useEffect } from "react";
+import { memo, useCallback, useEffect, useRef } from "react";
 
 interface ConfigSidebarProps {
     model: RemoteTermConfigViewModel;
@@ -119,6 +119,14 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
     const [activeTab, setActiveTab] = useAtom(model.activeTabAtom);
     const fullConfig = useAtomValue(env.atoms.fullConfigAtom);
     const configErrors = fullConfig?.configerrors;
+    const contentRef = useRef<HTMLDivElement>(null);
+
+    // Dismissing a banner unmounts its focused button; move focus into the content pane first
+    // so it does not fall to <body>.
+    const dismissBanner = (clear: () => void) => {
+        contentRef.current?.focus();
+        clear();
+    };
 
     const handleContentChange = useCallback(
         (newContent: string) => {
@@ -182,7 +190,7 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
                 <div className={`h-full ${isMenuOpen ? "" : "@max-w600:hidden"}`}>
                     <ConfigSidebar model={model} />
                 </div>
-                <div className="flex flex-col flex-1 min-w-0">
+                <div ref={contentRef} tabIndex={-1} className="flex flex-col flex-1 min-w-0 outline-none">
                     {selectedFile && (
                         <>
                             <div className="flex flex-row items-center justify-between px-4 py-2 border-b border-border">
@@ -281,7 +289,7 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
                                 <div className="bg-error text-black px-4 py-2 border-b border-error flex items-center justify-between">
                                     <span role="alert">{errorMessage}</span>
                                     <button
-                                        onClick={() => model.clearError()}
+                                        onClick={() => dismissBanner(() => model.clearError())}
                                         aria-label="Dismiss error"
                                         className="ml-2 hover:bg-black/20 rounded p-1 cursor-pointer transition-colors"
                                     >
@@ -293,7 +301,7 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
                                 <div className="bg-error text-black px-4 py-2 border-b border-error flex items-center justify-between">
                                     <span role="alert">{validationError}</span>
                                     <button
-                                        onClick={() => model.clearValidationError()}
+                                        onClick={() => dismissBanner(() => model.clearValidationError())}
                                         aria-label="Dismiss validation error"
                                         className="ml-2 hover:bg-black/20 rounded p-1 cursor-pointer transition-colors"
                                     >

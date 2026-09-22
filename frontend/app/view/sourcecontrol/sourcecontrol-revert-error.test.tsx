@@ -74,6 +74,19 @@ it("a failed staged-hunk revert shows a dismissible alert in the source control 
     expect(screen.queryByRole("alert")).toBeNull();
 });
 
+it("dismissing the alert from the keyboard leaves focus in the source control view, not on <body>", async () => {
+    await renderView({ GitRevertHunkCommand: rejects(PartialRevertError) });
+    await act(() => model.revertHunk("a.ts", 0, true));
+
+    const user = userEvent.setup();
+    screen.getByRole("button", { name: "Dismiss error" }).focus();
+    await user.keyboard("{Enter}");
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement.contains(screen.getByText("main"))).toBe(true);
+});
+
 // happy-dom does no layout, so this pins the sizing utility rather than a measured box:
 // WCAG 2.5.8 needs at least 24x24 CSS px, and the bare icon is about 11px.
 it("the dismiss button carries a 24x24 minimum target", async () => {

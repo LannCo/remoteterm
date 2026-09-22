@@ -708,7 +708,7 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
     }
 
     return (
-        <div ref={containerRef} className="flex flex-col h-full w-full overflow-hidden">
+        <div ref={containerRef} tabIndex={-1} className="flex flex-col h-full w-full overflow-hidden outline-none">
             {/* Header */}
             <div className="flex items-center justify-between px-3 py-2 border-b border-border">
                 <div className="flex items-center gap-2 text-xs">
@@ -769,7 +769,11 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
                 />
             )}
 
-            <ActionErrorBanner errorAtom={model.actionErrorAtom} onDismiss={() => model.dismissActionError()} />
+            <ActionErrorBanner
+                errorAtom={model.actionErrorAtom}
+                onDismiss={() => model.dismissActionError()}
+                focusAnchorRef={containerRef}
+            />
 
             {reviewMode ? (
                 <div className="flex-1 flex flex-col overflow-hidden min-h-0">
