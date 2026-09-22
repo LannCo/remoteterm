@@ -4,7 +4,7 @@
 import { fireAndForget } from "@/util/util";
 import { app, dialog, ipcMain, shell } from "electron";
 import envPaths from "env-paths";
-import { Dirent, existsSync, mkdirSync, readdirSync, renameSync, rmdirSync, writeFileSync } from "fs";
+import { Dirent, existsSync, mkdirSync, readdirSync, renameSync, rmdirSync, statSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import { RemoteTermDevVarName, RemoteTermDevViteVarName } from "../frontend/util/isdev";
@@ -91,6 +91,10 @@ type MigrationRootSpec = {
     overridden: boolean;
     // Returns why the existing source is not a real legacy root to migrate, or null if it is.
     sourceSkipReason?: () => string;
+    // Merge into a non-empty destination instead of aborting. Only safe for roots holding plain
+    // files: an earlier build that skipped the legacy root may already have created this one
+    // (presets/, Electron userData), and without a merge that state aborts on every launch.
+    mergeIntoExistingDest?: boolean;
 };
 
 const MigrationMarkerFileName = ".migrated-from-waveterm";
@@ -160,6 +164,9 @@ function migrateDataRoot(spec: MigrationRootSpec) {
                 recordMigrationFailure(`could not remove empty destination ${spec.dest} for ${spec.name} root`, e);
                 return;
             }
+        } else if (spec.mergeIntoExistingDest) {
+            mergeDataRoot(spec);
+            return;
         } else {
             recordMigrationFailure(
                 `${spec.name} root migration aborted: ${spec.dest} already exists and is not empty. Please merge ${spec.source} into ${spec.dest} manually.`
@@ -188,6 +195,64 @@ function migrateDataRoot(spec: MigrationRootSpec) {
             return;
         }
         recordMigrationFailure(`error migrating ${spec.name} root from ${spec.source} to ${spec.dest}`, e);
+    }
+}
+
+// Electron's userData (Chromium profile) is kept whole on whichever side already has it: mixing
+// files from two profiles is not a merge Chromium supports.
+const UnmergeableDirNames = new Set(["electron"]);
+
+type MergeResult = { merged: string[]; kept: string[] };
+
+function mergeTree(source: string, dest: string, rel: string, result: MergeResult) {
+    for (const ent of readdirSync(source, { withFileTypes: true })) {
+        const relPath = rel ? path.join(rel, ent.name) : ent.name;
+        const sourcePath = path.join(source, ent.name);
+        const destPath = path.join(dest, ent.name);
+        if (!existsSync(destPath)) {
+            renameSync(sourcePath, destPath);
+            result.merged.push(relPath);
+            continue;
+        }
+        const destIsDir = statSync(destPath).isDirectory();
+        if (ent.isDirectory() && destIsDir && !UnmergeableDirNames.has(relPath)) {
+            mergeTree(sourcePath, destPath, relPath, result);
+            continue;
+        }
+        result.kept.push(relPath);
+    }
+    if (rel && readdirSync(source).length === 0) {
+        rmdirSync(source);
+    }
+}
+
+// Moves every source entry the destination lacks into it and never overwrites a destination
+// entry. Whatever cannot be moved stays in the source; the marker is written regardless so the
+// state converges instead of re-reporting on every launch.
+function mergeDataRoot(spec: MigrationRootSpec) {
+    const result: MergeResult = { merged: [], kept: [] };
+    try {
+        mergeTree(spec.source, spec.dest, "", result);
+        writeFileSync(
+            path.join(spec.dest, MigrationMarkerFileName),
+            `merged-from:${spec.source}\n${new Date().toISOString()}\n`
+        );
+    } catch (e) {
+        recordMigrationFailure(
+            `error merging ${spec.name} root from ${spec.source} into ${spec.dest} (merged so far: ${result.merged.join(", ") || "nothing"})`,
+            e
+        );
+        return;
+    }
+    console.log(
+        `[migration] merged ${spec.name} root from ${spec.source} into existing ${spec.dest}: ` +
+            `merged [${result.merged.join(", ")}], kept destination copy of [${result.kept.join(", ")}]`
+    );
+    const keptUserFiles = result.kept.filter((p) => !UnmergeableDirNames.has(p));
+    if (keptUserFiles.length > 0) {
+        recordMigrationFailure(
+            `${spec.name} root: ${spec.dest} already had ${keptUserFiles.join(", ")}; the older copies were left in ${spec.source}. Compare and merge them manually if needed.`
+        );
     }
 }
 
@@ -232,6 +297,7 @@ function performDataDirMigration() {
             dest: configOverride ?? configDest,
             overridden: configOverride != null,
             sourceSkipReason: () => legacyConfigSkipReason(configSource),
+            mergeIntoExistingDest: true,
         });
 
         const dataOverride = readOverrideEnvVar(RemoteTermDataHomeVarName, LegacyRemoteTermDataHomeVarName);

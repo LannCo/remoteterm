@@ -140,6 +140,53 @@ describe("legacy config root validation", () => {
         expect(skipLines[0]).toMatch(/no config files/);
     });
 
+    describe("existing destination", () => {
+        const legacyConfig = () => path.join(xdgConfig, "waveterm");
+        const newConfig = () => path.join(xdgConfig, "remoteterm");
+
+        it("merges into a destination left by an earlier build's defaults and converges", async () => {
+            makeDir(legacyConfig(), {
+                "connections.json": "legacy-conns",
+                "presets/ai.json": "legacy-ai",
+                "electron/Preferences": "legacy-electron",
+            });
+            makeDir(path.join(newConfig(), "presets"));
+            makeDir(newConfig(), { "electron/Preferences": "new-electron" });
+
+            let mod = await loadPlatform(true);
+            expect(mod.getMigrationFailures()).toEqual([]);
+            expect(fs.readFileSync(path.join(newConfig(), "connections.json"), "utf8")).toBe("legacy-conns");
+            expect(fs.readFileSync(path.join(newConfig(), "presets/ai.json"), "utf8")).toBe("legacy-ai");
+            expect(fs.readFileSync(path.join(newConfig(), "electron/Preferences"), "utf8")).toBe("new-electron");
+            expect(fs.readFileSync(path.join(legacyConfig(), "electron/Preferences"), "utf8")).toBe("legacy-electron");
+            expect(fs.readFileSync(path.join(newConfig(), MarkerFileName), "utf8")).toMatch(
+                new RegExp(`^merged-from:${legacyConfig()}\n`)
+            );
+            expect(loggedLines().some((s) => s.includes("merged") && s.includes("connections.json"))).toBe(true);
+
+            vi.resetModules();
+            mod = await loadPlatform(true);
+            expect(mod.getMigrationFailures()).toEqual([]);
+        });
+
+        it("never overwrites a destination file and reports the kept legacy copy once", async () => {
+            makeDir(legacyConfig(), { "settings.json": "legacy-settings", "widgets.json": "legacy-widgets" });
+            makeDir(newConfig(), { "settings.json": "new-settings" });
+
+            let mod = await loadPlatform(true);
+            expect(fs.readFileSync(path.join(newConfig(), "settings.json"), "utf8")).toBe("new-settings");
+            expect(fs.readFileSync(path.join(newConfig(), "widgets.json"), "utf8")).toBe("legacy-widgets");
+            expect(fs.readFileSync(path.join(legacyConfig(), "settings.json"), "utf8")).toBe("legacy-settings");
+            expect(mod.getMigrationFailures()).toHaveLength(1);
+            expect(mod.getMigrationFailures()[0]).toContain("settings.json");
+            expect(fs.existsSync(path.join(newConfig(), MarkerFileName))).toBe(true);
+
+            vi.resetModules();
+            mod = await loadPlatform(true);
+            expect(mod.getMigrationFailures()).toEqual([]);
+        });
+    });
+
     it("logs a skip when the legacy root is absent", async () => {
         await loadPlatform(true);
         const skipLines = loggedLines().filter((s) => s.includes("[migration]") && s.includes("skipping"));
