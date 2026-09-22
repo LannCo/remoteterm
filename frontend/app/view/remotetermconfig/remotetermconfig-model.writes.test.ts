@@ -151,6 +151,17 @@ describe("RemoteTermConfigViewModel — queued widget/background writes", () => 
         expect(written["display:order"]).toBe(3);
     });
 
+    it("two quick drags both land: the second drag's neighbour order comes from the first drag's write", async () => {
+        const disk: Disk = {};
+        const { model } = await makeModel(disk);
+        await Promise.all([
+            model.reorderWidget("w@a", 1, ["w@b", "w@a"]),
+            model.reorderWidget("w@b", 1, ["w@a", "w@b"]),
+        ]);
+        const written = disk["/config/widgets.json"];
+        expect(written["w@b"]["display:order"]).toBeGreaterThan(written["w@a"]["display:order"]);
+    });
+
     it("two quick toggles of the same widget cancel out", async () => {
         const disk: Disk = {};
         const { model } = await makeModel(disk);
