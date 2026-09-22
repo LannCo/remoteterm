@@ -24,7 +24,6 @@ function getParentDirectory(path: string): string {
 }
 
 function goHistoryBack(curValKey: "url" | "file", curVal: string, meta: MetaType, backToParent: boolean): MetaType {
-    const rtnMeta: MetaType = {};
     const history = (meta?.history ?? []).slice();
     const historyForward = (meta?.["history:forward"] ?? []).slice();
     if (history == null || history.length == 0) {
@@ -48,7 +47,6 @@ function goHistoryBack(curValKey: "url" | "file", curVal: string, meta: MetaType
 }
 
 function goHistoryForward(curValKey: "url" | "file", curVal: string, meta: MetaType): MetaType {
-    const rtnMeta: MetaType = {};
     let history = (meta?.history ?? []).slice();
     const historyForward = (meta?.["history:forward"] ?? []).slice();
     if (historyForward == null || historyForward.length == 0) {
@@ -63,7 +61,6 @@ function goHistoryForward(curValKey: "url" | "file", curVal: string, meta: MetaT
 }
 
 function goHistory(curValKey: "url" | "file", curVal: string, newVal: string, meta: MetaType): MetaType {
-    const rtnMeta: MetaType = {};
     const history = (meta?.history ?? []).slice();
     history.push(curVal);
     if (history.length > MaxHistory) {
