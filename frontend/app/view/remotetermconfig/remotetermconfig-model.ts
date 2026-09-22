@@ -822,31 +822,31 @@ export class RemoteTermConfigViewModel implements ViewModel {
 
     // Assigns the moved widget a display:order strictly between its new neighbors'
     // existing values (fractional indexing) so a drag only ever touches the one
-    // widget that moved — neighbors keep their current order untouched.
+    // widget that moved — neighbors keep their current order untouched. Neighbor orders
+    // are read inside the queued step for the same reason as the patch itself: a drag
+    // landing right after another would otherwise place itself against the pre-drag order.
     async reorderWidget(movedKey: string, newIndex: number, orderedKeys: string[]) {
-        const widgetsMap = globalStore.get(this.widgetsMapAtom);
-        const widget = widgetsMap[movedKey];
-        if (widget == null) return;
+        if (globalStore.get(this.widgetsMapAtom)[movedKey] == null) return;
 
         const prevKey = orderedKeys[newIndex - 1];
         const nextKey = orderedKeys[newIndex + 1];
-        const prevOrder = prevKey != null ? (widgetsMap[prevKey]?.["display:order"] ?? 0) : null;
-        const nextOrder = nextKey != null ? (widgetsMap[nextKey]?.["display:order"] ?? 0) : null;
-
-        let newOrder: number;
-        if (prevOrder != null && nextOrder != null) {
-            newOrder = (prevOrder + nextOrder) / 2;
-        } else if (prevOrder != null) {
-            newOrder = prevOrder + 1;
-        } else if (nextOrder != null) {
-            newOrder = nextOrder - 1;
-        } else {
-            newOrder = 0;
-        }
 
         await this.persistWidgetPatch((raw) => {
             const latest = this.getLatestWidget(raw, movedKey);
             if (latest == null) return null;
+            const prevOrder = prevKey != null ? (this.getLatestWidget(raw, prevKey)?.["display:order"] ?? 0) : null;
+            const nextOrder = nextKey != null ? (this.getLatestWidget(raw, nextKey)?.["display:order"] ?? 0) : null;
+
+            let newOrder: number;
+            if (prevOrder != null && nextOrder != null) {
+                newOrder = (prevOrder + nextOrder) / 2;
+            } else if (prevOrder != null) {
+                newOrder = prevOrder + 1;
+            } else if (nextOrder != null) {
+                newOrder = nextOrder - 1;
+            } else {
+                newOrder = 0;
+            }
             return { [movedKey]: { ...latest, "display:order": newOrder } };
         });
     }
@@ -944,11 +944,16 @@ export class RemoteTermConfigViewModel implements ViewModel {
     }
 
     async applyBackgroundToTab(key: string | null) {
+        globalStore.set(this.errorMessageAtom, null);
         const oref = makeORef("tab", this.tabModel.tabId);
-        await this.env.rpc.SetMetaCommand(TabRpcClient, {
-            oref,
-            meta: { "bg:*": true, "tab:background": key },
-        });
+        try {
+            await this.env.rpc.SetMetaCommand(TabRpcClient, {
+                oref,
+                meta: { "bg:*": true, "tab:background": key },
+            });
+        } catch (err) {
+            globalStore.set(this.errorMessageAtom, `Failed to apply background: ${err.message || String(err)}`);
+        }
     }
 
     async updateBackgroundField(key: string, field: "bg:opacity" | "bg:blendmode", value: number | string) {

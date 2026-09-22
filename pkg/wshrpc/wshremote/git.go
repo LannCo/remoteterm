@@ -340,7 +340,19 @@ func (impl *ServerImpl) GitRevertHunkCommand(ctx context.Context, data wshrpc.Co
 	// "-a,b +c,d" header describing the forward hunk, which git rejects as corrupt
 	// whenever the hunk adds or removes a different number of lines than it replaces.
 	patch := extractHunkPatch(diffOutput, data.Path, data.HunkIndex)
-	return applyPatchReverse(ctx, data.Dir, patch)
+	if !data.Staged {
+		return applyPatchReverse(ctx, data.Dir, patch)
+	}
+	// A staged hunk is unstaged first because the patch came from the index diff and always
+	// applies there; if the working tree then rejects it (the lines were edited again since
+	// staging), the change survives as an unstaged edit rather than being lost.
+	if err := applyPatchReverseCached(ctx, data.Dir, patch); err != nil {
+		return err
+	}
+	if err := applyPatchReverse(ctx, data.Dir, patch); err != nil {
+		return fmt.Errorf("hunk unstaged, but the working tree has since changed and was left as is: %w", err)
+	}
+	return nil
 }
 
 // GitCommitCommand commits staged changes with a message
@@ -1118,6 +1130,18 @@ func applyPatchCached(ctx context.Context, dir string, patch string) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("git apply --cached failed: %s %w", string(output), err)
+	}
+	return nil
+}
+
+// applyPatchReverseCached reverse-applies a patch to the index only via stdin
+func applyPatchReverseCached(ctx context.Context, dir string, patch string) error {
+	cmd := exec.CommandContext(ctx, "git", "apply", "-R", "--cached")
+	cmd.Dir = dir
+	cmd.Stdin = strings.NewReader(patch)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git apply -R --cached failed: %s %w", string(output), err)
 	}
 	return nil
 }

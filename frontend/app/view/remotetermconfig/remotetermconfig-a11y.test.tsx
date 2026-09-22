@@ -56,6 +56,16 @@ function openingTagWithId(html: string, id: string): string {
     return match[0];
 }
 
+// #E54D2E (text-error) on the panel's rgb(34,34,34) is 4.12:1, under AA's 4.5:1 for text,
+// so error text must be a readable colour; text-error stays on icons and borders.
+function expectReadableErrorText(html: string, text: string) {
+    const match = html.match(new RegExp(`<[a-z]+([^>]*)>${escapeRegex(text)}<`));
+    expect(match, `no element with text "${text}"`).not.toBeNull();
+    const cls = match[1].match(/class="([^"]*)"/)?.[1].split(/\s+/) ?? [];
+    expect(cls).not.toContain("text-error");
+    expect(cls).toContain("text-primary");
+}
+
 function elementTextById(html: string, id: string): string {
     const match = html.match(new RegExp(`\\sid="${escapeRegex(id)}"[^>]*>([^<]*)<`));
     return match?.[1] ?? "";
@@ -96,6 +106,9 @@ describe("SecretsContent labels and validation", () => {
         const describedBy = input.match(/aria-describedby="([^"]+)"/)?.[1];
         expect(describedBy).toBeTruthy();
         expect(elementTextById(html, describedBy)).toMatch(/^Invalid name/);
+        expect(openingTagWithId(html, describedBy)).not.toMatch(/text-error/);
+        expect(openingTagWithId(html, describedBy)).toMatch(/text-primary/);
+        expect(openingTagWithId(html, describedBy)).toMatch(/text-caption/);
     });
 
     it("does not mark a valid or empty secret name as invalid", () => {
@@ -126,7 +139,8 @@ describe("quick-add error messages are announced", () => {
                 connectionsQuickAddErrorAtom: "CONN-ERR",
             })
         );
-        expect(html).toMatch(/<div[^>]*role="alert"[^>]*>CONN-ERR<\/div>/);
+        expect(html).toMatch(/<div[^>]*role="alert"[^>]*>(?:(?!<\/div>).)*CONN-ERR/);
+        expectReadableErrorText(html, "CONN-ERR");
     });
 
     it("background add-form error sits in role=alert", () => {
@@ -140,7 +154,8 @@ describe("quick-add error messages are announced", () => {
                 backgroundsAddErrorAtom: "BG-ERR",
             })
         );
-        expect(html).toMatch(/<div[^>]*role="alert"[^>]*>BG-ERR<\/div>/);
+        expect(html).toMatch(/<div[^>]*role="alert"[^>]*>(?:(?!<\/div>).)*BG-ERR/);
+        expectReadableErrorText(html, "BG-ERR");
     });
 });
 

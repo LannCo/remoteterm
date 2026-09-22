@@ -141,3 +141,75 @@ func TestGitRevertHunkWithUnequalLineCountsAfterEarlierHunk(t *testing.T) {
 		t.Fatalf("file differs from HEAD after revert:\n%s", got)
 	}
 }
+
+// "Revert hunk" on the staged diff discards the change, so it must leave the index and
+// the working tree: reverting only the working tree left the change staged, and the
+// next commit would still include it.
+func TestGitRevertStagedHunkClearsIndexAndWorkingTree(t *testing.T) {
+	lines := numberedLines(20)
+	r := makeRevertTestRepo(t, lines)
+	lines[5] += " CHANGED"
+	r.write(lines)
+	r.git("add", "a.txt")
+
+	if err := r.revert(0, true); err != nil {
+		t.Fatalf("revert: %v", err)
+	}
+	if got := r.git("diff", "--cached", "--", "a.txt"); got != "" {
+		t.Fatalf("hunk still staged after revert:\n%s", got)
+	}
+	if got := r.git("diff", "HEAD", "--", "a.txt"); got != "" {
+		t.Fatalf("working tree differs from HEAD after revert:\n%s", got)
+	}
+}
+
+func TestGitRevertStagedHunkKeepsOtherUnstagedChanges(t *testing.T) {
+	lines := numberedLines(40)
+	r := makeRevertTestRepo(t, lines)
+	lines[5] += " STAGED"
+	r.write(lines)
+	r.git("add", "a.txt")
+	lines[30] += " UNSTAGED"
+	r.write(lines)
+
+	if err := r.revert(0, true); err != nil {
+		t.Fatalf("revert: %v", err)
+	}
+	if got := r.git("diff", "--cached", "--", "a.txt"); got != "" {
+		t.Fatalf("hunk still staged after revert:\n%s", got)
+	}
+	wt, err := os.ReadFile(r.file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(wt), "line 5 STAGED") {
+		t.Fatalf("staged change survived in the working tree")
+	}
+	if !strings.Contains(string(wt), "line 30 UNSTAGED") {
+		t.Fatalf("unrelated unstaged change was lost")
+	}
+}
+
+func TestGitRevertStagedHunkEditedAgainKeepsWorkingTreeEdit(t *testing.T) {
+	lines := numberedLines(20)
+	r := makeRevertTestRepo(t, lines)
+	lines[5] += " STAGED"
+	r.write(lines)
+	r.git("add", "a.txt")
+	lines[5] += " AND EDITED"
+	r.write(lines)
+
+	if err := r.revert(0, true); err == nil {
+		t.Fatalf("expected an error when the working tree no longer matches the staged hunk")
+	}
+	if got := r.git("diff", "--cached", "--", "a.txt"); got != "" {
+		t.Fatalf("hunk still staged after revert:\n%s", got)
+	}
+	wt, err := os.ReadFile(r.file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(wt), "line 5 STAGED AND EDITED") {
+		t.Fatalf("working-tree edit was lost")
+	}
+}

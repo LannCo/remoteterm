@@ -69,7 +69,12 @@ const b64d = (s: string) => Buffer.from(s, "base64").toString("utf-8");
 const b64e = (s: string) => Buffer.from(s, "utf-8").toString("base64");
 
 type Disk = { [path: string]: any };
-type ModelOpts = { failWrite?: string; failInfo?: string; secrets?: { [name: string]: string } };
+type ModelOpts = {
+    failWrite?: string;
+    failInfo?: string;
+    failSetMeta?: boolean;
+    secrets?: { [name: string]: string };
+};
 
 // fullConfigAtom is deliberately never updated after a write: in the real app the config
 // watcher round-trip lands later, so back-to-back actions see the pre-write snapshot.
@@ -93,7 +98,9 @@ async function makeModel(disk: Disk, opts: ModelOpts = {}) {
             if (opts.failWrite === p.info.path) throw new Error("EACCES");
             disk[p.info.path] = JSON.parse(b64d(p.data64));
         }),
-        SetMetaCommand: vi.fn(async () => {}),
+        SetMetaCommand: vi.fn(async () => {
+            if (opts.failSetMeta) throw new Error("rpc down");
+        }),
         GetSecretsNamesCommand: vi.fn(async () => Object.keys(secrets)),
         GetSecretsLinuxStorageBackendCommand: vi.fn(async () => "libsecret"),
         SetSecretsCommand: vi.fn(async (_c: any, data: { [name: string]: string | null }) => {
@@ -144,6 +151,17 @@ describe("RemoteTermConfigViewModel — queued widget/background writes", () => 
         expect(written["display:order"]).toBe(3);
     });
 
+    it("two quick drags both land: the second drag's neighbour order comes from the first drag's write", async () => {
+        const disk: Disk = {};
+        const { model } = await makeModel(disk);
+        await Promise.all([
+            model.reorderWidget("w@a", 1, ["w@b", "w@a"]),
+            model.reorderWidget("w@b", 1, ["w@a", "w@b"]),
+        ]);
+        const written = disk["/config/widgets.json"];
+        expect(written["w@b"]["display:order"]).toBeGreaterThan(written["w@a"]["display:order"]);
+    });
+
     it("two quick toggles of the same widget cancel out", async () => {
         const disk: Disk = {};
         const { model } = await makeModel(disk);
@@ -184,6 +202,12 @@ describe("RemoteTermConfigViewModel — queued widget/background writes", () => 
         expect(tabMetaCalls(rpc)).toHaveLength(0);
         expect(model.errorMessageAtom._value).toMatch(/Failed to save backgrounds\.json/);
         expect(model.backgroundsAddNameAtom._value).toBe("Mine");
+    });
+
+    it("applying a background to the tab surfaces an RPC failure instead of rejecting", async () => {
+        const { model } = await makeModel({}, { failSetMeta: true });
+        await expect(model.applyBackgroundToTab("bg@x")).resolves.toBeUndefined();
+        expect(model.errorMessageAtom._value).toMatch(/Failed to apply background: rpc down/);
     });
 });
 
