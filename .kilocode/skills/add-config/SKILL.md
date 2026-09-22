@@ -1,15 +1,15 @@
 ---
 name: add-config
-description: Guide for adding new configuration settings to Wave Terminal. Use when adding a new setting to the configuration system, implementing a new config key, or adding user-customizable settings.
+description: Guide for adding new configuration settings to RemoteTerm. Use when adding a new setting to the configuration system, implementing a new config key, or adding user-customizable settings.
 ---
 
-# Adding a New Configuration Setting to Wave Terminal
+# Adding a New Configuration Setting to RemoteTerm
 
-This guide explains how to add a new configuration setting to Wave Terminal's hierarchical configuration system.
+This guide explains how to add a new configuration setting to RemoteTerm's hierarchical configuration system.
 
 ## Configuration System Overview
 
-Wave Terminal uses a hierarchical configuration system with:
+RemoteTerm uses a hierarchical configuration system with:
 
 1. **Go Struct Definitions** - Type-safe configuration structure in `pkg/wconfig/settingsconfig.go`
 2. **JSON Schema** - Auto-generated validation schema in `schema/settings.json`

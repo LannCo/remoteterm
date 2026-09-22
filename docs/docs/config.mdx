@@ -39,7 +39,7 @@ wsh editconfig
 | app:defaultnewblock                  | string   | Sets the default new block (Cmd:n, Cmd:d). "term" for terminal block, "launcher" for launcher block (default = "term")                                                                                                                                        |
 | app:showoverlayblocknums             | bool     | Set to false to disable the Ctrl+Shift block number overlay that appears when holding Ctrl+Shift (defaults to true)                                                                                                                                           |
 | app:ctrlvpaste                       | bool     | On Windows/Linux, when null (default) uses Control+V on Windows only. Set to true to force Control+V on all non-macOS platforms, false to disable the accelerator. macOS always uses Command+V regardless of this setting                                     |
-| app:confirmquit <VersionBadge version="v0.14" />                     | bool     | Set to false to disable the quit confirmation dialog when closing Wave Terminal (defaults to true, requires app restart)                                                                                                                                      |
+| app:confirmquit <VersionBadge version="v0.14" />                     | bool     | Set to false to disable the quit confirmation dialog when closing RemoteTerm (defaults to true, requires app restart)                                                                                                                                      |
 | app:disablectrlshiftarrows <VersionBadge version="v0.14" />          | bool     | Set to true to disable Ctrl+Shift block-navigation keybindings (`Arrow` and `h/j/k/l`) (defaults to false)                                                                                                                                                    |
 | app:disablectrlshiftdisplay <VersionBadge version="v0.14" />         | bool     | Set to true to disable the Ctrl+Shift visual indicator display (defaults to false)                                                                                                                                                                            |
 | app:focusfollowscursor <VersionBadge version="v0.14" />              | string   | Controls whether block focus follows cursor movement: `"off"` (default), `"on"` (all blocks), or `"term"` (terminal blocks only)                                                                                                                             |
@@ -119,7 +119,7 @@ For reference, this is the current default configuration (v0.14.0):
     "conn:askbeforewshinstall": true,
     "conn:wshenabled": true,
     "editor:minimapenabled": true,
-    "web:defaulturl": "https://github.com/wavetermdev/waveterm",
+    "web:defaulturl": "https://remoteterm.dev",
     "web:defaultsearch": "https://www.google.com/search?q={query}",
     "window:tilegapsize": 3,
     "window:maxtabcachesize": 10,
@@ -200,23 +200,23 @@ Each bookmark follows this structure (only `url` is required):
     "url": "https://claude.ai",
     "title": "Claude AI"
   },
-  "bookmark@wave": {
-    "url": "https://waveterm.dev",
-    "title": "Wave Terminal",
+  "bookmark@remoteterm": {
+    "url": "https://remoteterm.dev",
+    "title": "RemoteTerm",
     "display:order": -1
   },
-  "bookmark@wave-github": {
-    "url": "https://github.com/wavetermdev/waveterm",
-    "title": "Wave Github",
+  "bookmark@remoteterm-github": {
+    "url": "https://github.com/LannCo/remoteterm",
+    "title": "RemoteTerm GitHub",
     "iconurl": "https://github.githubassets.com/favicons/favicon-dark.png"
   },
   "bookmark@chatgpt": {
     "url": "https://chatgpt.com",
     "iconurl": "https://cdn.oaistatic.com/assets/favicon-miwirzcw.ico"
   },
-  "bookmark@wave-pulls": {
-    "url": "https://github.com/wavetermdev/waveterm/pulls",
-    "title": "Wave Pull Requests",
+  "bookmark@remoteterm-pulls": {
+    "url": "https://github.com/LannCo/remoteterm/pulls",
+    "title": "RemoteTerm Pull Requests",
     "iconurl": "https://github.githubassets.com/favicons/favicon-dark.png"
   }
 }
@@ -241,7 +241,7 @@ the block's metadata key `term:theme`. This uses the JSON key value as the ident
 wsh setmeta this term:theme="default-dark"
 ```
 
-Here is an example of defining a full terminal theme. All of the built-in themes are defined here: https://github.com/wavetermdev/waveterm/blob/main/pkg/wconfig/defaultconfig/termthemes.json (if you'd like to add a popular terminal theme, please submit a PR!)
+Here is an example of defining a full terminal theme. All of the built-in themes are defined here: https://github.com/LannCo/remoteterm/blob/main/pkg/wconfig/defaultconfig/termthemes.json (if you'd like to add a popular terminal theme, please submit a PR!)
 
 ```json
 {

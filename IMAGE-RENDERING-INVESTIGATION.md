@@ -1,8 +1,8 @@
-# Image Rendering Investigation: WaveTerm + @xterm/addon-image
+# Image Rendering Investigation: RemoteTerm + @xterm/addon-image
 
 ## Goal
 
-Enable inline image rendering in WaveTerm's terminal using `@xterm/addon-image`, which supports Sixel, iTerm2 IIP, and Kitty graphics protocols. This would allow tools like `chafa`, `imgcat`, and `pi-tui` to display images in the terminal.
+Enable inline image rendering in RemoteTerm's terminal using `@xterm/addon-image`, which supports Sixel, iTerm2 IIP, and Kitty graphics protocols. This would allow tools like `chafa`, `imgcat`, and `pi-tui` to display images in the terminal.
 
 ## Current State
 
@@ -12,7 +12,7 @@ Enable inline image rendering in WaveTerm's terminal using `@xterm/addon-image`,
 
 ## Architecture
 
-- **WaveTerm**: Electron app, frontend uses `@xterm/xterm@6.1.0-beta.287`
+- **RemoteTerm**: Electron app, frontend uses `@xterm/xterm@6.1.0-beta.287`
 - **@xterm/addon-image@0.10.0-beta.287**: Provides Sixel/IIP/Kitty support
 - **xterm.js has TWO parsers**:
   - `terminal.parser` (public API) - what `terminal.write()` dispatches through
@@ -112,7 +112,7 @@ registerOscHandler(id, callback) {
 
 ## Reinit Wave
 
-WaveTerm has a "Reinit Wave" event during startup that re-initializes the UI. This may destroy/recreate the terminal instance. Need to verify if the terminal object survives or is replaced.
+RemoteTerm has a "Reinit Wave" event during startup that re-initializes the UI. This may destroy/recreate the terminal instance. Need to verify if the terminal object survives or is replaced.
 
 ## Open Questions for Research
 
@@ -135,4 +135,4 @@ WaveTerm has a "Reinit Wave" event during startup that re-initializes the UI. Th
 Published: `@whoisjeremylam/pi-waveterm-images@1.0.1`
 - Detects `TERM_PROGRAM=waveterm`
 - Enables kitty protocol via `setCapabilities()`
-- Requires the WaveTerm fork with ImageAddon
+- Requires the RemoteTerm fork with ImageAddon

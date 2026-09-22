@@ -1,4 +1,4 @@
-# Wave Terminal Focus System - Layout State Flow
+# RemoteTerm Focus System - Layout State Flow
 
 This document explains how focus state changes in the layout system propagate through the application to update both the visual focus ring and physical DOM focus.
 

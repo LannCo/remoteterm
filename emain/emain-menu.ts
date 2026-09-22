@@ -145,7 +145,7 @@ function makeFileMenu(
     const featureWaveAppBuilder = fullConfig?.settings?.["feature:waveappbuilder"];
     if (isDev || featureWaveAppBuilder) {
         fileMenu.splice(1, 0, {
-            label: "New WaveApp Builder Window",
+            label: "New RTApp Builder Window",
             accelerator: unamePlatform === "darwin" ? "Command+Shift+B" : "Alt+Shift+B",
             click: () => openBuilderWindow(""),
         });
@@ -172,7 +172,7 @@ function makeFileMenu(
 function makeAppMenuItems(webContents: electron.WebContents): Electron.MenuItemConstructorOptions[] {
     const appMenuItems: Electron.MenuItemConstructorOptions[] = [
         {
-            label: "About Wave Terminal",
+            label: "About RemoteTerm",
             click: (_, window) => {
                 (getWindowWebContents(window) ?? webContents)?.send("menu-item-about");
             },

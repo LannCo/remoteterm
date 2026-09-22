@@ -1,5 +1,12 @@
 # Building for release
 
+> **Note:** This document describes Wave Terminal's own release pipeline (GitHub Actions
+> workflows, the `waveterm-github-artifacts` S3 bucket, and the Homebrew/WinGet/Chocolatey/Snap
+> publishing steps, including the "Wave Release Bot" service account). Whether any of this
+> infrastructure exists for this fork under the RemoteTerm name has not been confirmed — treat
+> it as inherited/aspirational documentation of the upstream process, not a working runbook for
+> this fork, until the repo owner confirms which parts (if any) apply here.
+
 ## Step-by-step guide
 
 1. Go to the [Actions tab](https://github.com/wavetermdev/waveterm/actions) and select "Bump Version" from the left sidebar.
