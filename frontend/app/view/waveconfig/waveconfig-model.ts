@@ -6,9 +6,12 @@ import { globalStore } from "@/app/store/jotaiStore";
 import type { TabModel } from "@/app/store/tab-model";
 import { makeORef } from "@/app/store/wos";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { ConnectionsContent } from "@/app/view/waveconfig/connectionscontent";
 import { SecretsContent } from "@/app/view/waveconfig/secretscontent";
 import { WaveConfigView } from "@/app/view/waveconfig/waveconfig";
 import type { WaveConfigEnv } from "@/app/view/waveconfig/waveconfigenv";
+import { WidgetsContent } from "@/app/view/waveconfig/widgetscontent";
+import { shouldIncludeWidgetForWorkspace, sortByDisplayOrder } from "@/app/workspace/widgetfilter";
 import { base64ToString, stringToBase64 } from "@/util/util";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
 import type * as MonacoTypes from "monaco-editor";
@@ -32,6 +35,10 @@ export type ConfigFile = {
 
 export const SecretNameRegex = /^[A-Za-z][A-Za-z0-9_]*$/;
 
+// Mirrors the Go userHostRe in pkg/remote/connutil.go ParseOpts() — keep in sync.
+export const ConnectionQuickAddRegex =
+    /^([a-zA-Z0-9][a-zA-Z0-9._@-]*@)?([a-zA-Z0-9][a-zA-Z0-9.-]*)(?::([0-9]+))?$/;
+
 function makeConfigFiles(isWindows: boolean): ConfigFile[] {
     return [
         {
@@ -48,6 +55,7 @@ function makeConfigFiles(isWindows: boolean): ConfigFile[] {
             docsUrl: "https://docs.waveterm.dev/connections",
             description: isWindows ? "SSH hosts and WSL distros" : "SSH hosts",
             hasJsonView: true,
+            visualComponent: ConnectionsContent,
         },
         {
             name: "Sidebar Widgets",
@@ -55,6 +63,7 @@ function makeConfigFiles(isWindows: boolean): ConfigFile[] {
             language: "json",
             docsUrl: "https://docs.waveterm.dev/customwidgets",
             hasJsonView: true,
+            visualComponent: WidgetsContent,
         },
         {
             name: "Tab Backgrounds",
@@ -120,6 +129,19 @@ export class WaveConfigViewModel implements ViewModel {
     storageBackendErrorAtom: PrimitiveAtom<string | null>;
     secretValueRef: HTMLTextAreaElement | null = null;
 
+    connectionsViewAtom: PrimitiveAtom<"hosts" | "keychain">;
+    connectionsSearchAtom: PrimitiveAtom<string>;
+    connectionsQuickAddOpenAtom: PrimitiveAtom<boolean>;
+    connectionsQuickAddValueAtom: PrimitiveAtom<string>;
+    connectionsQuickAddErrorAtom: PrimitiveAtom<string | null>;
+    connectionNamesAtom: Atom<string[]>;
+    connStatusMapAtom: Atom<Map<string, ConnStatus>>;
+
+    widgetsMapAtom: Atom<{ [key: string]: WidgetConfigType }>;
+    widgetsOrderedAtom: Atom<[string, WidgetConfigType][]>;
+    widgetsPreviewAtom: Atom<WidgetConfigType[]>;
+    widgetsWriteQueueAtom: PrimitiveAtom<Promise<void>>;
+
     constructor({ blockId, nodeModel, tabModel, waveEnv }: ViewModelInitType) {
         this.blockId = blockId;
         this.nodeModel = nodeModel;
@@ -158,6 +180,44 @@ export class WaveConfigViewModel implements ViewModel {
         this.newSecretNameAtom = atom<string>("");
         this.newSecretValueAtom = atom<string>("");
         this.storageBackendErrorAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+
+        this.connectionsViewAtom = atom<"hosts" | "keychain">("hosts");
+        this.connectionsSearchAtom = atom<string>("");
+        this.connectionsQuickAddOpenAtom = atom<boolean>(false);
+        this.connectionsQuickAddValueAtom = atom<string>("");
+        this.connectionsQuickAddErrorAtom = atom<string | null>(null) as PrimitiveAtom<string | null>;
+        this.connectionNamesAtom = atom((get) => {
+            const fullConfig = get(this.env.atoms.fullConfigAtom);
+            return Object.keys(fullConfig?.connections ?? {}).filter((name) => name !== "");
+        });
+        this.connStatusMapAtom = atom((get) => {
+            const statuses = get(this.env.atoms.allConnStatus);
+            const map = new Map<string, ConnStatus>();
+            for (const status of statuses ?? []) {
+                map.set(status.connection, status);
+            }
+            return map;
+        });
+
+        this.widgetsMapAtom = atom((get) => {
+            const fullConfig = get(this.env.atoms.fullConfigAtom);
+            return fullConfig?.widgets ?? {};
+        });
+        this.widgetsOrderedAtom = atom((get) => {
+            const widgetsMap = get(this.widgetsMapAtom);
+            const sorted = sortByDisplayOrder(widgetsMap);
+            const keyByWidget = new Map(Object.entries(widgetsMap).map(([key, widget]) => [widget, key] as const));
+            return sorted.map((widget) => [keyByWidget.get(widget), widget] as [string, WidgetConfigType]);
+        });
+        this.widgetsPreviewAtom = atom((get) => {
+            const widgetsMap = get(this.widgetsMapAtom);
+            const workspaceId = get(this.env.atoms.workspaceId);
+            const filtered = Object.fromEntries(
+                Object.entries(widgetsMap).filter(([, widget]) => shouldIncludeWidgetForWorkspace(widget, workspaceId))
+            );
+            return sortByDisplayOrder(filtered);
+        });
+        this.widgetsWriteQueueAtom = atom<Promise<void>>(Promise.resolve());
 
         this.checkPresetsJsonExists();
         this.initialize();
@@ -525,6 +585,156 @@ export class WaveConfigViewModel implements ViewModel {
         } finally {
             globalStore.set(this.isLoadingAtom, false);
         }
+    }
+
+    openConnectionQuickAdd() {
+        globalStore.set(this.connectionsQuickAddOpenAtom, true);
+        globalStore.set(this.connectionsQuickAddValueAtom, "");
+        globalStore.set(this.connectionsQuickAddErrorAtom, null);
+    }
+
+    closeConnectionQuickAdd() {
+        globalStore.set(this.connectionsQuickAddOpenAtom, false);
+        globalStore.set(this.connectionsQuickAddValueAtom, "");
+        globalStore.set(this.connectionsQuickAddErrorAtom, null);
+    }
+
+    async submitConnectionQuickAdd() {
+        const value = globalStore.get(this.connectionsQuickAddValueAtom).trim();
+        if (!value) {
+            return;
+        }
+        if (!ConnectionQuickAddRegex.test(value)) {
+            globalStore.set(
+                this.connectionsQuickAddErrorAtom,
+                "Invalid format: expected user@host or user@host:port"
+            );
+            return;
+        }
+        globalStore.set(this.connectionsQuickAddErrorAtom, null);
+        try {
+            await this.env.rpc.SetConnectionsConfigCommand(TabRpcClient, { host: value, metamaptype: {} });
+            globalStore.set(this.connectionsQuickAddValueAtom, "");
+        } catch (error) {
+            globalStore.set(this.connectionsQuickAddErrorAtom, `Failed to add connection: ${error.message}`);
+        }
+    }
+
+    // Reads the user's own widgets.json exactly as the Raw JSON tab does (unmerged —
+    // no built-in defaultconfig/widgets.json entries). Writes must be computed against
+    // this, not against fullConfig.widgets, or every touched edit would silently fork
+    // every currently-effective default widget into the user's file.
+    //
+    // Returns {} for a genuinely-missing file (first-ever widget edit — empty base is
+    // correct), or null if the check/read/parse failed for any other reason (RPC
+    // hiccup, permissions, malformed existing JSON) — callers must treat null as
+    // "abort the write", never as "empty file", or a transient failure on a populated
+    // file would silently wipe every other customized widget.
+    async readRawWidgetsFile(): Promise<{ [key: string]: WidgetConfigType } | null> {
+        const fullPath = `${this.configDir}/widgets.json`;
+        try {
+            const fileInfo = await this.env.rpc.FileInfoCommand(TabRpcClient, {
+                info: { path: fullPath },
+            });
+            if (fileInfo.notfound) {
+                return {};
+            }
+        } catch (err) {
+            globalStore.set(this.errorMessageAtom, `Failed to check widgets.json: ${err.message || String(err)}`);
+            return null;
+        }
+
+        try {
+            const fileData = await this.env.rpc.FileReadCommand(TabRpcClient, {
+                info: { path: fullPath },
+            });
+            const content = fileData?.data64 ? base64ToString(fileData.data64) : "";
+            if (content.trim() === "") {
+                return {};
+            }
+            const parsed = JSON.parse(content);
+            if (typeof parsed !== "object" || parsed == null || Array.isArray(parsed)) {
+                globalStore.set(this.errorMessageAtom, "widgets.json content is not a valid object");
+                return null;
+            }
+            return parsed;
+        } catch (err) {
+            globalStore.set(this.errorMessageAtom, `Failed to read widgets.json: ${err.message || String(err)}`);
+            return null;
+        }
+    }
+
+    // Merges only the touched widget key(s) into the raw file (each written in full,
+    // per Wave's whole-key-replace merge semantics for the widgets map) and leaves
+    // every other key exactly as it already is on disk. Writes are serialized through
+    // widgetsWriteQueueAtom so a toggle and a drag-drop landing close together can't
+    // race: each write's read-then-merge waits for the previous write to finish first.
+    async persistWidgetPatch(updates: { [key: string]: WidgetConfigType }) {
+        if (Object.keys(updates).length === 0) {
+            return;
+        }
+        const queue = globalStore.get(this.widgetsWriteQueueAtom);
+        const nextWrite = queue.then(() => this.writeWidgetPatch(updates));
+        globalStore.set(this.widgetsWriteQueueAtom, nextWrite);
+        await nextWrite;
+    }
+
+    async writeWidgetPatch(updates: { [key: string]: WidgetConfigType }) {
+        globalStore.set(this.errorMessageAtom, null);
+        const rawContent = await this.readRawWidgetsFile();
+        if (rawContent == null) {
+            return;
+        }
+        try {
+            const merged = { ...rawContent, ...updates };
+            const fullPath = `${this.configDir}/widgets.json`;
+            const formatted = JSON.stringify(merged, null, 2);
+            await this.env.rpc.FileWriteCommand(TabRpcClient, {
+                info: { path: fullPath },
+                data64: stringToBase64(formatted),
+            });
+            const selectedFile = globalStore.get(this.selectedFileAtom);
+            if (selectedFile?.path === "widgets.json") {
+                globalStore.set(this.originalContentAtom, formatted);
+                globalStore.set(this.fileContentAtom, formatted);
+            }
+        } catch (err) {
+            globalStore.set(this.errorMessageAtom, `Failed to save widgets.json: ${err.message || String(err)}`);
+        }
+    }
+
+    // Assigns the moved widget a display:order strictly between its new neighbors'
+    // existing values (fractional indexing) so a drag only ever touches the one
+    // widget that moved — neighbors keep their current order untouched.
+    async reorderWidget(movedKey: string, newIndex: number, orderedKeys: string[]) {
+        const widgetsMap = globalStore.get(this.widgetsMapAtom);
+        const widget = widgetsMap[movedKey];
+        if (widget == null) return;
+
+        const prevKey = orderedKeys[newIndex - 1];
+        const nextKey = orderedKeys[newIndex + 1];
+        const prevOrder = prevKey != null ? (widgetsMap[prevKey]?.["display:order"] ?? 0) : null;
+        const nextOrder = nextKey != null ? (widgetsMap[nextKey]?.["display:order"] ?? 0) : null;
+
+        let newOrder: number;
+        if (prevOrder != null && nextOrder != null) {
+            newOrder = (prevOrder + nextOrder) / 2;
+        } else if (prevOrder != null) {
+            newOrder = prevOrder + 1;
+        } else if (nextOrder != null) {
+            newOrder = nextOrder - 1;
+        } else {
+            newOrder = 0;
+        }
+
+        await this.persistWidgetPatch({ [movedKey]: { ...widget, "display:order": newOrder } });
+    }
+
+    async toggleWidgetHidden(key: string) {
+        const widgetsMap = globalStore.get(this.widgetsMapAtom);
+        const widget = widgetsMap[key];
+        if (widget == null) return;
+        await this.persistWidgetPatch({ [key]: { ...widget, "display:hidden": !widget["display:hidden"] } });
     }
 
     giveFocus(): boolean {

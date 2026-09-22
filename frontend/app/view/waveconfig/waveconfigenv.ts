@@ -16,9 +16,13 @@ export type WaveConfigEnv = WaveEnvSubset<{
         GetSecretsLinuxStorageBackendCommand: WaveEnv["rpc"]["GetSecretsLinuxStorageBackendCommand"];
         GetSecretsNamesCommand: WaveEnv["rpc"]["GetSecretsNamesCommand"];
         GetSecretsCommand: WaveEnv["rpc"]["GetSecretsCommand"];
-        SetSecretsCommand: WaveEnv["rpc"]["SetSecretsCommand"];    };
+        SetSecretsCommand: WaveEnv["rpc"]["SetSecretsCommand"];
+        SetConnectionsConfigCommand: WaveEnv["rpc"]["SetConnectionsConfigCommand"];
+    };
     atoms: {
         fullConfigAtom: WaveEnv["atoms"]["fullConfigAtom"];
+        allConnStatus: WaveEnv["atoms"]["allConnStatus"];
+        workspaceId: WaveEnv["atoms"]["workspaceId"];
     };
     getBlockMetaKeyAtom: MetaKeyAtomFnType<"file">;
     isWindows: WaveEnv["isWindows"];
