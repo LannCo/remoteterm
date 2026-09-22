@@ -170,12 +170,12 @@ func NumToString[T any](value T) (string, bool) {
 // Returns the converted value and a bool indicating if the conversion was successful
 func FromFloat64[T any](val float64) (T, bool) {
 	var zero T
-	
+
 	// Check for NaN or infinity
 	if math.IsNaN(val) || math.IsInf(val, 0) {
 		return zero, false
 	}
-	
+
 	switch any(zero).(type) {
 	case int:
 		if val != float64(int64(val)) || val < math.MinInt || val > math.MaxInt {
