@@ -1265,9 +1265,7 @@ const FieldControl = memo(({ schema, model, settings, isSet }: FieldControlProps
     // this key can be applied out of order; send the next only after the previous resolves.
     // Reset shares the queue, or a spin write still queued behind it would undo it.
     const write = (value: unknown): Promise<boolean> => {
-        const sent = writeQueueRef.current.then(() =>
-            model.setGeneralSetting({ [schema.key]: value } as SettingsType)
-        );
+        const sent = writeQueueRef.current.then(() => model.setGeneralSetting({ [schema.key]: value } as SettingsType));
         writeQueueRef.current = sent.catch(() => {});
         return sent;
     };
