@@ -2033,6 +2033,7 @@ func doReconnectJob(ctx context.Context, jobId string, rtOpts *remotetermobj.Run
 		if restartErr != nil {
 			log.Printf("[job:%s] stream restart for Connected-but-no-stream failed: %v (marking Disconnected so it is retried)", jobId, restartErr)
 			SetJobConnStatus(jobId, JobConnStatus_Disconnected)
+			sendBlockJobStatusEventByJob(ctx, job)
 		}
 		return restartErr
 	}
