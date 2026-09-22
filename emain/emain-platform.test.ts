@@ -508,6 +508,26 @@ describe.skipIf(process.platform === "win32")("running legacy instance", () => {
         }
     );
 
+    // The legacy app called itself "Wave Terminal" ("About Wave Terminal"), never "WaveTerm".
+    it.each([
+        ["confirmed", "/opt/Wave/waveterm"],
+        ["unconfirmed", "/usr/bin/sleep"],
+    ])("names the legacy app Wave Terminal in the %s dialog", async (_kind, exe) => {
+        makePendingRoots();
+        writeSingletonLock(`${os.hostname()}-${LegacyPid}`);
+        mockKill();
+        mockProcessIdentity(exe);
+        setPlatform("linux");
+        const mod = await loadPlatform(true);
+        expect(await mod.resolveLegacyInstanceBlock()).toBe(false);
+        const { title, message, detail } = showMessageBox.mock.calls[0][0];
+        expect(title).toMatch(/^Wave Terminal /);
+        expect(message).toContain("Wave Terminal");
+        for (const text of [title, message, detail]) {
+            expect(text).not.toMatch(/WaveTerm\b/);
+        }
+    });
+
     it("migrates past a stale lock whose pid is gone", async () => {
         makePendingRoots();
         writeSingletonLock(`${os.hostname()}-${LegacyPid}`);

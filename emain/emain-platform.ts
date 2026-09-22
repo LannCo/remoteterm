@@ -263,10 +263,10 @@ export async function resolveLegacyInstanceBlock(): Promise<boolean> {
         await dialog.showMessageBox({
             type: "warning",
             buttons: ["Quit"],
-            title: "WaveTerm Is Still Running",
-            message: "Quit WaveTerm, then relaunch RemoteTerm.",
+            title: "Wave Terminal Is Still Running",
+            message: "Quit Wave Terminal, then relaunch RemoteTerm.",
             detail:
-                "RemoteTerm needs to move your WaveTerm data to its new location and cannot do that while WaveTerm is running.\n\n" +
+                "RemoteTerm needs to move your Wave Terminal data to its new location and cannot do that while Wave Terminal is running.\n\n" +
                 `${block.reason}.`,
         });
         return false;
@@ -276,12 +276,12 @@ export async function resolveLegacyInstanceBlock(): Promise<boolean> {
         buttons: ["Quit", "Migrate anyway"],
         defaultId: 0,
         cancelId: 0,
-        title: "WaveTerm May Still Be Running",
-        message: "RemoteTerm could not confirm that WaveTerm has quit.",
+        title: "Wave Terminal May Still Be Running",
+        message: "RemoteTerm could not confirm that Wave Terminal has quit.",
         detail:
             `${block.reason}.\n\n` +
-            "If WaveTerm is running, quit it and relaunch RemoteTerm: moving its data while it runs can break it. " +
-            "If you are sure WaveTerm is not running (for example after a crash), choose Migrate anyway.",
+            "If Wave Terminal is running, quit it and relaunch RemoteTerm: moving its data while it runs can break it. " +
+            "If you are sure Wave Terminal is not running (for example after a crash), choose Migrate anyway.",
     });
     if (response !== 1) {
         return false;
