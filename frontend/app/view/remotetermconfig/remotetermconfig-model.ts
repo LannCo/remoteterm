@@ -682,9 +682,10 @@ export class RemoteTermConfigViewModel implements ViewModel {
         }
     }
 
-    // settings.json merges per-top-level-key server-side (SetBaseConfigValue), so a single-key
-    // write here is already minimal-diff -- no read-modify-write queue needed the way widgets/
-    // backgrounds need one. `null` clears a key back to its default (MetaMapType merge semantics).
+    // settings.json merges per-top-level-key server-side (SetBaseConfigValue holds the config lock
+    // across its read-modify-write), so a single-key write here is already minimal-diff and safe
+    // against concurrent writes -- no client-side queue needed the way widgets/backgrounds need
+    // one. `null` clears a key back to its default (MetaMapType merge semantics).
     async setGeneralSetting(patch: SettingsType) {
         globalStore.set(this.errorMessageAtom, null);
         try {
