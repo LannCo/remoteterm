@@ -98,6 +98,8 @@ describe("NumberControl interaction", () => {
         await user.clear(c.input());
         await user.type(c.input(), "20");
         await user.click(c.up());
+        // Mouse down on a spin button must not take focus from the input (caret, arrow keys).
+        expect(document.activeElement).toBe(c.input());
         await c.settled();
         await c.eventsLanded();
         expect(c.writes()).toEqual([21]);
@@ -111,6 +113,7 @@ describe("NumberControl interaction", () => {
         await user.clear(c.input());
         await user.type(c.input(), "20");
         await user.click(c.down());
+        expect(document.activeElement).toBe(c.input());
         await c.settled();
         await c.eventsLanded();
         expect(c.writes()).toEqual([19]);
