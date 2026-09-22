@@ -22,6 +22,7 @@ let xdgConfig: string;
 let xdgData: string;
 let appDataDir: string;
 const showMessageBox = vi.fn();
+const showErrorBox = vi.fn();
 const savedEnv = { ...process.env };
 const savedPlatform = Object.getOwnPropertyDescriptor(process, "platform");
 
@@ -46,7 +47,7 @@ function mockElectron(isPackaged: boolean) {
             whenReady: async () => {},
             runningUnderARM64Translation: false,
         },
-        dialog: { showMessageBoxSync: () => 0, showMessageBox },
+        dialog: { showMessageBoxSync: () => 0, showMessageBox, showErrorBox },
         ipcMain: { on: () => {} },
         shell: { openExternal: async () => {} },
     }));
@@ -70,6 +71,7 @@ beforeEach(() => {
     vi.resetModules();
     showMessageBox.mockReset();
     showMessageBox.mockResolvedValue({ response: 0 });
+    showErrorBox.mockReset();
     tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "rt-emain-platform-"));
     xdgConfig = path.join(tmpHome, ".config");
     xdgData = path.join(tmpHome, ".local", "share");
@@ -270,6 +272,36 @@ describe("data-dir migration shim", () => {
         expect(fs.existsSync(path.join(newData(), MarkerFileName))).toBe(false);
         expect(mod.getMigrationFailures()).toHaveLength(1);
         expect(mod.getMigrationFailures()[0]).toMatch(/data root migration aborted/);
+        // Nothing was moved, so the server may still start; the failure is reported after it does.
+        expect(await mod.resolveIncompleteMigrationBlock()).toBe(true);
+        expect(showErrorBox).not.toHaveBeenCalled();
+    });
+
+    it("does not start the server after a failed move, so the next launch retries it", async () => {
+        makeDir(legacyData(), { "wave.lock": "", "db/waveterm.db": "live" });
+        const actualFs = await vi.importActual<typeof import("fs")>("fs");
+        vi.doMock("fs", () => ({
+            ...actualFs,
+            renameSync: (src: string, dest: string) => {
+                if (src === legacyData()) {
+                    throw Object.assign(new Error(`EACCES: rename '${src}'`), { code: "EACCES" });
+                }
+                return actualFs.renameSync(src, dest);
+            },
+        }));
+        let mod = await loadPlatform(true);
+        expect(mod.getMigrationFailures()).toHaveLength(1);
+        expect(await mod.resolveIncompleteMigrationBlock()).toBe(false);
+        expect(showErrorBox).toHaveBeenCalledTimes(1);
+        expect(showErrorBox.mock.calls[0][1]).toContain(mod.getMigrationFailures()[0]);
+
+        vi.doUnmock("fs");
+        vi.resetModules();
+        showErrorBox.mockReset();
+        mod = await loadPlatform(true);
+        expect(await mod.resolveIncompleteMigrationBlock()).toBe(true);
+        expect(fs.readFileSync(path.join(newData(), "db/waveterm.db"), "utf8")).toBe("live");
+        expect(mod.getMigrationFailures()).toEqual([]);
     });
 
     describe("ENOENT from rename", () => {
@@ -739,11 +771,19 @@ describe("interrupted data-root merge", () => {
         expect(fs.existsSync(path.join(legacyData(), "wave.lock"))).toBe(false);
         expect(fs.readFileSync(path.join(legacyData(), "db/waveterm.db"), "utf8")).toBe("live");
         expect(fs.existsSync(path.join(newData(), MarkerFileName))).toBe(false);
+        // The server would create an empty db/ in the half-merged destination.
+        expect(await mod.resolveIncompleteMigrationBlock()).toBe(false);
+        expect(showErrorBox).toHaveBeenCalledTimes(1);
+        expect(showErrorBox.mock.calls[0][1]).toContain(mod.getMigrationFailures()[0]);
+        expect(fs.existsSync(path.join(newData(), "db"))).toBe(false);
 
         vi.doUnmock("fs");
         vi.resetModules();
+        showErrorBox.mockReset();
         mod = await loadPlatform(true);
         expect(mod.getMigrationFailures()).toEqual([]);
+        expect(await mod.resolveIncompleteMigrationBlock()).toBe(true);
+        expect(showErrorBox).not.toHaveBeenCalled();
         expect(fs.readFileSync(path.join(newData(), "wave.lock"), "utf8")).toBe("legacy-lock");
         expect(fs.readFileSync(path.join(newData(), "db/waveterm.db"), "utf8")).toBe("live");
         expect(fs.readFileSync(path.join(newData(), "db/filestore.db"), "utf8")).toBe("files");
@@ -766,17 +806,52 @@ describe("interrupted data-root merge", () => {
         makeDir(newData(), { "rtapp.log": "" });
         let mod = await loadWithFailingDbRename();
         expect(mod.getMigrationFailures()).toHaveLength(1);
-        // Something the server wrote in between must survive the resumed merge.
-        makeDir(newData(), { "db/waveterm.db": "server-wrote-this" });
+        // A file that appeared in the destination in between must survive the resumed merge.
+        makeDir(newData(), { "notes.txt": "dest-notes" });
 
         vi.doUnmock("fs");
         vi.resetModules();
         mod = await loadPlatform(true);
-        expect(fs.readFileSync(path.join(newData(), "db/waveterm.db"), "utf8")).toBe("server-wrote-this");
-        expect(fs.readFileSync(path.join(legacyData(), "db/waveterm.db"), "utf8")).toBe("legacy");
-        expect(fs.readFileSync(path.join(newData(), "notes.txt"), "utf8")).toBe("legacy-notes");
+        expect(fs.readFileSync(path.join(newData(), "notes.txt"), "utf8")).toBe("dest-notes");
+        expect(fs.readFileSync(path.join(legacyData(), "notes.txt"), "utf8")).toBe("legacy-notes");
+        expect(fs.readFileSync(path.join(newData(), "db/waveterm.db"), "utf8")).toBe("legacy");
         expect(mod.getMigrationFailures()).toHaveLength(1);
-        expect(mod.getMigrationFailures()[0]).toContain(path.join("db", "waveterm.db"));
+        expect(mod.getMigrationFailures()[0]).toContain("notes.txt");
+        expect(fs.existsSync(path.join(newData(), MarkerFileName))).toBe(true);
+        expect(await mod.resolveIncompleteMigrationBlock()).toBe(true);
+    });
+
+    // A build without the startup block ran the server after a failed merge, creating an empty db/.
+    it("refuses to resume next to a db/ created after the failed merge and deletes neither", async () => {
+        makeDir(legacyData(), { "wave.lock": "", "db/waveterm.db": "legacy", "notes.txt": "legacy-notes" });
+        makeDir(newData(), { "rtapp.log": "" });
+        let mod = await loadWithFailingDbRename();
+        expect(mod.getMigrationFailures()).toHaveLength(1);
+        makeDir(newData(), { "db/filestore.db": "empty" });
+
+        vi.doUnmock("fs");
+        vi.resetModules();
+        mod = await loadPlatform(true);
+        expect(fs.readFileSync(path.join(newData(), "db/filestore.db"), "utf8")).toBe("empty");
+        expect(fs.readFileSync(path.join(legacyData(), "db/waveterm.db"), "utf8")).toBe("legacy");
+        expect(fs.existsSync(path.join(newData(), "db/waveterm.db"))).toBe(false);
+        expect(fs.existsSync(path.join(newData(), MarkerFileName))).toBe(false);
+        expect(mod.getMigrationFailures()).toHaveLength(1);
+        const failure = mod.getMigrationFailures()[0];
+        expect(failure).toContain(path.join(legacyData(), "db"));
+        expect(failure).toContain(path.join(newData(), "db"));
+        expect(await mod.resolveIncompleteMigrationBlock()).toBe(false);
+        expect(showErrorBox.mock.calls[0][1]).toContain(failure);
+
+        // The user moves the empty database aside, as the message asks.
+        fs.renameSync(path.join(newData(), "db"), path.join(tmpHome, "db-empty"));
+        vi.resetModules();
+        showErrorBox.mockReset();
+        mod = await loadPlatform(true);
+        expect(mod.getMigrationFailures()).toEqual([]);
+        expect(await mod.resolveIncompleteMigrationBlock()).toBe(true);
+        expect(fs.readFileSync(path.join(newData(), "db/waveterm.db"), "utf8")).toBe("legacy");
+        expect(fs.readFileSync(path.join(newData(), "notes.txt"), "utf8")).toBe("legacy-notes");
         expect(fs.existsSync(path.join(newData(), MarkerFileName))).toBe(true);
     });
 });

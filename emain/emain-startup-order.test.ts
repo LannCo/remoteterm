@@ -32,7 +32,7 @@ function containsNode(node: ts.Node, pred: (n: ts.Node) => boolean): boolean {
     return ts.forEachChild(node, (child) => (containsNode(child, pred) ? true : undefined)) ?? false;
 }
 
-function isAwaitedGuardThatReturns(stmt: ts.Statement): boolean {
+function isAwaitedGuardThatReturns(stmt: ts.Statement, guardName: string): boolean {
     if (!ts.isIfStatement(stmt)) {
         return false;
     }
@@ -41,7 +41,7 @@ function isAwaitedGuardThatReturns(stmt: ts.Statement): boolean {
         return false;
     }
     const operand = unwrapParens(cond.operand);
-    if (!ts.isAwaitExpression(operand) || !isCallTo(unwrapParens(operand.expression), "resolveLegacyInstanceBlock")) {
+    if (!ts.isAwaitExpression(operand) || !isCallTo(unwrapParens(operand.expression), guardName)) {
         return false;
     }
     return containsNode(stmt.thenStatement, ts.isReturnStatement);
@@ -51,15 +51,30 @@ function parseEmain(): ts.SourceFile {
     return ts.createSourceFile(EmainPath, fs.readFileSync(EmainPath, "utf8"), ts.ScriptTarget.Latest, true);
 }
 
+function appMainStatements(): ts.NodeArray<ts.Statement> {
+    const appMain = parseEmain().statements.find(
+        (s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && s.name?.text === "appMain"
+    );
+    expect(appMain?.body).toBeDefined();
+    return appMain.body.statements;
+}
+
+function importsFromPlatform(name: string): boolean {
+    return parseEmain().statements.some(
+        (s) =>
+            ts.isImportDeclaration(s) &&
+            ts.isStringLiteral(s.moduleSpecifier) &&
+            s.moduleSpecifier.text === "./emain-platform" &&
+            s.importClause?.namedBindings != null &&
+            ts.isNamedImports(s.importClause.namedBindings) &&
+            s.importClause.namedBindings.elements.some((e) => e.name.text === name)
+    );
+}
+
 describe("emain.ts startup order", () => {
     it("awaits resolveLegacyInstanceBlock() and returns on false before starting the server", () => {
-        const source = parseEmain();
-        const appMain = source.statements.find(
-            (s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && s.name?.text === "appMain"
-        );
-        expect(appMain?.body).toBeDefined();
-        const stmts = appMain.body.statements;
-        const guardIdx = stmts.findIndex(isAwaitedGuardThatReturns);
+        const stmts = appMainStatements();
+        const guardIdx = stmts.findIndex((s) => isAwaitedGuardThatReturns(s, "resolveLegacyInstanceBlock"));
         const srvIdx = stmts.findIndex((s) => containsNode(s, (n) => isCallTo(n, "runRemoteTermSrv")));
         expect(
             guardIdx,
@@ -69,17 +84,24 @@ describe("emain.ts startup order", () => {
         expect(guardIdx).toBeLessThan(srvIdx);
     });
 
-    it("imports resolveLegacyInstanceBlock from emain-platform", () => {
-        const source = parseEmain();
-        const imported = source.statements.some(
-            (s) =>
-                ts.isImportDeclaration(s) &&
-                ts.isStringLiteral(s.moduleSpecifier) &&
-                s.moduleSpecifier.text === "./emain-platform" &&
-                s.importClause?.namedBindings != null &&
-                ts.isNamedImports(s.importClause.namedBindings) &&
-                s.importClause.namedBindings.elements.some((e) => e.name.text === "resolveLegacyInstanceBlock")
-        );
-        expect(imported).toBe(true);
+    // After the legacy-instance guard: "Migrate anyway" runs the migration again inside it.
+    it("awaits resolveIncompleteMigrationBlock() and returns on false after the legacy guard, before the server", () => {
+        const stmts = appMainStatements();
+        const legacyIdx = stmts.findIndex((s) => isAwaitedGuardThatReturns(s, "resolveLegacyInstanceBlock"));
+        const guardIdx = stmts.findIndex((s) => isAwaitedGuardThatReturns(s, "resolveIncompleteMigrationBlock"));
+        const srvIdx = stmts.findIndex((s) => containsNode(s, (n) => isCallTo(n, "runRemoteTermSrv")));
+        expect(
+            guardIdx,
+            "no `if (!(await resolveIncompleteMigrationBlock())) { ...; return; }` in appMain"
+        ).toBeGreaterThanOrEqual(0);
+        expect(guardIdx).toBeGreaterThan(legacyIdx);
+        expect(guardIdx).toBeLessThan(srvIdx);
     });
+
+    it.each([["resolveLegacyInstanceBlock"], ["resolveIncompleteMigrationBlock"]])(
+        "imports %s from emain-platform",
+        (name) => {
+            expect(importsFromPlatform(name)).toBe(true);
+        }
+    );
 });
