@@ -46,7 +46,7 @@ declare global {
         color?: string;
         priority: number;
         pidlinked?: boolean;
-        rotation?: number; // degrees 0-360, applied via CSS transform
+        rotation?: number;
     };
 
     // baseds.BadgeEvent
@@ -354,6 +354,11 @@ declare global {
         fullFile?: boolean;
     };
 
+    // wshrpc.CommandGitLookupCredentialsData
+    type CommandGitLookupCredentialsData = {
+        remote: string;
+    };
+
     // wshrpc.CommandGitPushData
     type CommandGitPushData = {
         dir?: string;
@@ -371,6 +376,14 @@ declare global {
         path: string;
         hunkIndex: number;
         staged: boolean;
+    };
+
+    // wshrpc.CommandGitSaveCredentialsData
+    type CommandGitSaveCredentialsData = {
+        remote: string;
+        username: string;
+        password: string;
+        scope: string;
     };
 
     // wshrpc.CommandGitStageData
@@ -1012,6 +1025,14 @@ declare global {
         output: string;
     };
 
+    // wshrpc.GitCredentials
+    type GitCredentials = {
+        username: string;
+        password: string;
+        found: boolean;
+        scope: string;
+    };
+
     // wshrpc.GitDiffHunk
     type GitDiffHunk = {
         header: string;
@@ -1049,27 +1070,6 @@ declare global {
         authError: string;
         authHost: string;
         authRemote: string;
-    };
-
-    // wshrpc.CommandGitLookupCredentialsData
-    type CommandGitLookupCredentialsData = {
-        remote: string;
-    };
-
-    // wshrpc.GitCredentials
-    type GitCredentials = {
-        username: string;
-        password: string;
-        found: boolean;
-        scope: string;
-    };
-
-    // wshrpc.CommandGitSaveCredentialsData
-    type CommandGitSaveCredentialsData = {
-        remote: string;
-        username: string;
-        password: string;
-        scope: string;
     };
 
     // wshrpc.GitStatusResponse

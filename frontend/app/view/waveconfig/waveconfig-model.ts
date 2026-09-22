@@ -143,12 +143,18 @@ export class WaveConfigViewModel implements ViewModel {
     widgetsMapAtom: Atom<{ [key: string]: WidgetConfigType }>;
     widgetsOrderedAtom: Atom<[string, WidgetConfigType][]>;
     widgetsPreviewAtom: Atom<WidgetConfigType[]>;
-    widgetsWriteQueueAtom: PrimitiveAtom<Promise<void>>;
+    // Plain instance field, not a Jotai atom: Jotai's async-atom/thenable detection
+    // intercepts any atom whose stored value is a Promise, which breaks manual .then()
+    // chaining on the value returned by globalStore.get() -- the continuation silently
+    // never fires. Nothing reads this reactively (no useAtomValue anywhere), so it never
+    // needed to be an atom; it's pure internal write-serialization state.
+    widgetsWriteQueue: Promise<void> = Promise.resolve();
 
     backgroundsMapAtom: Atom<{ [key: string]: BackgroundConfigType }>;
     backgroundsOrderedAtom: Atom<[string, BackgroundConfigType][]>;
     activeTabBackgroundKeyAtom: Atom<string>;
-    backgroundsWriteQueueAtom: PrimitiveAtom<Promise<void>>;
+    // Same reasoning as widgetsWriteQueue above -- not a Jotai atom on purpose.
+    backgroundsWriteQueue: Promise<void> = Promise.resolve();
     backgroundsAddOpenAtom: PrimitiveAtom<boolean>;
     backgroundsAddNameAtom: PrimitiveAtom<string>;
     backgroundsAddBgAtom: PrimitiveAtom<string>;
@@ -237,7 +243,6 @@ export class WaveConfigViewModel implements ViewModel {
             );
             return sortByDisplayOrder(filtered);
         });
-        this.widgetsWriteQueueAtom = atom<Promise<void>>(Promise.resolve());
 
         this.backgroundsMapAtom = atom((get) => {
             const fullConfig = get(this.env.atoms.fullConfigAtom);
@@ -252,7 +257,6 @@ export class WaveConfigViewModel implements ViewModel {
         this.activeTabBackgroundKeyAtom = atom((get) =>
             get(this.env.getTabMetaKeyAtom(this.tabModel.tabId, "tab:background"))
         );
-        this.backgroundsWriteQueueAtom = atom<Promise<void>>(Promise.resolve());
         this.backgroundsAddOpenAtom = atom<boolean>(false);
         this.backgroundsAddNameAtom = atom<string>("");
         this.backgroundsAddBgAtom = atom<string>("");
@@ -761,15 +765,18 @@ export class WaveConfigViewModel implements ViewModel {
     // Merges only the touched widget key(s) into the raw file (each written in full,
     // per Wave's whole-key-replace merge semantics for the widgets map) and leaves
     // every other key exactly as it already is on disk. Writes are serialized through
-    // widgetsWriteQueueAtom so a toggle and a drag-drop landing close together can't
-    // race: each write's read-then-merge waits for the previous write to finish first.
+    // widgetsWriteQueue (a plain field, not an atom -- see its declaration) so a toggle
+    // and a drag-drop landing close together can't race: each write's read-then-merge
+    // waits for the previous write to finish first.
     async persistWidgetPatch(updates: { [key: string]: WidgetConfigType }) {
         if (Object.keys(updates).length === 0) {
             return;
         }
-        const queue = globalStore.get(this.widgetsWriteQueueAtom);
-        const nextWrite = queue.then(() => this.writeWidgetPatch(updates));
-        globalStore.set(this.widgetsWriteQueueAtom, nextWrite);
+        const nextWrite = this.widgetsWriteQueue.then(
+            () => this.writeWidgetPatch(updates),
+            () => this.writeWidgetPatch(updates)
+        );
+        this.widgetsWriteQueue = nextWrite;
         await nextWrite;
     }
 
@@ -873,9 +880,11 @@ export class WaveConfigViewModel implements ViewModel {
         if (Object.keys(updates).length === 0) {
             return;
         }
-        const queue = globalStore.get(this.backgroundsWriteQueueAtom);
-        const nextWrite = queue.then(() => this.writeBackgroundPatch(updates));
-        globalStore.set(this.backgroundsWriteQueueAtom, nextWrite);
+        const nextWrite = this.backgroundsWriteQueue.then(
+            () => this.writeBackgroundPatch(updates),
+            () => this.writeBackgroundPatch(updates)
+        );
+        this.backgroundsWriteQueue = nextWrite;
         await nextWrite;
     }
 
