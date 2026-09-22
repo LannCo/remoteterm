@@ -690,13 +690,15 @@ export class RemoteTermConfigViewModel implements ViewModel {
     // across its read-modify-write), so a single-key write here is already minimal-diff and safe
     // against concurrent writes -- no client-side queue needed the way widgets/backgrounds need
     // one. `null` clears a key back to its default (MetaMapType merge semantics).
-    async setGeneralSetting(patch: SettingsType) {
+    async setGeneralSetting(patch: SettingsType): Promise<boolean> {
         globalStore.set(this.errorMessageAtom, null);
         try {
             await this.env.rpc.SetConfigCommand(TabRpcClient, patch);
             await this.refreshGeneralRawContent();
+            return true;
         } catch (err) {
             globalStore.set(this.errorMessageAtom, `Failed to save setting: ${err.message || String(err)}`);
+            return false;
         }
     }
 

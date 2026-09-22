@@ -4,7 +4,7 @@
 import type { RemoteTermConfigViewModel } from "@/app/view/remotetermconfig/remotetermconfig-model";
 import { cn } from "@/util/util";
 import { useAtomValue, useSetAtom } from "jotai";
-import { memo, useState } from "react";
+import { memo, useRef, useState } from "react";
 
 type ControlType = "toggle" | "segmented" | "select" | "text" | "number" | "slider";
 
@@ -1041,7 +1041,8 @@ interface NumberControlProps {
     min?: number;
     max?: number;
     step?: number;
-    onChange: (value: number) => void;
+    // Resolves false when the write failed, so the control can drop back to the stored value.
+    onChange: (value: number) => Promise<boolean>;
     fieldLabel: string;
     labelledBy: string;
     describedBy?: string;
@@ -1074,31 +1075,66 @@ const NumberControl = memo(
     ({ value, unit, min, max, step = 1, onChange, fieldLabel, labelledBy, describedBy }: NumberControlProps) => {
         const [local, setLocal] = useState(String(value));
         const [dirty, setDirty] = useState(false);
+        // The last value this control wrote; `value` only catches up after the config watcher's
+        // event, so until then the written value, not the stale prop, is what is shown and stepped.
+        const [pending, setPending] = useState<number>(null);
+        const writeQueueRef = useRef<Promise<unknown>>(Promise.resolve());
 
-        if (!dirty && local !== String(value)) {
+        if (pending != null && pending === value) {
+            setPending(null);
+        }
+        if (!dirty && pending == null && local !== String(value)) {
             setLocal(String(value));
         }
 
+        // Each SetConfigCommand runs on its own goroutine server-side, so two in-flight writes for
+        // this key can be applied out of order; send the next only after the previous resolves.
+        const write = (next: number) => {
+            setLocal(String(next));
+            setPending(next);
+            const sent = writeQueueRef.current.then(() => onChange(next));
+            writeQueueRef.current = sent.catch(() => {});
+            sent.then(
+                (ok) => {
+                    if (ok === false) setPending((p) => (p === next ? null : p));
+                },
+                () => setPending((p) => (p === next ? null : p))
+            );
+        };
+
         const commit = () => {
-            setDirty(false);
-            const next = parseNumberInput(local, min, max);
-            if (next == null || next === value) {
-                setLocal(String(value));
+            if (!dirty) {
                 return;
             }
-            setLocal(String(next));
-            onChange(next);
+            setDirty(false);
+            const next = parseNumberInput(local, min, max);
+            const current = pending ?? value;
+            if (next == null || next === current) {
+                setLocal(String(current));
+                return;
+            }
+            write(next);
         };
 
         const bump = (delta: number) => {
             setDirty(false);
-            const next = bumpNumberInput(local, value, delta, min, max);
-            setLocal(String(next));
-            onChange(next);
+            write(bumpNumberInput(local, pending ?? value, delta, min, max));
+        };
+
+        // Commit only when focus leaves the whole control: moving from the input to its own spin
+        // button must not commit the draft, or the click would send a second write stepped from it.
+        const onControlBlur = (e: React.FocusEvent<HTMLDivElement>) => {
+            if (e.currentTarget.contains(e.relatedTarget as Node)) {
+                return;
+            }
+            commit();
         };
 
         return (
-            <div className="flex items-center gap-1 shrink-0 bg-black/25 border border-border rounded-md pl-2.5 pr-1 py-0.5">
+            <div
+                onBlur={onControlBlur}
+                className="flex items-center gap-1 shrink-0 bg-black/25 border border-border rounded-md pl-2.5 pr-1 py-0.5"
+            >
                 <input
                     type="number"
                     value={local}
@@ -1111,7 +1147,6 @@ const NumberControl = memo(
                         setDirty(true);
                         setLocal(e.target.value);
                     }}
-                    onBlur={commit}
                     onKeyDown={(e) => {
                         if (e.key === "Enter") {
                             (e.target as HTMLInputElement).blur();
@@ -1124,6 +1159,7 @@ const NumberControl = memo(
                     <button
                         type="button"
                         aria-label={`Increase ${fieldLabel}`}
+                        onMouseDown={(e) => e.preventDefault()}
                         onClick={() => bump(step)}
                         className="relative w-4 h-[11px] flex items-center justify-center bg-hover rounded-t-sm text-secondary cursor-pointer before:absolute before:-inset-x-1.5 before:-top-2 before:-bottom-0.5 before:content-['']"
                     >
@@ -1132,6 +1168,7 @@ const NumberControl = memo(
                     <button
                         type="button"
                         aria-label={`Decrease ${fieldLabel}`}
+                        onMouseDown={(e) => e.preventDefault()}
                         onClick={() => bump(-step)}
                         className="relative w-4 h-[11px] flex items-center justify-center bg-hover rounded-b-sm text-secondary cursor-pointer mt-px before:absolute before:-inset-x-1.5 before:-top-0.5 before:-bottom-2 before:content-['']"
                     >
