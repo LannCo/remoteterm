@@ -16,7 +16,7 @@ env:
 jobs:
     build-app:
         outputs:
-            version: ${{ steps.set-version.outputs.WAVETERM_VERSION }}
+            version: ${{ steps.set-version.outputs.REMOTETERM_VERSION }}
         strategy:
             matrix:
                 include:
@@ -92,7 +92,7 @@ jobs:
 
             - name: "Set Version"
               id: set-version
-              run: echo "WAVETERM_VERSION=$(task version)" >> "$GITHUB_OUTPUT"
+              run: echo "REMOTETERM_VERSION=$(task version)" >> "$GITHUB_OUTPUT"
               shell: bash
 
             # Windows Code Signing Setup
@@ -193,7 +193,7 @@ jobs:
               uses: softprops/action-gh-release@v2
               with:
                   prerelease: ${{ contains(github.ref_name, '-beta') }}
-                  name: Wave Terminal ${{ github.ref_name }} Release
+                  name: RemoteTerm ${{ github.ref_name }} Release
                   generate_release_notes: true
                   draft: true
                   files: |

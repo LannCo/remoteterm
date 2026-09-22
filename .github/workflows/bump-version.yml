@@ -59,14 +59,14 @@ jobs:
 
             - name: "Bump Version: ${{ inputs.bump }}"
               id: bump-version
-              run: echo "WAVETERM_VERSION=$( task version -- ${{ inputs.bump }} ${{inputs.is-prerelease}} )" >> "$GITHUB_OUTPUT"
+              run: echo "REMOTETERM_VERSION=$( task version -- ${{ inputs.bump }} ${{inputs.is-prerelease}} )" >> "$GITHUB_OUTPUT"
               shell: bash
 
-            - name: "Push version bump: ${{ steps.bump-version.outputs.WAVETERM_VERSION }}"
+            - name: "Push version bump: ${{ steps.bump-version.outputs.REMOTETERM_VERSION }}"
               if: github.ref_protected
               run: |
                   # Create a new commit for the package version bump in package.json
-                  export VERSION=${{ steps.bump-version.outputs.WAVETERM_VERSION }}
+                  export VERSION=${{ steps.bump-version.outputs.REMOTETERM_VERSION }}
                   export MESSAGE="chore: bump package version to $VERSION"
                   export FILE=package.json
                   export BRANCH=${{github.ref_name}}
