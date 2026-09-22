@@ -7,9 +7,9 @@ package wshclient
 
 import (
 	"github.com/LannCo/remoteterm/pkg/baseds"
+	"github.com/LannCo/remoteterm/pkg/vdom"
 	"github.com/LannCo/remoteterm/pkg/remotetermobj"
 	"github.com/LannCo/remoteterm/pkg/rtconfig"
-	"github.com/LannCo/remoteterm/pkg/vdom"
 	"github.com/LannCo/remoteterm/pkg/wps"
 	"github.com/LannCo/remoteterm/pkg/wshrpc"
 	"github.com/LannCo/remoteterm/pkg/wshutil"
@@ -1063,3 +1063,5 @@ func WslStatusCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) ([]wshrpc.ConnSta
 	resp, err := sendRpcRequestCallHelper[[]wshrpc.ConnStatus](w, "wslstatus", nil, opts)
 	return resp, err
 }
+
+
