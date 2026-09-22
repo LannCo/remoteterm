@@ -462,6 +462,52 @@ describe.skipIf(process.platform === "win32")("running legacy instance", () => {
         }
     );
 
+    // Both flavours of the legacy app shared <appData>/waveterm/electron, so the other flavour
+    // holding the lock means this flavour's legacy app is not running.
+    it.each([
+        ["dev", "linux", "/opt/Wave/waveterm"],
+        ["dev", "darwin", "/Applications/Wave.app/Contents/MacOS/Wave"],
+        ["production", "linux", "/home/dev/waveterm/node_modules/electron/dist/electron"],
+        ["production", "darwin", "/w/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"],
+    ] as [string, NodeJS.Platform, string][])(
+        "a %s build migrates while the other flavour holds the lock (%s, %s)",
+        async (flavour, platform, exe) => {
+            const isPackaged = flavour === "production";
+            const suffix = isPackaged ? "" : "-dev";
+            makeDir(path.join(xdgData, `waveterm${suffix}`), { "wave.lock": "", "db/waveterm.db": "legacy" });
+            makeDir(path.join(xdgConfig, `waveterm${suffix}`), { "settings.json": "legacy" });
+            writeSingletonLock(`${os.hostname()}-${LegacyPid}`);
+            mockKill();
+            mockProcessIdentity(exe);
+            setPlatform(platform);
+            const mod = await loadPlatform(isPackaged);
+            expect(await mod.resolveLegacyInstanceBlock()).toBe(true);
+            expect(showMessageBox).not.toHaveBeenCalled();
+            const newDataDir = path.join(xdgData, `remoteterm${suffix}`);
+            expect(fs.readFileSync(path.join(newDataDir, "db/waveterm.db"), "utf8")).toBe("legacy");
+            expect(fs.existsSync(path.join(xdgConfig, `remoteterm${suffix}`, "settings.json"))).toBe(true);
+            expect(mod.getMigrationFailures()).toEqual([]);
+        }
+    );
+
+    it.each([
+        ["linux", "/home/dev/waveterm/node_modules/electron/dist/electron"],
+        ["darwin", "/w/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"],
+    ] as [NodeJS.Platform, string][])(
+        "a dev build is still blocked by the dev legacy app (%s)",
+        async (platform, exe) => {
+            makeDir(path.join(xdgData, "waveterm-dev"), { "wave.lock": "", "db/waveterm.db": "legacy" });
+            writeSingletonLock(`${os.hostname()}-${LegacyPid}`);
+            mockKill();
+            mockProcessIdentity(exe);
+            setPlatform(platform);
+            const mod = await loadPlatform(false);
+            expect(await mod.resolveLegacyInstanceBlock()).toBe(false);
+            expect(showMessageBox.mock.calls[0][0].buttons).toEqual(["Quit"]);
+            expect(fs.existsSync(path.join(xdgData, "waveterm-dev", "db/waveterm.db"))).toBe(true);
+        }
+    );
+
     it("migrates past a stale lock whose pid is gone", async () => {
         makePendingRoots();
         writeSingletonLock(`${os.hostname()}-${LegacyPid}`);

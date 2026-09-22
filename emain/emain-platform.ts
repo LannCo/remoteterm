@@ -146,7 +146,8 @@ export function getMigrationFailures(): string[] {
 }
 
 // The pre-rename app set its name to "waveterm/electron" in both dev and prod builds, so its
-// Electron userData (and Chromium's SingletonLock) is at <appData>/waveterm/electron.
+// Electron userData (and Chromium's SingletonLock) is at <appData>/waveterm/electron. The lock's
+// holder is told apart by its executable (LegacyExecutableNames).
 const LegacyElectronUserDataPath = ["waveterm", "electron"];
 const SingletonLockFileName = "SingletonLock";
 // Basename of the legacy app's main-process executable. electron-builder named the Linux binary
@@ -226,8 +227,14 @@ function checkLegacyInstanceRunning(): LegacyInstanceState {
     if (exe == null) {
         return { confirmedRunning: false, reason: `pid ${pid} in ${lockPath} is running but could not be identified` };
     }
-    const expectedName = LegacyExecutableNames[process.platform]?.[isDev ? "dev" : "prod"];
-    if (path.basename(exe) !== expectedName) {
+    const exeNames = LegacyExecutableNames[process.platform];
+    // Both flavours of the legacy app shared one userData dir and so one SingletonLock: the other
+    // flavour holding it means this flavour, the only one using the roots we move, is not running.
+    if (path.basename(exe) === exeNames?.[isDev ? "prod" : "dev"]) {
+        console.log(`[migration] ${lockPath} is held by the other legacy build (${exe}), not the one being migrated`);
+        return null;
+    }
+    if (path.basename(exe) !== exeNames?.[isDev ? "dev" : "prod"]) {
         return { confirmedRunning: false, reason: `pid ${pid} in ${lockPath} is running ${exe}` };
     }
     return { confirmedRunning: true, reason: `pid ${pid} (${exe}) holds ${lockPath}` };
