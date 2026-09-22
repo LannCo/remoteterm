@@ -944,11 +944,16 @@ export class RemoteTermConfigViewModel implements ViewModel {
     }
 
     async applyBackgroundToTab(key: string | null) {
+        globalStore.set(this.errorMessageAtom, null);
         const oref = makeORef("tab", this.tabModel.tabId);
-        await this.env.rpc.SetMetaCommand(TabRpcClient, {
-            oref,
-            meta: { "bg:*": true, "tab:background": key },
-        });
+        try {
+            await this.env.rpc.SetMetaCommand(TabRpcClient, {
+                oref,
+                meta: { "bg:*": true, "tab:background": key },
+            });
+        } catch (err) {
+            globalStore.set(this.errorMessageAtom, `Failed to apply background: ${err.message || String(err)}`);
+        }
     }
 
     async updateBackgroundField(key: string, field: "bg:opacity" | "bg:blendmode", value: number | string) {
