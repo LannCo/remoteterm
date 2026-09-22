@@ -687,9 +687,10 @@ export class RemoteTermConfigViewModel implements ViewModel {
     }
 
     // settings.json merges per-top-level-key server-side (SetBaseConfigValue holds the config lock
-    // across its read-modify-write), so a single-key write here is already minimal-diff and safe
-    // against concurrent writes -- no client-side queue needed the way widgets/backgrounds need
-    // one. `null` clears a key back to its default (MetaMapType merge semantics).
+    // across its read-modify-write), so concurrent writes to different keys can't lose each other.
+    // Arrival order across RPCs is not guaranteed, so callers issuing several writes to the same key
+    // must serialise them (NumberControl does). `null` clears a key back to its default (MetaMapType
+    // merge semantics).
     async setGeneralSetting(patch: SettingsType): Promise<boolean> {
         globalStore.set(this.errorMessageAtom, null);
         try {
