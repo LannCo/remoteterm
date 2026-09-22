@@ -25,5 +25,6 @@ export type WaveConfigEnv = WaveEnvSubset<{
         workspaceId: WaveEnv["atoms"]["workspaceId"];
     };
     getBlockMetaKeyAtom: MetaKeyAtomFnType<"file">;
+    getTabMetaKeyAtom: MetaKeyAtomFnType<"tab:background">;
     isWindows: WaveEnv["isWindows"];
 }>;
