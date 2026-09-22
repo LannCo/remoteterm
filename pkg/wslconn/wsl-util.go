@@ -16,12 +16,12 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/wavetermdev/waveterm/pkg/blocklogger"
-	"github.com/wavetermdev/waveterm/pkg/genconn"
-	"github.com/wavetermdev/waveterm/pkg/panichandler"
-	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/wsl"
+	"github.com/LannCo/remoteterm/pkg/blocklogger"
+	"github.com/LannCo/remoteterm/pkg/genconn"
+	"github.com/LannCo/remoteterm/pkg/panichandler"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/util/shellutil"
+	"github.com/LannCo/remoteterm/pkg/wsl"
 )
 
 func hasBashInstalled(ctx context.Context, client *wsl.Distro) (bool, error) {
@@ -77,7 +77,7 @@ func GetClientPlatform(ctx context.Context, shell genconn.ShellClient) (string, 
 		return "", "", fmt.Errorf("unexpected output from uname: %s", stdout)
 	}
 	os, arch := normalizeOs(parts[0]), normalizeArch(parts[1])
-	if err := wavebase.ValidateWshSupportedArch(os, arch); err != nil {
+	if err := remotetermbase.ValidateWshSupportedArch(os, arch); err != nil {
 		return "", "", err
 	}
 	return os, arch, nil
@@ -89,7 +89,7 @@ func GetClientPlatformFromOsArchStr(ctx context.Context, osArchStr string) (stri
 		return "", "", fmt.Errorf("unexpected output from uname: %s", osArchStr)
 	}
 	os, arch := normalizeOs(parts[0]), normalizeArch(parts[1])
-	if err := wavebase.ValidateWshSupportedArch(os, arch); err != nil {
+	if err := remotetermbase.ValidateWshSupportedArch(os, arch); err != nil {
 		return "", "", err
 	}
 	return os, arch, nil
@@ -130,7 +130,7 @@ func makeCancellableCommand(ctx context.Context, client *wsl.Distro, cmdTemplate
 }
 
 func CpWshToRemote(ctx context.Context, client *wsl.Distro, clientOs string, clientArch string) error {
-	wshLocalPath, err := shellutil.GetLocalWshBinaryPath(wavebase.WaveVersion, clientOs, clientArch)
+	wshLocalPath, err := shellutil.GetLocalWshBinaryPath(remotetermbase.WaveVersion, clientOs, clientArch)
 	if err != nil {
 		return err
 	}
@@ -151,12 +151,12 @@ func CpWshToRemote(ctx context.Context, client *wsl.Distro, clientOs string, cli
 	// I need to use toSlash here to force unix keybindings
 	// this means we can't guarantee it will work on a remote windows machine
 	var installWords = map[string]string{
-		"installDir":  filepath.ToSlash(filepath.Dir(wavebase.RemoteFullWshBinPath)),
-		"tempPath":    wavebase.RemoteFullWshBinPath + ".temp",
-		"installPath": wavebase.RemoteFullWshBinPath,
+		"installDir":  filepath.ToSlash(filepath.Dir(remotetermbase.RemoteFullWshBinPath)),
+		"tempPath":    remotetermbase.RemoteFullWshBinPath + ".temp",
+		"installPath": remotetermbase.RemoteFullWshBinPath,
 	}
 
-	blocklogger.Infof(ctx, "[conndebug] copying %q to remote server %q\n", wshLocalPath, wavebase.RemoteFullWshBinPath)
+	blocklogger.Infof(ctx, "[conndebug] copying %q to remote server %q\n", wshLocalPath, remotetermbase.RemoteFullWshBinPath)
 	installStepCmds := make(map[string]*CancellableCmd)
 	for cmdName, selectedTemplateRaw := range selectedTemplatesRaw {
 		cancellableCmd, err := makeCancellableCommand(ctx, client, selectedTemplateRaw, installWords)

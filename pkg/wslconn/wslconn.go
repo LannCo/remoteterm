@@ -15,20 +15,20 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/wavetermdev/waveterm/pkg/blocklogger"
-	"github.com/wavetermdev/waveterm/pkg/genconn"
-	"github.com/wavetermdev/waveterm/pkg/panichandler"
-	"github.com/wavetermdev/waveterm/pkg/remote/conncontroller"
-	"github.com/wavetermdev/waveterm/pkg/userinput"
-	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
-	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
-	"github.com/wavetermdev/waveterm/pkg/wps"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
-	"github.com/wavetermdev/waveterm/pkg/wsl"
+	"github.com/LannCo/remoteterm/pkg/blocklogger"
+	"github.com/LannCo/remoteterm/pkg/genconn"
+	"github.com/LannCo/remoteterm/pkg/panichandler"
+	"github.com/LannCo/remoteterm/pkg/remote/conncontroller"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtconfig"
+	"github.com/LannCo/remoteterm/pkg/userinput"
+	"github.com/LannCo/remoteterm/pkg/util/shellutil"
+	"github.com/LannCo/remoteterm/pkg/util/utilfn"
+	"github.com/LannCo/remoteterm/pkg/wps"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
+	"github.com/LannCo/remoteterm/pkg/wsl"
 )
 
 const (
@@ -205,9 +205,9 @@ func (conn *WslConn) OpenDomainSocketListener(ctx context.Context) error {
 			return fmt.Errorf("unable to request connection domain socket: %v", err)
 		}
 	*/
-	conn.Infof(ctx, "setting domain socket to %s\n", wavebase.RemoteFullDomainSocketPath)
+	conn.Infof(ctx, "setting domain socket to %s\n", remotetermbase.RemoteFullDomainSocketPath)
 	conn.WithLock(func() {
-		conn.DomainSockName = wavebase.RemoteFullDomainSocketPath
+		conn.DomainSockName = remotetermbase.RemoteFullDomainSocketPath
 		//conn.DomainSockListener = listener
 	})
 	conn.Infof(ctx, "successfully connected domain socket\n")
@@ -231,7 +231,7 @@ func (conn *WslConn) getWshPath() string {
 	if ok && config.ConnWshPath != "" {
 		return config.ConnWshPath
 	}
-	return wavebase.RemoteFullWshBinPath
+	return remotetermbase.RemoteFullWshBinPath
 }
 
 func (conn *WslConn) GetConfigShellPath() string {
@@ -264,7 +264,7 @@ func (conn *WslConn) StartConnServer(ctx context.Context, afterUpdate bool) (boo
 		conn.cancelFn = cancelFn
 	})
 	devFlag := ""
-	if wavebase.IsDevMode() {
+	if remotetermbase.IsDevMode() {
 		devFlag = "--dev"
 	}
 	cmdStr := fmt.Sprintf(ConnServerCmdTemplate, wshPath, wshPath, shellutil.HardQuote(conn.GetName()), devFlag)
@@ -293,9 +293,9 @@ func (conn *WslConn) StartConnServer(ctx context.Context, afterUpdate bool) (boo
 		cancelFn()
 		return false, "", "", fmt.Errorf("error checking wsh version: %w", err)
 	}
-	if isUpToDate && !afterUpdate && os.Getenv(wavebase.WaveWshForceUpdateVarName) != "" {
+	if isUpToDate && !afterUpdate && os.Getenv(remotetermbase.WaveWshForceUpdateVarName) != "" {
 		isUpToDate = false
-		conn.Infof(ctx, "%s set, forcing wsh update\n", wavebase.WaveWshForceUpdateVarName)
+		conn.Infof(ctx, "%s set, forcing wsh update\n", remotetermbase.WaveWshForceUpdateVarName)
 	}
 	conn.Infof(ctx, "connserver up-to-date: %v\n", isUpToDate)
 	if !isUpToDate {
@@ -397,7 +397,7 @@ func (conn *WslConn) getPermissionToInstallWsh(ctx context.Context, clientDispla
 	meta := make(map[string]any)
 	meta["conn:wshenabled"] = response.Confirm
 	conn.Infof(ctx, "writing conn:wshenabled=%v to connections.json\n", response.Confirm)
-	err = wconfig.SetConnectionsConfigValue(conn.GetName(), meta)
+	err = rtconfig.SetConnectionsConfigValue(conn.GetName(), meta)
 	if err != nil {
 		log.Printf("warning: error writing to connections file: %v", err)
 	}
@@ -406,10 +406,10 @@ func (conn *WslConn) getPermissionToInstallWsh(ctx context.Context, clientDispla
 	}
 	if response.CheckboxStat {
 		conn.Infof(ctx, "writing conn:askbeforewshinstall=false to settings.json\n")
-		meta := waveobj.MetaMapType{
-			wconfig.ConfigKey_ConnAskBeforeWshInstall: false,
+		meta := remotetermobj.MetaMapType{
+			rtconfig.ConfigKey_ConnAskBeforeWshInstall: false,
 		}
-		setConfigErr := wconfig.SetBaseConfigValue(meta)
+		setConfigErr := rtconfig.SetBaseConfigValue(meta)
 		if setConfigErr != nil {
 			// this is not a critical error, just log and continue
 			log.Printf("warning: error writing to base config file: %v", err)
@@ -535,9 +535,9 @@ func WithLockRtn[T any](conn *WslConn, fn func() T) T {
 
 // returns (enable-wsh, ask-before-install)
 func (conn *WslConn) getConnWshSettings() (bool, bool) {
-	config := wconfig.GetWatcher().GetFullConfig()
+	config := rtconfig.GetWatcher().GetFullConfig()
 	enableWsh := config.Settings.ConnWshEnabled
-	askBeforeInstall := wconfig.DefaultBoolPtr(config.Settings.ConnAskBeforeWshInstall, true)
+	askBeforeInstall := rtconfig.DefaultBoolPtr(config.Settings.ConnAskBeforeWshInstall, true)
 	connSettings, ok := conn.getConnectionConfig()
 	if ok {
 		if connSettings.ConnWshEnabled != nil {
@@ -616,11 +616,11 @@ func (conn *WslConn) tryEnableWsh(ctx context.Context, clientDisplayName string)
 	}
 }
 
-func (conn *WslConn) getConnectionConfig() (wconfig.ConnKeywords, bool) {
-	config := wconfig.GetWatcher().GetFullConfig()
+func (conn *WslConn) getConnectionConfig() (rtconfig.ConnKeywords, bool) {
+	config := rtconfig.GetWatcher().GetFullConfig()
 	connSettings, ok := config.Connections[conn.GetName()]
 	if !ok {
-		return wconfig.ConnKeywords{}, false
+		return rtconfig.ConnKeywords{}, false
 	}
 	return connSettings, true
 }
@@ -638,7 +638,7 @@ func (conn *WslConn) persistWshInstalled(ctx context.Context, result WshCheckRes
 	}
 	meta := make(map[string]any)
 	meta["conn:wshenabled"] = result.WshEnabled
-	err := wconfig.SetConnectionsConfigValue(conn.GetName(), meta)
+	err := rtconfig.SetConnectionsConfigValue(conn.GetName(), meta)
 	if err != nil {
 		conn.Infof(ctx, "WARN could not write conn:wshenabled=%v to connections.json: %v\n", result.WshEnabled, err)
 		log.Printf("warning: error writing to connections file: %v", err)

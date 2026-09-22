@@ -4,42 +4,248 @@
 import { fireAndForget } from "@/util/util";
 import { app, dialog, ipcMain, shell } from "electron";
 import envPaths from "env-paths";
-import { existsSync, mkdirSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmdirSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
-import { WaveDevVarName, WaveDevViteVarName } from "../frontend/util/isdev";
+import { RemoteTermDevVarName, RemoteTermDevViteVarName } from "../frontend/util/isdev";
 import * as keyutil from "../frontend/util/keyutil";
 
 // This is a little trick to ensure that Electron puts all its runtime data into a subdirectory to avoid conflicts with our own data.
-// On macOS, it will store to ~/Library/Application \Support/waveterm/electron
-// On Linux, it will store to ~/.config/waveterm/electron
-// On Windows, it will store to %LOCALAPPDATA%/waveterm/electron
-app.setName("waveterm/electron");
+// On macOS, it will store to ~/Library/Application \Support/remoteterm/electron
+// On Linux, it will store to ~/.config/remoteterm/electron
+// On Windows, it will store to %LOCALAPPDATA%/remoteterm/electron
+app.setName("remoteterm/electron");
 
 const isDev = !app.isPackaged;
 const isDevVite = isDev && process.env.ELECTRON_RENDERER_URL;
 console.log(`Running in ${isDev ? "development" : "production"} mode`);
 if (isDev) {
-    process.env[WaveDevVarName] = "1";
+    process.env[RemoteTermDevVarName] = "1";
 }
 if (isDevVite) {
-    process.env[WaveDevViteVarName] = "1";
+    process.env[RemoteTermDevViteVarName] = "1";
 }
 
-const waveDirNamePrefix = "waveterm";
-const waveDirNameSuffix = isDev ? "dev" : "";
-const waveDirName = `${waveDirNamePrefix}${waveDirNameSuffix ? `-${waveDirNameSuffix}` : ""}`;
+const remoteTermDirNamePrefix = "remoteterm";
+const remoteTermDirNameSuffix = isDev ? "dev" : "";
+const remoteTermDirName = `${remoteTermDirNamePrefix}${remoteTermDirNameSuffix ? `-${remoteTermDirNameSuffix}` : ""}`;
 
-const paths = envPaths("waveterm", { suffix: waveDirNameSuffix });
+// Frozen forever: this is the real pre-v0.8 legacy directory name/prefix on disk, independent of
+// whatever the product is branded as today. Never derive this from remoteTermDirNamePrefix.
+const LegacyRemoteTermHomeDirName = ".waveterm";
+const legacyRemoteTermDirNamePrefix = "waveterm";
+const legacyRemoteTermDirName = `${legacyRemoteTermDirNamePrefix}${remoteTermDirNameSuffix ? `-${remoteTermDirNameSuffix}` : ""}`;
+// The old (pre-rename) code derived the legacy combined-home dir name from the dev-suffixed
+// remoteTermDirName (".waveterm-dev" in dev, ".waveterm" in prod) — this is that same suffix-aware
+// shape under the frozen legacy prefix, distinct from the always-bare LegacyRemoteTermHomeDirName
+// above (which exists so a dev build can still recognise a genuinely old, pre-suffix, bare
+// ".waveterm" install as a last-resort fallback).
+const LegacyRemoteTermHomeDirNameSuffixed = `.${legacyRemoteTermDirName}`;
+
+const paths = envPaths("remoteterm", { suffix: remoteTermDirNameSuffix });
+const legacyPaths = envPaths("waveterm", { suffix: remoteTermDirNameSuffix });
 
 app.setName(isDev ? "RemoteTerm (Dev)" : "RemoteTerm");
 const unamePlatform = process.platform;
 const unameArch: string = process.arch;
 keyutil.setKeyUtilPlatform(unamePlatform);
 
-const WaveConfigHomeVarName = "WAVETERM_CONFIG_HOME";
-const WaveDataHomeVarName = "WAVETERM_DATA_HOME";
-const WaveHomeVarName = "WAVETERM_HOME";
+const RemoteTermConfigHomeVarName = "REMOTETERM_CONFIG_HOME";
+const LegacyRemoteTermConfigHomeVarName = "WAVETERM_CONFIG_HOME";
+const RemoteTermDataHomeVarName = "REMOTETERM_DATA_HOME";
+const LegacyRemoteTermDataHomeVarName = "WAVETERM_DATA_HOME";
+const RemoteTermHomeVarName = "REMOTETERM_HOME";
+const LegacyRemoteTermHomeVarName = "WAVETERM_HOME";
+
+const alreadyWarnedLegacyVars = new Set<string>();
+
+/**
+ * Reads a user-settable override var, preferring the new name but falling back to the
+ * deprecated old name (with a one-time warning) so existing shell-profile overrides don't
+ * silently stop working when this var is renamed.
+ */
+function readOverrideEnvVar(newName: string, legacyName: string): string {
+    const newVal = process.env[newName];
+    if (newVal) {
+        return newVal;
+    }
+    const legacyVal = process.env[legacyName];
+    if (legacyVal) {
+        if (!alreadyWarnedLegacyVars.has(legacyName)) {
+            alreadyWarnedLegacyVars.add(legacyName);
+            console.log(`${legacyName} is deprecated, please use ${newName} instead`);
+        }
+        return legacyVal;
+    }
+    return null;
+}
+
+/**
+ * One-time, synchronous local data-dir migration from the old "waveterm"-prefixed paths to the
+ * new "remoteterm"-prefixed paths. Must run as a top-level statement in this module (not
+ * exported/called from elsewhere) so it completes before any importer of this module's getters
+ * (getRemoteTermConfigDir/getRemoteTermDataDir) can call them and side-effect-create the new directories
+ * first. See RENAME_PLAN.md Phase 2 step 7 for why this exact placement is required.
+ */
+type MigrationRootSpec = {
+    name: string;
+    source: string;
+    dest: string;
+    overridden: boolean;
+    validateSource?: () => boolean;
+};
+
+const MigrationMarkerFileName = ".migrated-from-waveterm";
+
+// Failures recorded here don't stop startup (the app can still run against whatever it can
+// resolve), but they leave data unmigrated/orphaned and the failure becomes sticky (the next
+// launch's "destination already exists and is unmarked" abort branch fires permanently), so a
+// console.log alone isn't enough. getMigrationFailures() lets emain.ts surface these to the
+// user once Electron is actually ready to show a dialog (this module's own top level runs
+// before `app` is ready, so it can only log, not show UI).
+const migrationFailures: string[] = [];
+
+function recordMigrationFailure(message: string, err?: unknown) {
+    migrationFailures.push(message);
+    if (err !== undefined) {
+        console.error(`[migration] ${message}`, err);
+    } else {
+        console.error(`[migration] ${message}`);
+    }
+}
+
+export function getMigrationFailures(): string[] {
+    return [...migrationFailures];
+}
+
+function migrateDataRoot(spec: MigrationRootSpec) {
+    const markerFile = path.join(spec.dest, MigrationMarkerFileName);
+    if (spec.overridden) {
+        if (existsSync(markerFile)) {
+            return;
+        }
+        try {
+            mkdirSync(spec.dest, { recursive: true });
+            writeFileSync(markerFile, `no-migration-needed:override\n${new Date().toISOString()}\n`);
+        } catch (e) {
+            recordMigrationFailure(`failed to write override marker for ${spec.name} root`, e);
+        }
+        return;
+    }
+    if (existsSync(markerFile)) {
+        return;
+    }
+    if (!existsSync(spec.source) || (spec.validateSource && !spec.validateSource())) {
+        return;
+    }
+    if (existsSync(spec.dest)) {
+        let destEntries: string[];
+        try {
+            destEntries = readdirSync(spec.dest);
+        } catch (e) {
+            recordMigrationFailure(`could not inspect existing destination ${spec.dest} for ${spec.name} root`, e);
+            return;
+        }
+        if (destEntries.length === 0) {
+            try {
+                rmdirSync(spec.dest);
+            } catch (e) {
+                recordMigrationFailure(`could not remove empty destination ${spec.dest} for ${spec.name} root`, e);
+                return;
+            }
+        } else {
+            recordMigrationFailure(
+                `${spec.name} root migration aborted: ${spec.dest} already exists and is not empty. Please merge ${spec.source} into ${spec.dest} manually.`
+            );
+            return;
+        }
+    }
+    try {
+        mkdirSync(path.dirname(spec.dest), { recursive: true });
+        renameSync(spec.source, spec.dest);
+        writeFileSync(path.join(spec.dest, MigrationMarkerFileName), `moved-from:${spec.source}\n${new Date().toISOString()}\n`);
+        console.log(`[migration] migrated ${spec.name} root from ${spec.source} to ${spec.dest}`);
+    } catch (e) {
+        if (e && e.code === "ENOENT") {
+            if (existsSync(markerFile)) {
+                // another process already completed this root's migration
+                return;
+            }
+            recordMigrationFailure(
+                `${spec.name} root move failed with ENOENT and no completion marker was found (source: ${spec.source})`,
+                e
+            );
+            return;
+        }
+        recordMigrationFailure(`error migrating ${spec.name} root from ${spec.source} to ${spec.dest}`, e);
+    }
+}
+
+function performDataDirMigration() {
+    try {
+        const homeDir = app.getPath("home");
+        const xdgConfigHome = process.env.XDG_CONFIG_HOME;
+        const xdgDataHome = process.env.XDG_DATA_HOME;
+
+        const configOverride = readOverrideEnvVar(RemoteTermConfigHomeVarName, LegacyRemoteTermConfigHomeVarName);
+        const configSource = xdgConfigHome
+            ? path.join(xdgConfigHome, legacyRemoteTermDirName)
+            : path.join(homeDir, ".config", legacyRemoteTermDirName);
+        const configDest = xdgConfigHome
+            ? path.join(xdgConfigHome, remoteTermDirName)
+            : path.join(homeDir, ".config", remoteTermDirName);
+        migrateDataRoot({
+            name: "config",
+            source: configOverride ?? configSource,
+            dest: configOverride ?? configDest,
+            overridden: configOverride != null,
+            validateSource: () => existsSync(path.join(configSource, "settings.json")),
+        });
+
+        const dataOverride = readOverrideEnvVar(RemoteTermDataHomeVarName, LegacyRemoteTermDataHomeVarName);
+        const dataSource = xdgDataHome ? path.join(xdgDataHome, legacyRemoteTermDirName) : legacyPaths.data;
+        const dataDest = xdgDataHome ? path.join(xdgDataHome, remoteTermDirName) : paths.data;
+        migrateDataRoot({
+            name: "data",
+            source: dataOverride ?? dataSource,
+            dest: dataOverride ?? dataDest,
+            overridden: dataOverride != null,
+            validateSource: () => existsSync(path.join(dataSource, "wave.lock")),
+        });
+
+        const homeOverride = readOverrideEnvVar(RemoteTermHomeVarName, LegacyRemoteTermHomeVarName);
+        const legacyHomeSource = path.join(homeDir, LegacyRemoteTermHomeDirNameSuffixed);
+        const legacyHomeDest = path.join(homeDir, `.${remoteTermDirName}`);
+        migrateDataRoot({
+            name: "legacy-home",
+            source: homeOverride ?? legacyHomeSource,
+            dest: homeOverride ?? legacyHomeDest,
+            overridden: homeOverride != null,
+            validateSource: () => existsSync(path.join(legacyHomeSource, "wave.lock")),
+        });
+
+        // Best-effort fourth root: on Windows, Electron's own userData subtree (cookies, cache,
+        // window state) resolves under %APPDATA% as a *sibling* of the config root, not a child
+        // of any of the three roots above, so it needs its own explicit move. Unlike the roots
+        // above, there is no per-root override var and no natural marker file inside Electron's
+        // userData dir to validate against, so we validate on directory existence alone.
+        if (process.platform === "win32" && process.env.APPDATA) {
+            const winSource = path.join(process.env.APPDATA, "waveterm", "electron");
+            const winDest = path.join(process.env.APPDATA, "remoteterm", "electron");
+            migrateDataRoot({
+                name: "windows-userdata",
+                source: winSource,
+                dest: winDest,
+                overridden: false,
+                validateSource: () => existsSync(winSource),
+            });
+        }
+    } catch (e) {
+        recordMigrationFailure("unexpected error during data-dir migration, continuing startup", e);
+    }
+}
+
+performDataDirMigration();
 
 export function checkIfRunningUnderARM64Translation(fullConfig: FullConfigType) {
     if (!fullConfig.settings["app:dismissarchitecturewarning"] && app.runningUnderARM64Translation) {
@@ -57,7 +263,7 @@ export function checkIfRunningUnderARM64Translation(fullConfig: FullConfigType) 
             console.log("User chose to learn more");
             fireAndForget(() =>
                 shell.openExternal(
-                    "https://docs.waveterm.dev/faq#why-does-wave-warn-me-about-arm64-translation-when-it-launches"
+                    "https://docs.rterm.dev/faq#why-does-wave-warn-me-about-arm64-translation-when-it-launches"
                 )
             );
             throw new Error("User redirected to docsite to learn more about ARM64 translation, exiting");
@@ -68,15 +274,29 @@ export function checkIfRunningUnderARM64Translation(fullConfig: FullConfigType) 
 }
 
 /**
- * Gets the path to the old Wave home directory (defaults to `~/.waveterm`).
+ * Gets the path to the combined RemoteTerm home directory (defaults to `~/.remoteterm`, falling back
+ * to the frozen pre-v0.8 legacy path `~/.waveterm` if that's what has valid data).
  * @returns The path to the directory if it exists and contains valid data for the current app, otherwise null.
  */
-function getWaveHomeDir(): string {
-    let home = process.env[WaveHomeVarName];
+function getRemoteTermHomeDir(): string {
+    let home = readOverrideEnvVar(RemoteTermHomeVarName, LegacyRemoteTermHomeVarName);
     if (!home) {
         const homeDir = app.getPath("home");
         if (homeDir) {
-            home = path.join(homeDir, `.${waveDirName}`);
+            // Check the current (post-migration) default combined-home location first, then
+            // fall back to the frozen pre-v0.8 legacy location. The migration shim above moves
+            // a valid legacy home dir from the latter to the former, but this function may be
+            // called before that migration has a chance to run for a given process, or the
+            // migration may have been skipped/failed, so both locations must be checked.
+            const migratedHome = path.join(homeDir, `.${remoteTermDirName}`);
+            if (existsSync(migratedHome) && existsSync(path.join(migratedHome, "wave.lock"))) {
+                return migratedHome;
+            }
+            const legacySuffixedHome = path.join(homeDir, LegacyRemoteTermHomeDirNameSuffixed);
+            if (existsSync(legacySuffixedHome) && existsSync(path.join(legacySuffixedHome, "wave.lock"))) {
+                return legacySuffixedHome;
+            }
+            home = path.join(homeDir, LegacyRemoteTermHomeDirName);
         }
     }
     // If home exists and it has `wave.lock` in it, we know it has valid data from Wave >=v0.8. Otherwise, it could be for WaveLegacy (<v0.8)
@@ -99,49 +319,49 @@ function ensurePathExists(path: string): string {
 }
 
 /**
- * Gets the path to the directory where Wave configurations are stored. Creates the directory if it does not exist.
- * Handles backwards compatibility with the old Wave Home directory model, where configurations and data were stored together.
+ * Gets the path to the directory where RemoteTerm configurations are stored. Creates the directory if it does not exist.
+ * Handles backwards compatibility with the old combined-home directory model, where configurations and data were stored together.
  * @returns The path where configurations should be stored.
  */
-function getWaveConfigDir(): string {
+function getRemoteTermConfigDir(): string {
     // If wave home dir exists, use it for backwards compatibility
-    const waveHomeDir = getWaveHomeDir();
-    if (waveHomeDir) {
-        return path.join(waveHomeDir, "config");
+    const remoteTermHomeDir = getRemoteTermHomeDir();
+    if (remoteTermHomeDir) {
+        return path.join(remoteTermHomeDir, "config");
     }
 
-    const override = process.env[WaveConfigHomeVarName];
+    const override = readOverrideEnvVar(RemoteTermConfigHomeVarName, LegacyRemoteTermConfigHomeVarName);
     const xdgConfigHome = process.env.XDG_CONFIG_HOME;
     let retVal: string;
     if (override) {
         retVal = override;
     } else if (xdgConfigHome) {
-        retVal = path.join(xdgConfigHome, waveDirName);
+        retVal = path.join(xdgConfigHome, remoteTermDirName);
     } else {
-        retVal = path.join(app.getPath("home"), ".config", waveDirName);
+        retVal = path.join(app.getPath("home"), ".config", remoteTermDirName);
     }
     return ensurePathExists(retVal);
 }
 
 /**
- * Gets the path to the directory where Wave data is stored. Creates the directory if it does not exist.
- * Handles backwards compatibility with the old Wave Home directory model, where configurations and data were stored together.
+ * Gets the path to the directory where RemoteTerm data is stored. Creates the directory if it does not exist.
+ * Handles backwards compatibility with the old combined-home directory model, where configurations and data were stored together.
  * @returns The path where data should be stored.
  */
-function getWaveDataDir(): string {
+function getRemoteTermDataDir(): string {
     // If wave home dir exists, use it for backwards compatibility
-    const waveHomeDir = getWaveHomeDir();
-    if (waveHomeDir) {
-        return waveHomeDir;
+    const remoteTermHomeDir = getRemoteTermHomeDir();
+    if (remoteTermHomeDir) {
+        return remoteTermHomeDir;
     }
 
-    const override = process.env[WaveDataHomeVarName];
+    const override = readOverrideEnvVar(RemoteTermDataHomeVarName, LegacyRemoteTermDataHomeVarName);
     const xdgDataHome = process.env.XDG_DATA_HOME;
     let retVal: string;
     if (override) {
         retVal = override;
     } else if (xdgDataHome) {
-        retVal = path.join(xdgDataHome, waveDirName);
+        retVal = path.join(xdgDataHome, remoteTermDirName);
     } else {
         retVal = paths.data;
     }
@@ -165,19 +385,19 @@ function getElectronAppResourcesPath(): string {
     return process.resourcesPath;
 }
 
-const wavesrvBinName = `wavesrv.${unameArch}`;
+const remoteTermSrvBinName = `remotetermsrv.${unameArch}`;
 
-function getWaveSrvPath(): string {
+function getRemoteTermSrvPath(): string {
     if (process.platform === "win32") {
-        const winBinName = `${wavesrvBinName}.exe`;
+        const winBinName = `${remoteTermSrvBinName}.exe`;
         const appPath = path.join(getElectronAppUnpackedBasePath(), "bin", winBinName);
         return `${appPath}`;
     }
-    return path.join(getElectronAppUnpackedBasePath(), "bin", wavesrvBinName);
+    return path.join(getElectronAppUnpackedBasePath(), "bin", remoteTermSrvBinName);
 }
 
-function getWaveSrvCwd(): string {
-    return getWaveDataDir();
+function getRemoteTermSrvCwd(): string {
+    return getRemoteTermDataDir();
 }
 
 ipcMain.on("get-is-dev", (event) => {
@@ -197,10 +417,10 @@ ipcMain.on("get-webview-preload", (event) => {
     event.returnValue = path.join(getElectronAppBasePath(), "preload", "preload-webview.cjs");
 });
 ipcMain.on("get-data-dir", (event) => {
-    event.returnValue = getWaveDataDir();
+    event.returnValue = getRemoteTermDataDir();
 });
 ipcMain.on("get-config-dir", (event) => {
-    event.returnValue = getWaveConfigDir();
+    event.returnValue = getRemoteTermConfigDir();
 });
 ipcMain.on("get-home-dir", (event) => {
     event.returnValue = app.getPath("home");
@@ -272,15 +492,15 @@ export {
     getElectronAppBasePath,
     getElectronAppResourcesPath,
     getElectronAppUnpackedBasePath,
-    getWaveConfigDir,
-    getWaveDataDir,
-    getWaveSrvCwd,
-    getWaveSrvPath,
+    getRemoteTermConfigDir,
+    getRemoteTermDataDir,
+    getRemoteTermSrvCwd,
+    getRemoteTermSrvPath,
     getXdgCurrentDesktop,
     isDev,
     isDevVite,
     unameArch,
     unamePlatform,
-    WaveConfigHomeVarName,
-    WaveDataHomeVarName,
+    RemoteTermConfigHomeVarName,
+    RemoteTermDataHomeVarName,
 };

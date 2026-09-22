@@ -13,15 +13,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/baseds"
+	"github.com/LannCo/remoteterm/pkg/panichandler"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/remotetermjwt"
+	"github.com/LannCo/remoteterm/pkg/utilds"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
 	"github.com/shirou/gopsutil/v4/process"
-	"github.com/wavetermdev/waveterm/pkg/baseds"
-	"github.com/wavetermdev/waveterm/pkg/panichandler"
-	"github.com/wavetermdev/waveterm/pkg/utilds"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/wavejwt"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
 )
 
 const JobAccessTokenLabel = "Wave-JobAccessToken"
@@ -58,12 +58,12 @@ func SetupJobManager(clientId string, jobId string, publicKeyBytes []byte, jobAu
 	WshCmdJobManager.InputQueue = utilds.MakeQuickReorderQueue[wshrpc.CommandJobInputData](JobInputQueueSize, JobInputQueueTimeout)
 
 	// Clean up stale disk files from prior sessions
-	staleStreamPath := wavebase.GetRemoteJobFilePath(jobId, "stream")
+	staleStreamPath := remotetermbase.GetRemoteJobFilePath(jobId, "stream")
 	if err := os.Remove(staleStreamPath); err == nil {
 		log.Printf("SetupJobManager: removed stale stream file %s", staleStreamPath)
 	}
 
-	err := wavejwt.SetPublicKey(publicKeyBytes)
+	err := remotetermjwt.SetPublicKey(publicKeyBytes)
 	if err != nil {
 		return fmt.Errorf("failed to set public key: %w", err)
 	}
@@ -399,7 +399,7 @@ func MakeJobDomainSocket(clientId string, jobId string) error {
 		return fmt.Errorf("failed to create socket directory: %w", err)
 	}
 
-	socketPath := wavebase.GetRemoteJobSocketPath(jobId)
+	socketPath := remotetermbase.GetRemoteJobSocketPath(jobId)
 
 	os.Remove(socketPath)
 

@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { useWaveEnv } from "@/app/waveenv/waveenv";
+import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 
 const UpgradeOnboardingModal_v0_14_2_Content = () => {
     const waveEnv = useWaveEnv();
@@ -43,7 +43,7 @@ const UpgradeOnboardingModal_v0_14_2_Content = () => {
                                 hooks to surface AI task status as tab bar notifications{" "}
                                 <button
                                     onClick={() =>
-                                        waveEnv.electron.openExternal("https://docs.waveterm.dev/claude-code")
+                                        waveEnv.electron.openExternal("https://docs.rterm.dev/claude-code")
                                     }
                                     className="text-accent text-sm font-normal cursor-pointer hover:underline"
                                 >

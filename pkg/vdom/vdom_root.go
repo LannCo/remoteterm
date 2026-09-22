@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/LannCo/remoteterm/pkg/util/utilfn"
 	"github.com/google/uuid"
-	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
 )
 
 const (

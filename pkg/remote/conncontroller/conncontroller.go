@@ -18,24 +18,24 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/blocklogger"
+	"github.com/LannCo/remoteterm/pkg/genconn"
+	"github.com/LannCo/remoteterm/pkg/panichandler"
+	"github.com/LannCo/remoteterm/pkg/remote"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtconfig"
+	"github.com/LannCo/remoteterm/pkg/rtstore"
+	"github.com/LannCo/remoteterm/pkg/userinput"
+	"github.com/LannCo/remoteterm/pkg/util/envutil"
+	"github.com/LannCo/remoteterm/pkg/util/shellutil"
+	"github.com/LannCo/remoteterm/pkg/util/utilfn"
+	"github.com/LannCo/remoteterm/pkg/wps"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
 	"github.com/kevinburke/ssh_config"
 	"github.com/skeema/knownhosts"
-	"github.com/wavetermdev/waveterm/pkg/blocklogger"
-	"github.com/wavetermdev/waveterm/pkg/genconn"
-	"github.com/wavetermdev/waveterm/pkg/panichandler"
-	"github.com/wavetermdev/waveterm/pkg/remote"
-	"github.com/wavetermdev/waveterm/pkg/userinput"
-	"github.com/wavetermdev/waveterm/pkg/util/envutil"
-	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
-	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
-	"github.com/wavetermdev/waveterm/pkg/wps"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
-	"github.com/wavetermdev/waveterm/pkg/wstore"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/mod/semver"
 )
@@ -84,10 +84,10 @@ var clientControllerMap = make(map[remote.SSHOpts]*SSHConn)
 var activeConnCounter = &atomic.Int32{}
 
 // test hook for connectInternal — allows mocking SSH connection in tests
-var connectInternalTestHook func(conn *SSHConn, ctx context.Context, connFlags *wconfig.ConnKeywords) error
+var connectInternalTestHook func(conn *SSHConn, ctx context.Context, connFlags *rtconfig.ConnKeywords) error
 
 // test hook for getConnectionConfig — allows mocking per-connection settings in tests
-var getConnectionConfigTestHook func(conn *SSHConn) (wconfig.ConnKeywords, bool)
+var getConnectionConfigTestHook func(conn *SSHConn) (rtconfig.ConnKeywords, bool)
 
 // ErrAutoReconnectSuppressed is returned by AttemptReconnect when the sticky
 // SuppressAutoReconnect flag is set (user Disconnect, Stop auto-retry, password
@@ -809,7 +809,7 @@ func IsWshVersionUpToDate(logCtx context.Context, wshVersionLine string) (bool, 
 		return false, "", "", fmt.Errorf("unexpected version format: %s", wshVersionLine)
 	}
 	clientVersion := parts[1]
-	expectedVersion := fmt.Sprintf("v%s", wavebase.WaveVersion)
+	expectedVersion := fmt.Sprintf("v%s", remotetermbase.WaveVersion)
 	if semver.Compare(clientVersion, expectedVersion) < 0 {
 		return false, clientVersion, "", nil
 	}
@@ -878,7 +878,7 @@ func (conn *SSHConn) getEnvironmentWithPty(ctx context.Context, client *ssh.Clie
 	}
 	defer session.Close()
 
-	termSize := waveobj.TermSize{Rows: 24, Cols: 80}
+	termSize := remotetermobj.TermSize{Rows: 24, Cols: 80}
 	err = session.RequestPty("xterm-256color", termSize.Rows, termSize.Cols, nil)
 	if err != nil {
 		return nil, fmt.Errorf("unable to request PTY: %w", err)
@@ -901,7 +901,7 @@ func (conn *SSHConn) getWshPath() string {
 	if ok && config.ConnWshPath != "" {
 		return config.ConnWshPath
 	}
-	return wavebase.RemoteFullWshBinPath
+	return remotetermbase.RemoteFullWshBinPath
 }
 
 func (conn *SSHConn) GetConfigShellPath() string {
@@ -958,7 +958,7 @@ func (conn *SSHConn) StartConnServer(ctx context.Context, afterUpdate bool, useR
 		return false, "", "", fmt.Errorf("unable to get stdin pipe: %w", err)
 	}
 	devFlag := ""
-	if wavebase.IsDevMode() {
+	if remotetermbase.IsDevMode() {
 		devFlag = "--dev"
 	}
 	routerFlag := ""
@@ -990,9 +990,9 @@ func (conn *SSHConn) StartConnServer(ctx context.Context, afterUpdate bool, useR
 		sshSession.Close()
 		return false, "", "", fmt.Errorf("error checking wsh version: %w", err)
 	}
-	if isUpToDate && !afterUpdate && os.Getenv(wavebase.WaveWshForceUpdateVarName) != "" {
+	if isUpToDate && !afterUpdate && os.Getenv(remotetermbase.WaveWshForceUpdateVarName) != "" {
 		isUpToDate = false
-		conn.Infof(ctx, "%s set, forcing wsh update\n", wavebase.WaveWshForceUpdateVarName)
+		conn.Infof(ctx, "%s set, forcing wsh update\n", remotetermbase.WaveWshForceUpdateVarName)
 	}
 	conn.Infof(ctx, "connserver up-to-date: %v\n", isUpToDate)
 	if !isUpToDate {
@@ -1005,7 +1005,7 @@ func (conn *SSHConn) StartConnServer(ctx context.Context, afterUpdate bool, useR
 		return false, clientVersion, "", fmt.Errorf("error reading jwt status line: %w", err)
 	}
 	conn.Infof(ctx, "got jwt status line: %s\n", jwtLine)
-	if strings.TrimSpace(jwtLine) == wavebase.NeedJwtConst {
+	if strings.TrimSpace(jwtLine) == remotetermbase.NeedJwtConst {
 		// write the jwt
 		conn.Infof(ctx, "writing jwt token to connserver\n")
 		_, err = fmt.Fprintf(stdinPipe, "%s\n", jwtToken)
@@ -1068,7 +1068,7 @@ func (conn *SSHConn) StartConnServer(ctx context.Context, afterUpdate bool, useR
 	time.Sleep(300 * time.Millisecond) // TODO remove this sleep (but we need to wait until connserver is "ready")
 	err = wshclient.ConnServerInitCommand(
 		wshclient.GetBareRpcClient(),
-		wshrpc.CommandConnServerInitData{ClientId: wstore.GetClientId()},
+		wshrpc.CommandConnServerInitData{ClientId: rtstore.GetClientId()},
 		&wshrpc.RpcOpts{Route: connRoute},
 	)
 	if err != nil {
@@ -1169,7 +1169,7 @@ func (conn *SSHConn) getPermissionToInstallWsh(ctx context.Context, clientDispla
 	meta := make(map[string]any)
 	meta["conn:wshenabled"] = response.Confirm
 	conn.Infof(ctx, "writing conn:wshenabled=%v to connections.json\n", response.Confirm)
-	err = wconfig.SetConnectionsConfigValue(conn.GetName(), meta)
+	err = rtconfig.SetConnectionsConfigValue(conn.GetName(), meta)
 	if err != nil {
 		log.Printf("warning: error writing to connections file: %v", err)
 	}
@@ -1178,10 +1178,10 @@ func (conn *SSHConn) getPermissionToInstallWsh(ctx context.Context, clientDispla
 	}
 	if response.CheckboxStat {
 		conn.Infof(ctx, "writing conn:askbeforewshinstall=false to settings.json\n")
-		meta := waveobj.MetaMapType{
-			wconfig.ConfigKey_ConnAskBeforeWshInstall: false,
+		meta := remotetermobj.MetaMapType{
+			rtconfig.ConfigKey_ConnAskBeforeWshInstall: false,
 		}
-		setConfigErr := wconfig.SetBaseConfigValue(meta)
+		setConfigErr := rtconfig.SetBaseConfigValue(meta)
 		if setConfigErr != nil {
 			// this is not a critical error, just log and continue
 			log.Printf("warning: error writing to base config file: %v", err)
@@ -1264,7 +1264,7 @@ func (conn *SSHConn) WaitForConnect(ctx context.Context) error {
 // the user's Force Connect (which then hits "already connecting/connected").
 // Concurrent Force calls serialize on the same lock; a second call that finds
 // the conn already healthy after the first finishes is a no-op (double-click).
-func (conn *SSHConn) ForceReconnect(ctx context.Context, connFlags *wconfig.ConnKeywords) error {
+func (conn *SSHConn) ForceReconnect(ctx context.Context, connFlags *rtconfig.ConnKeywords) error {
 	conn.lifecycleLock.Lock()
 	defer conn.lifecycleLock.Unlock()
 
@@ -1318,7 +1318,7 @@ func SetAuthQueueWaitingByName(connName string, waiting bool) {
 }
 
 // does not return an error since that error is stored inside of SSHConn
-func (conn *SSHConn) Connect(ctx context.Context, connFlags *wconfig.ConnKeywords) error {
+func (conn *SSHConn) Connect(ctx context.Context, connFlags *rtconfig.ConnKeywords) error {
 	conn.lifecycleLock.Lock()
 	defer conn.lifecycleLock.Unlock()
 	return conn.connectWithLifecycleLock(ctx, connFlags)
@@ -1326,7 +1326,7 @@ func (conn *SSHConn) Connect(ctx context.Context, connFlags *wconfig.ConnKeyword
 
 // connectWithLifecycleLock performs Connect assuming lifecycleLock is held.
 // Callers: Connect and ForceReconnect (close+connect under one lock).
-func (conn *SSHConn) connectWithLifecycleLock(ctx context.Context, connFlags *wconfig.ConnKeywords) error {
+func (conn *SSHConn) connectWithLifecycleLock(ctx context.Context, connFlags *rtconfig.ConnKeywords) error {
 	blocklogger.Infof(ctx, "\n")
 	var connectAllowed bool
 	conn.WithLock(func() {
@@ -1463,7 +1463,7 @@ func (conn *SSHConn) connectWithLifecycleLock(ctx context.Context, connFlags *wc
 		})
 		// Persist authpromptused (cold-start password classification). ConnectCount
 		// is persisted from RecordConnectionUsage when the user opens a new tab.
-		persistErr := wconfig.SetConnectionsConfigValue(connName, waveobj.MetaMapType{
+		persistErr := rtconfig.SetConnectionsConfigValue(connName, remotetermobj.MetaMapType{
 			"conn:authpromptused": interactivePromptUsed,
 		})
 		if persistErr != nil {
@@ -1497,7 +1497,7 @@ func (conn *SSHConn) connectWithLifecycleLock(ctx context.Context, connFlags *wc
 		}
 		meta["ssh:identityfile"] = identityFiles
 	}
-	err = wconfig.SetConnectionsConfigValue(conn.GetName(), meta)
+	err = rtconfig.SetConnectionsConfigValue(conn.GetName(), meta)
 	if err != nil {
 		// i do not consider this a critical failure
 		log.Printf("config write error: unable to save connection %s: %v", conn.GetName(), err)
@@ -1621,7 +1621,7 @@ func (conn *SSHConn) requestPasswordRePrompt() {
 		log.Printf("[conn:%s] requestPasswordRePrompt: password cached, triggering reconnect", conn.GetName())
 		// Trigger reconnect with the newly cached password. Use background context
 		// since this is a new, independent connection attempt.
-		_ = conn.Connect(context.Background(), &wconfig.ConnKeywords{})
+		_ = conn.Connect(context.Background(), &rtconfig.ConnKeywords{})
 	}()
 }
 
@@ -1775,7 +1775,7 @@ func CanReconnectWithoutPrompt(connName string) bool {
 // fallback. Returns true if the connections.json settings indicate a non-
 // interactive auth method. Does NOT check ~/.ssh/config (use HasPublicKeyAuth
 // for that). A nil connConfig returns false.
-func connKeywordsAllowReconnect(connConfig *wconfig.ConnKeywords) bool {
+func connKeywordsAllowReconnect(connConfig *rtconfig.ConnKeywords) bool {
 	if connConfig == nil {
 		return false
 	}
@@ -1830,7 +1830,7 @@ func hasPublicKeyAuthForConn(connName string) bool {
 //  3. connections.json keywords (batch mode, password secret, preferred auth)
 //  4. ~/.ssh/config publickey (IdentityFile present)
 func canReconnectFromConfigByName(connName string) bool {
-	config := wconfig.GetWatcher().GetFullConfig()
+	config := rtconfig.GetWatcher().GetFullConfig()
 	connConfig, ok := config.Connections[connName]
 	if ok {
 		if connConfig.ConnAuthPromptUsed != nil {
@@ -1860,9 +1860,9 @@ func WithLockRtn[T any](conn *SSHConn, fn func() T) T {
 
 // returns (enable-wsh, ask-before-install)
 func (conn *SSHConn) getConnWshSettings() (bool, bool) {
-	config := wconfig.GetWatcher().GetFullConfig()
+	config := rtconfig.GetWatcher().GetFullConfig()
 	enableWsh := config.Settings.ConnWshEnabled
-	askBeforeInstall := wconfig.DefaultBoolPtr(config.Settings.ConnAskBeforeWshInstall, true)
+	askBeforeInstall := rtconfig.DefaultBoolPtr(config.Settings.ConnAskBeforeWshInstall, true)
 	connSettings, ok := conn.getConnectionConfig()
 	if ok {
 		if connSettings.ConnWshEnabled != nil {
@@ -1939,14 +1939,14 @@ func (conn *SSHConn) tryEnableWsh(ctx context.Context, clientDisplayName string)
 	}
 }
 
-func (conn *SSHConn) getConnectionConfig() (wconfig.ConnKeywords, bool) {
+func (conn *SSHConn) getConnectionConfig() (rtconfig.ConnKeywords, bool) {
 	if getConnectionConfigTestHook != nil {
 		return getConnectionConfigTestHook(conn)
 	}
-	config := wconfig.GetWatcher().GetFullConfig()
+	config := rtconfig.GetWatcher().GetFullConfig()
 	connSettings, ok := config.Connections[conn.GetName()]
 	if !ok {
-		return wconfig.ConnKeywords{}, false
+		return rtconfig.ConnKeywords{}, false
 	}
 	return connSettings, true
 }
@@ -1970,7 +1970,7 @@ func (conn *SSHConn) persistWshInstalled(ctx context.Context, result WshCheckRes
 	}
 	meta := make(map[string]any)
 	meta["conn:wshenabled"] = result.WshEnabled
-	err := wconfig.SetConnectionsConfigValue(conn.GetName(), meta)
+	err := rtconfig.SetConnectionsConfigValue(conn.GetName(), meta)
 	if err != nil {
 		conn.Infof(ctx, "WARN could not write conn:wshenabled=%v to connections.json: %v\n", result.WshEnabled, err)
 		log.Printf("warning: error writing to connections file: %v", err)
@@ -2156,7 +2156,7 @@ func normalizeTcpListenAddr(addr string) string {
 
 // startPortForwarding sets up local and remote port forwarding tunnels
 // based on the merged SSH config keywords.
-func (conn *SSHConn) startPortForwarding(ctx context.Context, keywords *wconfig.ConnKeywords) {
+func (conn *SSHConn) startPortForwarding(ctx context.Context, keywords *rtconfig.ConnKeywords) {
 	client := conn.GetClient()
 	if client == nil {
 		return
@@ -2304,7 +2304,7 @@ func (conn *SSHConn) startRemoteForwardTCP(ctx context.Context, client *ssh.Clie
 }
 
 // returns (connect-error)
-func (conn *SSHConn) connectInternal(ctx context.Context, connFlags *wconfig.ConnKeywords) error {
+func (conn *SSHConn) connectInternal(ctx context.Context, connFlags *rtconfig.ConnKeywords) error {
 	if connectInternalTestHook != nil {
 		return connectInternalTestHook(conn, ctx, connFlags)
 	}
@@ -2600,7 +2600,7 @@ func getConnInternal(opts *remote.SSHOpts, createIfNotExists bool) *SSHConn {
 		// Load persisted ConnectCount and auth-prompt flag from connections.json
 		var connectCount int64
 		var authPromptSeed int32 = authPromptUnknown
-		config := wconfig.GetWatcher().GetFullConfig()
+		config := rtconfig.GetWatcher().GetFullConfig()
 		if connSettings, ok := config.Connections[opts.String()]; ok {
 			if connSettings.ConnConnectCount != nil {
 				connectCount = *connSettings.ConnConnectCount
@@ -2661,7 +2661,7 @@ func RecordConnectionUsage(connName string) {
 		conn.LastConnectTime = time.Now().UnixMilli()
 		connectCount = conn.ConnectCount
 	})
-	persistErr := wconfig.SetConnectionsConfigValue(connName, waveobj.MetaMapType{
+	persistErr := rtconfig.SetConnectionsConfigValue(connName, remotetermobj.MetaMapType{
 		"conn:connectcount": connectCount,
 	})
 	if persistErr != nil {
@@ -2809,7 +2809,7 @@ func EnsureConnection(ctx context.Context, connName string) error {
 				// Another Connect started; wait for it.
 				return conn.WaitForConnect(ctx)
 			}
-			return conn.Connect(ctx, &wconfig.ConnKeywords{})
+			return conn.Connect(ctx, &rtconfig.ConnKeywords{})
 		}
 		return conn.WaitForConnect(ctx)
 	case Status_Init, Status_Disconnected:
@@ -2823,12 +2823,12 @@ func EnsureConnection(ctx context.Context, connName string) error {
 			}
 			return conn.WaitForConnect(ctx)
 		}
-		return conn.Connect(ctx, &wconfig.ConnKeywords{})
+		return conn.Connect(ctx, &rtconfig.ConnKeywords{})
 	case Status_Error:
 		// Always retry connecting from error state. If no cached password,
 		// the decoupled password callback will prompt the user independently.
 		// Permanent / cancel paths already set SuppressAutoReconnect above.
-		return conn.Connect(ctx, &wconfig.ConnKeywords{})
+		return conn.Connect(ctx, &rtconfig.ConnKeywords{})
 	default:
 		return fmt.Errorf("unknown connection status %q", connStatus.Status)
 	}
@@ -2864,7 +2864,7 @@ func AttemptReconnect(ctx context.Context, connName string) error {
 	if status == Status_Connecting {
 		return conn.WaitForConnect(ctx)
 	}
-	err = conn.Connect(ctx, &wconfig.ConnKeywords{})
+	err = conn.Connect(ctx, &rtconfig.ConnKeywords{})
 	if err == nil {
 		return nil
 	}
@@ -3020,7 +3020,7 @@ func GetConnectionsList() ([]string, error) {
 
 func GetConnectionsFromInternalConfig() []string {
 	var internalNames []string
-	config := wconfig.GetWatcher().GetFullConfig()
+	config := rtconfig.GetWatcher().GetFullConfig()
 	for internalName := range config.Connections {
 		if strings.HasPrefix(internalName, "wsl://") {
 			// don't add wsl conns to this list
@@ -3032,7 +3032,7 @@ func GetConnectionsFromInternalConfig() []string {
 }
 
 func GetConnectionsFromConfig() ([]string, error) {
-	home := wavebase.GetHomeDir()
+	home := remotetermbase.GetHomeDir()
 	localConfig := filepath.Join(home, ".ssh", "config")
 	systemConfig := filepath.Join("/etc", "ssh", "config")
 	sshConfigFiles := []string{localConfig, systemConfig}

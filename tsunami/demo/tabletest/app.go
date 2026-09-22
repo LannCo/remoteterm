@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 
-	"github.com/wavetermdev/waveterm/tsunami/app"
-	"github.com/wavetermdev/waveterm/tsunami/ui"
-	"github.com/wavetermdev/waveterm/tsunami/vdom"
+	"github.com/LannCo/remoteterm/tsunami/app"
+	"github.com/LannCo/remoteterm/tsunami/ui"
+	"github.com/LannCo/remoteterm/tsunami/vdom"
 )
 
 var AppMeta = app.AppMeta{
@@ -52,14 +52,14 @@ var App = app.DefineComponent("App", func(_ struct{}) any {
 			Width:       "200px",
 		},
 		{
-			AccessorKey: "Age", 
+			AccessorKey: "Age",
 			Header:      "Age",
 			Sortable:    true,
 			Width:       "80px",
 		},
 		{
 			AccessorKey: "Email",
-			Header:      "Email Address", 
+			Header:      "Email Address",
 			Sortable:    true,
 			Width:       "250px",
 		},

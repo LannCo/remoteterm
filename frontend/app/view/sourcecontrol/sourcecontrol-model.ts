@@ -3,7 +3,7 @@
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { WaveEnv } from "@/app/waveenv/waveenv";
+import { WaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { getFocusedTerminalCwd } from "@/store/global";
 import { isBlank, makeConnRoute } from "@/util/util";
 import * as jotai from "jotai";

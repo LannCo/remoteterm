@@ -10,35 +10,35 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/wavetermdev/waveterm/pkg/eventbus"
-	"github.com/wavetermdev/waveterm/pkg/filestore"
-	"github.com/wavetermdev/waveterm/pkg/service"
-	"github.com/wavetermdev/waveterm/pkg/tsgen/tsgenmeta"
-	"github.com/wavetermdev/waveterm/pkg/userinput"
-	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
-	"github.com/wavetermdev/waveterm/pkg/vdom"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
-	"github.com/wavetermdev/waveterm/pkg/web/webcmd"
-	"github.com/wavetermdev/waveterm/pkg/wps"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
+	"github.com/LannCo/remoteterm/pkg/eventbus"
+	"github.com/LannCo/remoteterm/pkg/filestore"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtconfig"
+	"github.com/LannCo/remoteterm/pkg/service"
+	"github.com/LannCo/remoteterm/pkg/tsgen/tsgenmeta"
+	"github.com/LannCo/remoteterm/pkg/userinput"
+	"github.com/LannCo/remoteterm/pkg/util/utilfn"
+	"github.com/LannCo/remoteterm/pkg/vdom"
+	"github.com/LannCo/remoteterm/pkg/web/webcmd"
+	"github.com/LannCo/remoteterm/pkg/wps"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
 )
 
 // add extra types to generate here
 var ExtraTypes = []any{
-	waveobj.ORef{},
-	(*waveobj.WaveObj)(nil),
+	remotetermobj.ORef{},
+	(*remotetermobj.WaveObj)(nil),
 	map[string]any{},
 	service.WebCallType{},
 	service.WebReturnType{},
-	waveobj.UIContext{},
+	remotetermobj.UIContext{},
 	eventbus.WSEventType{},
 	wps.WSFileEventData{},
-	waveobj.LayoutActionData{},
+	remotetermobj.LayoutActionData{},
 	filestore.WaveFile{},
-	wconfig.FullConfigType{},
-	wconfig.WatcherUpdate{},
+	rtconfig.FullConfigType{},
+	rtconfig.WatcherUpdate{},
 	wshutil.RpcMessage{},
 	wshrpc.WshServerCommandMeta{},
 	userinput.UserInputRequest{},
@@ -49,8 +49,8 @@ var ExtraTypes = []any{
 	vdom.VDomBinding{},
 	vdom.VDomFrontendUpdate{},
 	vdom.VDomBackendUpdate{},
-	waveobj.MetaTSType{},
-	waveobj.ObjRTInfo{},
+	remotetermobj.MetaTSType{},
+	remotetermobj.ObjRTInfo{},
 	wshrpc.BlockJobStatusData{},
 }
 
@@ -62,12 +62,12 @@ var TypeUnions = []tsgenmeta.TypeUnionMeta{
 var contextRType = reflect.TypeOf((*context.Context)(nil)).Elem()
 var errorRType = reflect.TypeOf((*error)(nil)).Elem()
 var anyRType = reflect.TypeOf((*interface{})(nil)).Elem()
-var metaRType = reflect.TypeOf((*waveobj.MetaMapType)(nil)).Elem()
+var metaRType = reflect.TypeOf((*remotetermobj.MetaMapType)(nil)).Elem()
 var metaSettingsType = reflect.TypeOf((*wshrpc.MetaSettingsType)(nil)).Elem()
-var uiContextRType = reflect.TypeOf((*waveobj.UIContext)(nil)).Elem()
-var waveObjRType = reflect.TypeOf((*waveobj.WaveObj)(nil)).Elem()
-var updatesRtnRType = reflect.TypeOf(waveobj.UpdatesRtnType{})
-var orefRType = reflect.TypeOf((*waveobj.ORef)(nil)).Elem()
+var uiContextRType = reflect.TypeOf((*remotetermobj.UIContext)(nil)).Elem()
+var waveObjRType = reflect.TypeOf((*remotetermobj.WaveObj)(nil)).Elem()
+var updatesRtnRType = reflect.TypeOf(remotetermobj.UpdatesRtnType{})
+var orefRType = reflect.TypeOf((*remotetermobj.ORef)(nil)).Elem()
 var wshRpcInterfaceRType = reflect.TypeOf((*wshrpc.WshRpcInterface)(nil)).Elem()
 
 func generateTSMethodTypes(method reflect.Method, tsTypesMap map[reflect.Type]string, skipFirstArg bool) error {
@@ -207,7 +207,7 @@ func generateTSTypeInternal(rtype reflect.Type, tsTypesMap map[reflect.Type]stri
 		if fieldName == "" {
 			continue
 		}
-		if isWaveObj && (fieldName == waveobj.OTypeKeyName || fieldName == waveobj.OIDKeyName || fieldName == waveobj.VersionKeyName || fieldName == waveobj.MetaKeyName) {
+		if isWaveObj && (fieldName == remotetermobj.OTypeKeyName || fieldName == remotetermobj.OIDKeyName || fieldName == remotetermobj.VersionKeyName || fieldName == remotetermobj.MetaKeyName) {
 			continue
 		}
 		optMarker := ""
@@ -254,7 +254,7 @@ func generateTSTypeInternal(rtype reflect.Type, tsTypesMap map[reflect.Type]stri
 
 func GenerateWaveObjTSType() string {
 	var buf bytes.Buffer
-	buf.WriteString("// waveobj.WaveObj\n")
+	buf.WriteString("// remotetermobj.WaveObj\n")
 	buf.WriteString("type WaveObj = {\n")
 	buf.WriteString("    otype: string;\n")
 	buf.WriteString("    oid: string;\n")
@@ -313,7 +313,7 @@ func GenerateTSType(rtype reflect.Type, tsTypesMap map[reflect.Type]string) {
 		return
 	}
 	if rtype == orefRType {
-		tsTypesMap[orefRType] = "// waveobj.ORef\ntype ORef = string;\n"
+		tsTypesMap[orefRType] = "// remotetermobj.ORef\ntype ORef = string;\n"
 		return
 	}
 	if rtype == waveObjRType {
@@ -528,8 +528,8 @@ func GenerateWaveObjTypes(tsTypesMap map[reflect.Type]string) {
 	for _, extraType := range ExtraTypes {
 		GenerateTSType(reflect.TypeOf(extraType), tsTypesMap)
 	}
-	for _, rtype := range waveobj.AllWaveObjTypes() {
-		if rtype.String() == "*waveobj.MainServer" {
+	for _, rtype := range remotetermobj.AllWaveObjTypes() {
+		if rtype.String() == "*remotetermobj.MainServer" {
 			continue
 		}
 		GenerateTSType(rtype, tsTypesMap)

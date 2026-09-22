@@ -6,7 +6,7 @@ package vdom
 import (
 	"time"
 
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
 )
 
 const TextTag = "#text"
@@ -43,11 +43,11 @@ type VDomTransferElem struct {
 //// protocol messages
 
 type VDomCreateContext struct {
-	Type    string              `json:"type" tstype:"\"createcontext\""`
-	Ts      int64               `json:"ts"`
-	Meta    waveobj.MetaMapType `json:"meta,omitempty"`
-	Target  *VDomTarget         `json:"target,omitempty"`
-	Persist bool                `json:"persist,omitempty"`
+	Type    string                    `json:"type" tstype:"\"createcontext\""`
+	Ts      int64                     `json:"ts"`
+	Meta    remotetermobj.MetaMapType `json:"meta,omitempty"`
+	Target  *VDomTarget               `json:"target,omitempty"`
+	Persist bool                      `json:"persist,omitempty"`
 }
 
 type VDomAsyncInitiationRequest struct {

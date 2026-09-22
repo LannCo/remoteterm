@@ -29,26 +29,27 @@ import {
     checkIfRunningUnderARM64Translation,
     getElectronAppBasePath,
     getElectronAppUnpackedBasePath,
-    getWaveConfigDir,
-    getWaveDataDir,
+    getMigrationFailures,
+    getRemoteTermConfigDir,
+    getRemoteTermDataDir,
     isDev,
     unameArch,
     unamePlatform,
 } from "./emain-platform";
 import { ensureHotSpareTab, setMaxTabCacheSize } from "./emain-tabview";
-import { getIsWaveSrvDead, getWaveSrvProc, getWaveSrvReady, runWaveSrv } from "./emain-wavesrv";
+import { getIsRemoteTermSrvDead, getRemoteTermSrvProc, getRemoteTermSrvReady, runRemoteTermSrv } from "./emain-remotetermsrv";
 import {
     createBrowserWindow,
-    createNewWaveWindow,
-    focusedWaveWindow,
-    getAllWaveWindows,
+    createNewRemoteTermWindow,
+    focusedRemoteTermWindow,
+    getAllRemoteTermWindows,
     getQuakeWindow,
-    getWaveWindowById,
-    getWaveWindowByWorkspaceId,
+    getRemoteTermWindowById,
+    getRemoteTermWindowByWorkspaceId,
     initGlobalHotkeyEventSubscription,
     registerGlobalHotkey,
     relaunchBrowserWindows,
-    WaveBrowserWindow,
+    RemoteTermBrowserWindow,
 } from "./emain-window";
 import { ElectronWshClient, initElectronWshClient } from "./emain-wsh";
 import { getLaunchSettings } from "./launchsettings";
@@ -58,17 +59,17 @@ const electronApp = electron.app;
 
 let confirmQuit = true;
 
-const waveDataDir = getWaveDataDir();
-const waveConfigDir = getWaveConfigDir();
+const remoteTermDataDir = getRemoteTermDataDir();
+const remoteTermConfigDir = getRemoteTermConfigDir();
 
 electron.nativeTheme.themeSource = "dark";
 
 console.log = log;
 console.log(
     sprintf(
-        "waveterm-app starting, data_dir=%s, config_dir=%s electronpath=%s gopath=%s arch=%s/%s electron=%s",
-        waveDataDir,
-        waveConfigDir,
+        "remoteterm-app starting, data_dir=%s, config_dir=%s electronpath=%s gopath=%s arch=%s/%s electron=%s",
+        remoteTermDataDir,
+        remoteTermConfigDir,
         getElectronAppBasePath(),
         getElectronAppUnpackedBasePath(),
         unamePlatform,
@@ -77,7 +78,7 @@ console.log(
     )
 );
 if (isDev) {
-    console.log("waveterm-app WAVETERM_DEV set");
+    console.log("remoteterm-app REMOTETERM_DEV set");
 }
 
 function handleWSEvent(evtMsg: WSEventType) {
@@ -99,14 +100,14 @@ function handleWSEvent(evtMsg: WSEventType) {
         } else if (evtMsg.eventtype == "electron:closewindow") {
             console.log("electron:closewindow", evtMsg.data);
             if (evtMsg.data === undefined) return;
-            const ww = getWaveWindowById(evtMsg.data);
+            const ww = getRemoteTermWindowById(evtMsg.data);
             if (ww != null) {
                 ww.destroy(); // bypass the "are you sure?" dialog
             }
         } else if (evtMsg.eventtype == "electron:updateactivetab") {
             const activeTabUpdate: { workspaceid: string; newactivetabid: string } = evtMsg.data;
             console.log("electron:updateactivetab", activeTabUpdate);
-            const ww = getWaveWindowByWorkspaceId(activeTabUpdate.workspaceid);
+            const ww = getRemoteTermWindowByWorkspaceId(activeTabUpdate.workspaceid);
             if (ww == null) {
                 return;
             }
@@ -121,7 +122,7 @@ function handleWSEvent(evtMsg: WSEventType) {
 function runActiveTimer() {    setTimeout(runActiveTimer, 60000);
 }
 
-function hideWindowWithCatch(window: WaveBrowserWindow) {
+function hideWindowWithCatch(window: RemoteTermBrowserWindow) {
     if (window == null) {
         return;
     }
@@ -145,15 +146,15 @@ electronApp.on("window-all-closed", () => {
     }
 });
 electronApp.on("before-quit", (e) => {
-    const allWindows = getAllWaveWindows();
+    const allWindows = getAllRemoteTermWindows();
     const allBuilders = getAllBuilderWindows();
     if (
         confirmQuit &&
         !getForceQuit() &&
         !getUserConfirmedQuit() &&
         (allWindows.length > 0 || allBuilders.length > 0) &&
-        !getIsWaveSrvDead() &&
-        !process.env.WAVETERM_NOCONFIRMQUIT
+        !getIsRemoteTermSrvDead() &&
+        !process.env.REMOTETERM_NOCONFIRMQUIT
     ) {
         e.preventDefault();
         const choice = electron.dialog.showMessageBoxSync(null, {
@@ -175,10 +176,10 @@ electronApp.on("before-quit", (e) => {
 
     if (unamePlatform == "win32") {
         // win32 doesn't have a SIGINT, so we just let electron die, which
-        // ends up killing wavesrv via closing it's stdin.
+        // ends up killing remotetermsrv via closing it's stdin.
         return;
     }
-    getWaveSrvProc()?.kill("SIGINT");
+    getRemoteTermSrvProc()?.kill("SIGINT");
     shutdownWshrpc();
     if (getForceQuit()) {
         return;
@@ -190,14 +191,14 @@ electronApp.on("before-quit", (e) => {
     for (const builder of allBuilders) {
         builder.hide();
     }
-    if (getIsWaveSrvDead()) {
-        console.log("wavesrv is dead, quitting immediately");
+    if (getIsRemoteTermSrvDead()) {
+        console.log("remotetermsrv is dead, quitting immediately");
         setForceQuit(true);
         electronApp.quit();
         return;
     }
     setTimeout(() => {
-        console.log("waiting for wavesrv to exit...");
+        console.log("waiting for remotetermsrv to exit...");
         setForceQuit(true);
         electronApp.quit();
     }, 3000);
@@ -238,15 +239,15 @@ process.on("uncaughtException", (error) => {
     electronApp.quit();
 });
 
-let lastWaveWindowCount = 0;
+let lastRemoteTermWindowCount = 0;
 let lastIsBuilderWindowActive = false;
 globalEvents.on("windows-updated", () => {
-    const wwCount = getAllWaveWindows().length;
+    const wwCount = getAllRemoteTermWindows().length;
     const isBuilderActive = focusedBuilderWindow != null;
-    if (wwCount == lastWaveWindowCount && isBuilderActive == lastIsBuilderWindowActive) {
+    if (wwCount == lastRemoteTermWindowCount && isBuilderActive == lastIsBuilderWindowActive) {
         return;
     }
-    lastWaveWindowCount = wwCount;
+    lastRemoteTermWindowCount = wwCount;
     lastIsBuilderWindowActive = isBuilderActive;
     console.log("windows-updated", wwCount, "builder-active:", isBuilderActive);
     makeAndSetAppMenu();
@@ -262,27 +263,36 @@ async function appMain() {
     const startTs = Date.now();
     const instanceLock = electronApp.requestSingleInstanceLock();
     if (!instanceLock) {
-        console.log("waveterm-app could not get single-instance-lock, shutting down");
+        console.log("remoteterm-app could not get single-instance-lock, shutting down");
         setUserConfirmedQuit(true);
         electronApp.quit();
         return;
     }
     electronApp.on("second-instance", (_event, argv, workingDirectory) => {
         console.log("second-instance event, argv:", argv, "workingDirectory:", workingDirectory);
-        fireAndForget(createNewWaveWindow);
+        fireAndForget(createNewRemoteTermWindow);
     });
     try {
-        await runWaveSrv(handleWSEvent);
+        await runRemoteTermSrv(handleWSEvent);
     } catch (e) {
         console.log(e.toString());
     }
-    const ready = await getWaveSrvReady();
-    console.log("wavesrv ready signal received", ready, Date.now() - startTs, "ms");
+    const ready = await getRemoteTermSrvReady();
+    console.log("remotetermsrv ready signal received", ready, Date.now() - startTs, "ms");
     await electronApp.whenReady();
+    const migrationFailures = getMigrationFailures();
+    if (migrationFailures.length > 0) {
+        electron.dialog.showErrorBox(
+            "RemoteTerm Data Migration Issue",
+            "RemoteTerm could not fully migrate your existing data to its new storage location. " +
+                "Some data may be temporarily inaccessible until this is resolved manually.\n\n" +
+                migrationFailures.join("\n")
+        );
+    }
     configureAuthKeyRequestInjection(electron.session.defaultSession);
     initIpcHandlers();
 
-    await sleep(10); // wait a bit for wavesrv to be ready
+    await sleep(10); // wait a bit for remotetermsrv to be ready
     try {
         initElectronWshClient();
         initElectronWshrpc(ElectronWshClient, { authKey: AuthKey });
@@ -307,7 +317,7 @@ async function appMain() {
     }
 
     electronApp.on("activate", () => {
-        const allWindows = getAllWaveWindows();
+        const allWindows = getAllRemoteTermWindows();
         const anyVisible = allWindows.some((w) => !w.isDestroyed() && w.isVisible());
         if (anyVisible) {
             return;
@@ -319,7 +329,7 @@ async function appMain() {
             return;
         }
         if (allWindows.length === 0) {
-            fireAndForget(createNewWaveWindow);
+            fireAndForget(createNewRemoteTermWindow);
         }
     });
     // Sleep/wake detection across platforms:

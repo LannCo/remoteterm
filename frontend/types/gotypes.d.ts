@@ -28,7 +28,7 @@ declare global {
         iconcolor: string;
     };
 
-    // wconfig.BackgroundConfigType
+    // rtconfig.BackgroundConfigType
     type BackgroundConfigType = {
         bg?: string;
         "bg:opacity"?: number;
@@ -58,7 +58,7 @@ declare global {
         badge?: Badge;
     };
 
-    // waveobj.Block
+    // remotetermobj.Block
     type Block = WaveObj & {
         parentoref?: string;
         runtimeopts?: RuntimeOpts;
@@ -77,7 +77,7 @@ declare global {
         tsunamiport?: number;
     };
 
-    // waveobj.BlockDef
+    // remotetermobj.BlockDef
     type BlockDef = {
         files?: {[key: string]: FileDef};
         meta?: MetaType;
@@ -135,7 +135,7 @@ declare global {
         secretbindingscomplete: boolean;
     };
 
-    // waveobj.Client
+    // remotetermobj.Client
     type Client = WaveObj & {
         windowids: string[];
         tosagreed?: number;
@@ -774,7 +774,7 @@ declare global {
         data64: string;
     };
 
-    // wconfig.ConfigError
+    // rtconfig.ConfigError
     type ConfigError = {
         file: string;
         err: string;
@@ -792,7 +792,7 @@ declare global {
         logblockid?: string;
     };
 
-    // wconfig.ConnKeywords
+    // rtconfig.ConnKeywords
     type ConnKeywords = {
         "conn:wshenabled"?: boolean;
         "conn:askbeforewshinstall"?: boolean;
@@ -947,7 +947,7 @@ declare global {
         size?: number;
     };
 
-    // waveobj.FileDef
+    // remotetermobj.FileDef
     type FileDef = {
         content?: string;
         meta?: {[key: string]: any};
@@ -1008,7 +1008,7 @@ declare global {
         termlastcommand?: string;
     };
 
-    // wconfig.FullConfigType
+    // rtconfig.FullConfigType
     type FullConfigType = {
         settings: SettingsType;
         mimetypes: {[key: string]: MimeTypeConfigType};
@@ -1085,7 +1085,7 @@ declare global {
         untracked: GitFileChange[];
     };
 
-    // waveobj.Job
+    // remotetermobj.Job
     type Job = WaveObj & {
         connection: string;
         jobkind: string;
@@ -1118,7 +1118,7 @@ declare global {
         jobmanagerstatus: string;
     };
 
-    // waveobj.LayoutActionData
+    // remotetermobj.LayoutActionData
     type LayoutActionData = {
         actiontype: string;
         actionid: string;
@@ -1132,7 +1132,7 @@ declare global {
         position?: string;
     };
 
-    // waveobj.LayoutState
+    // remotetermobj.LayoutState
     type LayoutState = WaveObj & {
         rootnode?: any;
         magnifiednodeid?: string;
@@ -1141,13 +1141,13 @@ declare global {
         pendingbackendactions?: LayoutActionData[];
     };
 
-    // waveobj.LeafOrderEntry
+    // remotetermobj.LeafOrderEntry
     type LeafOrderEntry = {
         nodeid: string;
         blockid: string;
     };
 
-    // waveobj.MetaTSType
+    // remotetermobj.MetaTSType
     type MetaType = {
         view?: string;
         controller?: string;
@@ -1262,16 +1262,16 @@ declare global {
         ReturnDesc: string;
     };
 
-    // wconfig.MimeTypeConfigType
+    // rtconfig.MimeTypeConfigType
     type MimeTypeConfigType = {
         icon: string;
         color: string;
     };
 
-    // waveobj.ORef
+    // remotetermobj.ORef
     type ORef = string;
 
-    // waveobj.ObjRTInfo
+    // remotetermobj.ObjRTInfo
     type ObjRTInfo = {
         "tsunami:appmeta"?: AppMeta;
         "tsunami:schemas"?: any;
@@ -1299,7 +1299,7 @@ declare global {
         tabid: string;
     };
 
-    // waveobj.Point
+    // remotetermobj.Point
     type Point = {
         x: number;
         y: number;
@@ -1391,7 +1391,7 @@ declare global {
         route?: string;
     };
 
-    // waveobj.RuntimeOpts
+    // remotetermobj.RuntimeOpts
     type RuntimeOpts = {
         termsize?: TermSize;
         winsize?: WinSize;
@@ -1403,7 +1403,7 @@ declare global {
         optional: boolean;
     };
 
-    // wconfig.SettingsType
+    // rtconfig.SettingsType
     type SettingsType = {
         "app:*"?: boolean;
         "app:globalhotkey"?: string;
@@ -1416,7 +1416,7 @@ declare global {
         "app:disablectrlshiftdisplay"?: boolean;
         "app:focusfollowscursor"?: string;
         "app:tabbar"?: string;
-        "feature:waveappbuilder"?: boolean;
+        "feature:rtappbuilder"?: boolean;
         "term:*"?: boolean;
         "term:fontsize"?: number;
         "term:fontfamily"?: string;
@@ -1497,20 +1497,20 @@ declare global {
         "tsunami:gopath"?: string;
     };
 
-    // waveobj.StickerClickOptsType
+    // remotetermobj.StickerClickOptsType
     type StickerClickOptsType = {
         sendinput?: string;
         createblock?: BlockDef;
     };
 
-    // waveobj.StickerDisplayOptsType
+    // remotetermobj.StickerDisplayOptsType
     type StickerDisplayOptsType = {
         icon: string;
         imgsrc: string;
         svgblob?: string;
     };
 
-    // waveobj.StickerType
+    // remotetermobj.StickerType
     type StickerType = {
         stickertype: string;
         style: {[key: string]: any};
@@ -1551,20 +1551,20 @@ declare global {
         "url:url"?: string;
     };
 
-    // waveobj.Tab
+    // remotetermobj.Tab
     type Tab = WaveObj & {
         name: string;
         layoutstate: string;
         blockids: string[];
     };
 
-    // waveobj.TermSize
+    // remotetermobj.TermSize
     type TermSize = {
         rows: number;
         cols: number;
     };
 
-    // wconfig.TermThemeType
+    // rtconfig.TermThemeType
     type TermThemeType = {
         "display:name": string;
         "display:order": number;
@@ -1598,7 +1598,7 @@ declare global {
         values: {[key: string]: number};
     };
 
-    // waveobj.UIContext
+    // remotetermobj.UIContext
     type UIContext = {
         windowid: string;
         activetabid: string;
@@ -1851,7 +1851,7 @@ declare global {
         message: RpcMessage;
     };
 
-    // wconfig.WatcherUpdate
+    // rtconfig.WatcherUpdate
     type WatcherUpdate = {
         fullconfig: FullConfigType;
     };
@@ -1910,7 +1910,7 @@ declare global {
         silent?: boolean;
     };
 
-    // waveobj.WaveObj
+    // remotetermobj.WaveObj
     type WaveObj = {
         otype: string;
         oid: string;
@@ -1918,7 +1918,7 @@ declare global {
         meta: MetaType;
     };
 
-    // waveobj.WaveObjUpdate
+    // remotetermobj.WaveObjUpdate
     type WaveObjUpdate = {
         updatetype: string;
         otype: string;
@@ -1946,7 +1946,7 @@ declare global {
         option?: boolean;
     };
 
-    // waveobj.Window
+    // remotetermobj.Window
     type WaveWindow = WaveObj & {
         workspaceid: string;
         isnew?: boolean;
@@ -1955,7 +1955,7 @@ declare global {
         lastfocusts: number;
     };
 
-    // wconfig.WebBookmark
+    // rtconfig.WebBookmark
     type WebBookmark = {
         url: string;
         title?: string;
@@ -1987,7 +1987,7 @@ declare global {
         inner?: boolean;
     };
 
-    // wconfig.WidgetConfigType
+    // rtconfig.WidgetConfigType
     type WidgetConfigType = {
         "display:order"?: number;
         "display:hidden"?: boolean;
@@ -2000,13 +2000,13 @@ declare global {
         blockdef: BlockDef;
     };
 
-    // waveobj.WinSize
+    // remotetermobj.WinSize
     type WinSize = {
         width: number;
         height: number;
     };
 
-    // waveobj.Workspace
+    // remotetermobj.Workspace
     type Workspace = WaveObj & {
         name?: string;
         icon?: string;
@@ -2021,7 +2021,7 @@ declare global {
         workspacedata: Workspace;
     };
 
-    // waveobj.WorkspaceListEntry
+    // remotetermobj.WorkspaceListEntry
     type WorkspaceListEntry = {
         workspaceid: string;
         windowid: string;

@@ -12,7 +12,7 @@ import (
 
 var authkey string
 
-const WaveAuthKeyEnv = "WAVETERM_AUTH_KEY"
+const WaveAuthKeyEnv = "REMOTETERM_AUTH_KEY"
 const AuthKeyHeader = "X-AuthKey"
 
 func ValidateIncomingRequest(r *http.Request) error {

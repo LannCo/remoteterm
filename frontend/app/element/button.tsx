@@ -32,7 +32,7 @@ const Button = memo(
                 <Component
                     ref={btnRef}
                     tabIndex={disabled ? -1 : 0}
-                    className={clsx("wave-button", finalClassName)}
+                    className={clsx("remoteterm-button", finalClassName)}
                     disabled={disabled}
                     {...props}
                 >

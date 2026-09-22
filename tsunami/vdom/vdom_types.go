@@ -34,7 +34,7 @@ type VDomFunc struct {
 	PreventDefault  bool     `json:"preventdefault,omitempty"`  // set to call e.preventDefault() on the client side
 	PreventBackend  bool     `json:"preventbackend,omitempty"`  // set to skip firing the event to the backend
 	GlobalEvent     string   `json:"globalevent,omitempty"`
-	Keys            []string `json:"keys,omitempty"` // special for keyDown events a list of keys to "capture"
+	Keys            []string `json:"keys,omitempty"`   // special for keyDown events a list of keys to "capture"
 	JsCode          string   `json:"jscode,omitempty"` // client-side JS function expression: (e, elem) => { ... }
 }
 
@@ -50,10 +50,10 @@ type VDomRef struct {
 
 func (r *VDomRef) MarshalJSON() ([]byte, error) {
 	type vdomRefAlias struct {
-		Type          string           `json:"type"`
-		RefId         string           `json:"refid"`
-		TrackPosition bool             `json:"trackposition,omitempty"`
-		HasCurrent    bool             `json:"hascurrent,omitempty"`
+		Type          string `json:"type"`
+		RefId         string `json:"refid"`
+		TrackPosition bool   `json:"trackposition,omitempty"`
+		HasCurrent    bool   `json:"hascurrent,omitempty"`
 	}
 	return json.Marshal(vdomRefAlias{
 		Type:          r.Type,
@@ -65,10 +65,10 @@ func (r *VDomRef) MarshalJSON() ([]byte, error) {
 
 func (r *VDomRef) UnmarshalJSON(data []byte) error {
 	type vdomRefAlias struct {
-		Type          string           `json:"type"`
-		RefId         string           `json:"refid"`
-		TrackPosition bool             `json:"trackposition,omitempty"`
-		HasCurrent    bool             `json:"hascurrent,omitempty"`
+		Type          string `json:"type"`
+		RefId         string `json:"refid"`
+		TrackPosition bool   `json:"trackposition,omitempty"`
+		HasCurrent    bool   `json:"hascurrent,omitempty"`
 	}
 	var alias vdomRefAlias
 	if err := json.Unmarshal(data, &alias); err != nil {

@@ -18,8 +18,8 @@ import {
 } from "./emain-activity";
 import { log } from "./emain-log";
 import { getElectronAppBasePath, isDev, unamePlatform } from "./emain-platform";
-import { getOrCreateWebViewForTab, getWaveTabViewByWebContentsId, WaveTabView } from "./emain-tabview";
-import { delay, ensureBoundsAreVisible, waveKeyToElectronKey } from "./emain-util";
+import { getOrCreateWebViewForTab, getRemoteTermTabViewByWebContentsId, RemoteTermTabView } from "./emain-tabview";
+import { delay, ensureBoundsAreVisible, remoteTermKeyToElectronKey } from "./emain-util";
 import { ElectronWshClient } from "./emain-wsh";
 
 
@@ -96,16 +96,16 @@ export function calculateWindowBounds(
     return ensureBoundsAreVisible(winBounds);
 }
 
-export const waveWindowMap = new Map<string, WaveBrowserWindow>(); // waveWindowId -> WaveBrowserWindow
+export const remoteTermWindowMap = new Map<string, RemoteTermBrowserWindow>(); // remoteTermWindowId -> RemoteTermBrowserWindow
 
 // on blur we do not set this to null (but on destroy we do), so this tracks the *last* focused window
 // e.g. it persists when the app itself is not focused
-export let focusedWaveWindow: WaveBrowserWindow = null;
+export let focusedRemoteTermWindow: RemoteTermBrowserWindow = null;
 
 // quake window for toggle hotkey (show/hide behavior)
-let quakeWindow: WaveBrowserWindow | null = null;
+let quakeWindow: RemoteTermBrowserWindow | null = null;
 
-export function getQuakeWindow(): WaveBrowserWindow | null {
+export function getQuakeWindow(): RemoteTermBrowserWindow | null {
     return quakeWindow;
 }
 
@@ -145,11 +145,11 @@ function isNonEmptyUnsavedWorkspace(workspace: Workspace): boolean {
     return !workspace.name && !workspace.icon && workspace.tabids?.length > 1;
 }
 
-export class WaveBrowserWindow extends BaseWindow {
-    waveWindowId: string;
+export class RemoteTermBrowserWindow extends BaseWindow {
+    remoteTermWindowId: string;
     workspaceId: string;
-    allLoadedTabViews: Map<string, WaveTabView>;
-    activeTabView: WaveTabView;
+    allLoadedTabViews: Map<string, RemoteTermTabView>;
+    activeTabView: RemoteTermTabView;
     private canClose: boolean;
     private deleteAllowed: boolean;
     private actionQueue: WindowActionQueueEntry[];
@@ -226,9 +226,9 @@ export class WaveBrowserWindow extends BaseWindow {
             });
         }
         this.actionQueue = [];
-        this.waveWindowId = waveWindow.oid;
+        this.remoteTermWindowId = waveWindow.oid;
         this.workspaceId = waveWindow.workspaceid;
-        this.allLoadedTabViews = new Map<string, WaveTabView>();
+        this.allLoadedTabViews = new Map<string, RemoteTermTabView>();
         const winBoundsPoller = setInterval(() => {
             if (this.isDestroyed()) {
                 clearInterval(winBoundsPoller);
@@ -259,7 +259,7 @@ export class WaveBrowserWindow extends BaseWindow {
                     continue;
                 }
                 if (tabView?.webContents && !tabView.webContents.isDestroyed()) {
-                    tabView.webContents.send("wave-resize");
+                    tabView.webContents.send("remoteterm-resize");
                 }
             }
         });
@@ -297,9 +297,9 @@ export class WaveBrowserWindow extends BaseWindow {
             if (getGlobalIsRelaunching()) {
                 return;
             }
-            focusedWaveWindow = this; // eslint-disable-line @typescript-eslint/no-this-alias
-            console.log("focus win", this.waveWindowId);
-            fireAndForget(() => ClientService.FocusWindow(this.waveWindowId));
+            focusedRemoteTermWindow = this; // eslint-disable-line @typescript-eslint/no-this-alias
+            console.log("focus win", this.remoteTermWindowId);
+            fireAndForget(() => ClientService.FocusWindow(this.remoteTermWindowId));
             setWasInFg(true);
             setWasActive(true);
             setTimeout(() => globalEvents.emit("windows-updated"), 50);
@@ -315,13 +315,13 @@ export class WaveBrowserWindow extends BaseWindow {
                 return;
             }
             this.closeAllDevTools();
-            console.log("win 'close' handler fired", this.waveWindowId);
+            console.log("win 'close' handler fired", this.remoteTermWindowId);
             if (getGlobalIsQuitting() || getGlobalIsRelaunching()) {
                 return;
             }
             e.preventDefault();
             fireAndForget(async () => {
-                const numWindows = waveWindowMap.size;
+                const numWindows = remoteTermWindowMap.size;
                 const fullConfig = await RpcApi.GetFullConfigCommand(ElectronWshClient);
                 if (numWindows > 1 || !fullConfig.settings["window:savelastwindow"]) {
                     if (fullConfig.settings["window:confirmclose"]) {
@@ -346,31 +346,31 @@ export class WaveBrowserWindow extends BaseWindow {
             });
         });
         this.on("closed", () => {
-            console.log("win 'closed' handler fired", this.waveWindowId);
+            console.log("win 'closed' handler fired", this.remoteTermWindowId);
             if (getGlobalIsQuitting()) {
-                console.log("win quitting or updating", this.waveWindowId);
+                console.log("win quitting or updating", this.remoteTermWindowId);
                 return;
             }
             setTimeout(() => globalEvents.emit("windows-updated"), 50);
-            waveWindowMap.delete(this.waveWindowId);
-            if (focusedWaveWindow == this) {
-                focusedWaveWindow = null;
+            remoteTermWindowMap.delete(this.remoteTermWindowId);
+            if (focusedRemoteTermWindow == this) {
+                focusedRemoteTermWindow = null;
             }
             if (quakeWindow == this) {
                 quakeWindow = null;
             }
             this.removeAllChildViews();
             if (getGlobalIsRelaunching()) {
-                console.log("win relaunching", this.waveWindowId);
+                console.log("win relaunching", this.remoteTermWindowId);
                 this.destroy();
                 return;
             }
             if (this.deleteAllowed) {
-                console.log("win removing window from backend DB", this.waveWindowId);
-                fireAndForget(() => WindowService.CloseWindow(this.waveWindowId, true));
+                console.log("win removing window from backend DB", this.remoteTermWindowId);
+                fireAndForget(() => WindowService.CloseWindow(this.remoteTermWindowId, true));
             }
         });
-        waveWindowMap.set(waveWindow.oid, this);
+        remoteTermWindowMap.set(waveWindow.oid, this);
         setTimeout(() => globalEvents.emit("windows-updated"), 50);
     }
 
@@ -402,9 +402,9 @@ export class WaveBrowserWindow extends BaseWindow {
     }
 
     async switchWorkspace(workspaceId: string) {
-        console.log("switchWorkspace", workspaceId, this.waveWindowId);
+        console.log("switchWorkspace", workspaceId, this.remoteTermWindowId);
         if (workspaceId == this.workspaceId) {
-            console.log("switchWorkspace already on this workspace", this.waveWindowId);
+            console.log("switchWorkspace already on this workspace", this.remoteTermWindowId);
             return;
         }
 
@@ -428,7 +428,7 @@ export class WaveBrowserWindow extends BaseWindow {
         console.log(
             "setActiveTab",
             tabId,
-            this.waveWindowId,
+            this.remoteTermWindowId,
             this.workspaceId,
             setInBackend,
             primaryStartupTab ? "(primary startup)" : ""
@@ -436,16 +436,16 @@ export class WaveBrowserWindow extends BaseWindow {
         await this._queueActionInternal({ op: "switchtab", tabId, setInBackend, primaryStartupTab });
     }
 
-    private async initializeTab(tabView: WaveTabView, primaryStartupTab: boolean) {
+    private async initializeTab(tabView: RemoteTermTabView, primaryStartupTab: boolean) {
         const clientId = await getClientId();
-        await this.awaitWithDevTimeout(tabView.initPromise, "initPromise", tabView.waveTabId);
+        await this.awaitWithDevTimeout(tabView.initPromise, "initPromise", tabView.remoteTermTabId);
         const winBounds = this.getContentBounds();
         tabView.setBounds({ x: 0, y: 0, width: winBounds.width, height: winBounds.height });
         this.contentView.addChildView(tabView);
-        const initOpts: WaveInitOpts = {
-            tabId: tabView.waveTabId,
+        const initOpts: RemoteTermInitOpts = {
+            tabId: tabView.remoteTermTabId,
             clientId: clientId,
-            windowId: this.waveWindowId,
+            windowId: this.remoteTermWindowId,
             activate: true,
         };
         if (primaryStartupTab) {
@@ -456,13 +456,13 @@ export class WaveBrowserWindow extends BaseWindow {
         delete tabView.savedInitOpts.primaryTabStartup;
         const startTime = Date.now();
         console.log(
-            "before wave ready, init tab, sending wave-init",
-            tabView.waveTabId,
+            "before remoteterm ready, init tab, sending remoteterm-init",
+            tabView.remoteTermTabId,
             primaryStartupTab ? "(primary startup)" : ""
         );
-        tabView.webContents.send("wave-init", initOpts);
-        await this.awaitWithDevTimeout(tabView.waveReadyPromise, "waveReadyPromise", tabView.waveTabId);
-        console.log("wave-ready init time", Date.now() - startTime + "ms");
+        tabView.webContents.send("remoteterm-init", initOpts);
+        await this.awaitWithDevTimeout(tabView.remoteTermReadyPromise, "remoteTermReadyPromise", tabView.remoteTermTabId);
+        console.log("remoteterm-ready init time", Date.now() - startTime + "ms");
     }
 
     private async awaitWithDevTimeout<T>(promise: Promise<T>, name: string, tabId: string): Promise<T> {
@@ -491,7 +491,7 @@ export class WaveBrowserWindow extends BaseWindow {
         }
     }
 
-    private async setTabViewIntoWindow(tabView: WaveTabView, tabInitialized: boolean, primaryStartupTab = false) {
+    private async setTabViewIntoWindow(tabView: RemoteTermTabView, tabInitialized: boolean, primaryStartupTab = false) {
         if (this.activeTabView == tabView) {
             return;
         }
@@ -501,17 +501,17 @@ export class WaveBrowserWindow extends BaseWindow {
             oldActiveView.isActiveTab = false;
         }
         this.activeTabView = tabView;
-        this.allLoadedTabViews.set(tabView.waveTabId, tabView);
+        this.allLoadedTabViews.set(tabView.remoteTermTabId, tabView);
         if (!tabInitialized) {
             console.log("initializing a new tab", primaryStartupTab ? "(primary startup)" : "");
             await this.initializeTab(tabView, primaryStartupTab);
             this.finalizePositioning();
         } else {
-            console.log("reusing an existing tab, calling wave-init", tabView.waveTabId);
-            tabView.webContents.send("wave-init", tabView.savedInitOpts); // reinit
+            console.log("reusing an existing tab, calling remoteterm-init", tabView.remoteTermTabId);
+            tabView.webContents.send("remoteterm-init", tabView.savedInitOpts); // reinit
             this.finalizePositioning();
         }
-        tabView.webContents.send("wave-resize");
+        tabView.webContents.send("remoteterm-resize");
 
         // something is causing the new tab to lose focus so it requires manual refocusing
         tabView.webContents.focus();
@@ -586,7 +586,7 @@ export class WaveBrowserWindow extends BaseWindow {
                         break;
                     case "switchtab":
                         tabId = entry.tabId;
-                        if (this.activeTabView?.waveTabId == tabId) {
+                        if (this.activeTabView?.remoteTermTabId == tabId) {
                             continue;
                         }
                         if (entry.setInBackend) {
@@ -601,7 +601,7 @@ export class WaveBrowserWindow extends BaseWindow {
                                 "[error] closeTab: no return value",
                                 tabId,
                                 this.workspaceId,
-                                this.waveWindowId
+                                this.remoteTermWindowId
                             );
                             return;
                         }
@@ -617,13 +617,13 @@ export class WaveBrowserWindow extends BaseWindow {
                         break;
                     }
                     case "switchworkspace": {
-                        const newWs = await WindowService.SwitchWorkspace(this.waveWindowId, entry.workspaceId);
+                        const newWs = await WindowService.SwitchWorkspace(this.remoteTermWindowId, entry.workspaceId);
                         if (!newWs) {
                             return;
                         }
                         console.log("processActionQueue switchworkspace newWs", newWs);
                         this.removeAllChildViews();
-                        console.log("destroyed all tabs", this.waveWindowId);
+                        console.log("destroyed all tabs", this.remoteTermWindowId);
                         this.workspaceId = entry.workspaceId;
                         this.allLoadedTabViews = new Map();
                         tabId = newWs.activetabid;
@@ -633,7 +633,7 @@ export class WaveBrowserWindow extends BaseWindow {
                 if (tabId == null) {
                     return;
                 }
-                const [tabView, tabInitialized] = await getOrCreateWebViewForTab(this.waveWindowId, tabId);
+                const [tabView, tabInitialized] = await getOrCreateWebViewForTab(this.remoteTermWindowId, tabId);
                 const primaryStartupTabFlag = entry.op === "switchtab" ? (entry.primaryStartupTab ?? false) : false;
                 await this.setTabViewIntoWindow(tabView, tabInitialized, primaryStartupTabFlag);
             } catch (e) {
@@ -651,7 +651,7 @@ export class WaveBrowserWindow extends BaseWindow {
         const bounds = this.getBounds();
         try {
             await WindowService.SetWindowPosAndSize(
-                this.waveWindowId,
+                this.remoteTermWindowId,
                 { x: bounds.x, y: bounds.y },
                 { width: bounds.width, height: bounds.height }
             );
@@ -661,13 +661,13 @@ export class WaveBrowserWindow extends BaseWindow {
     }
 
     removeTabView(tabId: string, force: boolean) {
-        if (!force && this.activeTabView?.waveTabId == tabId) {
-            console.log("cannot remove active tab", tabId, this.waveWindowId);
+        if (!force && this.activeTabView?.remoteTermTabId == tabId) {
+            console.log("cannot remove active tab", tabId, this.remoteTermWindowId);
             return;
         }
         const tabView = this.allLoadedTabViews.get(tabId);
         if (tabView == null) {
-            console.log("removeTabView -- tabView not found", tabId, this.waveWindowId);
+            console.log("removeTabView -- tabView not found", tabId, this.remoteTermWindowId);
             // the tab was never loaded, so just return
             return;
         }
@@ -677,51 +677,51 @@ export class WaveBrowserWindow extends BaseWindow {
     }
 
     destroy() {
-        console.log("destroy win", this.waveWindowId);
+        console.log("destroy win", this.remoteTermWindowId);
         this.deleteAllowed = true;
         super.destroy();
     }
 }
 
-export function getWaveWindowByTabId(tabId: string): WaveBrowserWindow {
-    for (const ww of waveWindowMap.values()) {
+export function getRemoteTermWindowByTabId(tabId: string): RemoteTermBrowserWindow {
+    for (const ww of remoteTermWindowMap.values()) {
         if (ww.allLoadedTabViews.has(tabId)) {
             return ww;
         }
     }
 }
 
-export function getWaveWindowByWebContentsId(webContentsId: number): WaveBrowserWindow {
+export function getRemoteTermWindowByWebContentsId(webContentsId: number): RemoteTermBrowserWindow {
     if (webContentsId == null) {
         return null;
     }
-    const tabView = getWaveTabViewByWebContentsId(webContentsId);
+    const tabView = getRemoteTermTabViewByWebContentsId(webContentsId);
     if (tabView == null) {
         return null;
     }
-    return getWaveWindowByTabId(tabView.waveTabId);
+    return getRemoteTermWindowByTabId(tabView.remoteTermTabId);
 }
 
-export function getWaveWindowById(windowId: string): WaveBrowserWindow {
-    return waveWindowMap.get(windowId);
+export function getRemoteTermWindowById(windowId: string): RemoteTermBrowserWindow {
+    return remoteTermWindowMap.get(windowId);
 }
 
-export function getWaveWindowByWorkspaceId(workspaceId: string): WaveBrowserWindow {
-    for (const waveWindow of waveWindowMap.values()) {
+export function getRemoteTermWindowByWorkspaceId(workspaceId: string): RemoteTermBrowserWindow {
+    for (const waveWindow of remoteTermWindowMap.values()) {
         if (waveWindow.workspaceId === workspaceId) {
             return waveWindow;
         }
     }
 }
 
-export function getAllWaveWindows(): WaveBrowserWindow[] {
-    return Array.from(waveWindowMap.values());
+export function getAllRemoteTermWindows(): RemoteTermBrowserWindow[] {
+    return Array.from(remoteTermWindowMap.values());
 }
 
 export async function createWindowForWorkspace(workspaceId: string) {
     const newWin = await WindowService.CreateWindow(null, workspaceId);
     if (!newWin) {
-        console.log("error creating new window", this.waveWindowId);
+        console.log("error creating new window", this.remoteTermWindowId);
     }
     const newBwin = await createBrowserWindow(newWin, await RpcApi.GetFullConfigCommand(ElectronWshClient), {
         unamePlatform,
@@ -736,7 +736,7 @@ export async function createBrowserWindow(
     waveWindow: WaveWindow,
     fullConfig: FullConfigType,
     opts: WindowOpts
-): Promise<WaveBrowserWindow> {
+): Promise<RemoteTermBrowserWindow> {
     if (!waveWindow) {
         console.log("createBrowserWindow: no waveWindow");
         waveWindow = await WindowService.CreateWindow(null, "");
@@ -749,7 +749,7 @@ export async function createBrowserWindow(
         workspace = await WorkspaceService.GetWorkspace(waveWindow.workspaceid);
     }
     console.log("createBrowserWindow", waveWindow.oid, workspace.oid, workspace);
-    const bwin = new WaveBrowserWindow(waveWindow, fullConfig, opts);
+    const bwin = new RemoteTermBrowserWindow(waveWindow, fullConfig, opts);
 
     if (workspace.activetabid) {
         await bwin.setActiveTab(workspace.activetabid, false, opts.isPrimaryStartupWindow ?? false);
@@ -758,14 +758,14 @@ export async function createBrowserWindow(
 }
 
 ipcMain.on("set-active-tab", async (event, tabId) => {
-    const ww = getWaveWindowByWebContentsId(event.sender.id);
-    console.log("set-active-tab", tabId, ww?.waveWindowId);
+    const ww = getRemoteTermWindowByWebContentsId(event.sender.id);
+    console.log("set-active-tab", tabId, ww?.remoteTermWindowId);
     await ww?.setActiveTab(tabId, true);
 });
 
 ipcMain.on("create-tab", async (event, connName?: string) => {
     const senderWc = event.sender;
-    const ww = getWaveWindowByWebContentsId(senderWc.id);
+    const ww = getRemoteTermWindowByWebContentsId(senderWc.id);
     if (ww != null) {
         await ww.queueCreateTab(connName);
     }
@@ -774,7 +774,7 @@ ipcMain.on("create-tab", async (event, connName?: string) => {
 });
 
 ipcMain.handle("close-tab", async (event, workspaceId: string, tabId: string, confirmClose: boolean) => {
-    const ww = getWaveWindowByWorkspaceId(workspaceId);
+    const ww = getRemoteTermWindowByWorkspaceId(workspaceId);
     if (ww == null) {
         console.log(`close-tab: no window found for workspace ws=${workspaceId} tab=${tabId}`);
         return false;
@@ -798,13 +798,13 @@ ipcMain.handle("close-tab", async (event, workspaceId: string, tabId: string, co
 
 ipcMain.on("switch-workspace", (event, workspaceId) => {
     fireAndForget(async () => {
-        const ww = getWaveWindowByWebContentsId(event.sender.id);
-        console.log("switch-workspace", workspaceId, ww?.waveWindowId);
+        const ww = getRemoteTermWindowByWebContentsId(event.sender.id);
+        console.log("switch-workspace", workspaceId, ww?.remoteTermWindowId);
         await ww?.switchWorkspace(workspaceId);
     });
 });
 
-export async function createWorkspace(window: WaveBrowserWindow) {
+export async function createWorkspace(window: RemoteTermBrowserWindow) {
     const newWsId = await WorkspaceService.CreateWorkspace("", "", "", true);
     if (newWsId) {
         if (window) {
@@ -817,16 +817,16 @@ export async function createWorkspace(window: WaveBrowserWindow) {
 
 ipcMain.on("create-workspace", (event) => {
     fireAndForget(async () => {
-        const ww = getWaveWindowByWebContentsId(event.sender.id);
-        console.log("create-workspace", ww?.waveWindowId);
+        const ww = getRemoteTermWindowByWebContentsId(event.sender.id);
+        console.log("create-workspace", ww?.remoteTermWindowId);
         await createWorkspace(ww);
     });
 });
 
 ipcMain.on("delete-workspace", (event, workspaceId) => {
     fireAndForget(async () => {
-        const ww = getWaveWindowByWebContentsId(event.sender.id);
-        console.log("delete-workspace", workspaceId, ww?.waveWindowId);
+        const ww = getRemoteTermWindowByWebContentsId(event.sender.id);
+        console.log("delete-workspace", workspaceId, ww?.remoteTermWindowId);
 
         const workspaceList = await WorkspaceService.ListWorkspaces();
 
@@ -839,29 +839,29 @@ ipcMain.on("delete-workspace", (event, workspaceId) => {
             message: `Deleting workspace will also delete its contents.\n\nContinue?`,
         });
         if (choice === 0) {
-            console.log("user cancelled workspace delete", workspaceId, ww?.waveWindowId);
+            console.log("user cancelled workspace delete", workspaceId, ww?.remoteTermWindowId);
             return;
         }
 
         const newWorkspaceId = await WorkspaceService.DeleteWorkspace(workspaceId);
-        console.log("delete-workspace done", workspaceId, ww?.waveWindowId);
+        console.log("delete-workspace done", workspaceId, ww?.remoteTermWindowId);
         if (ww?.workspaceId == workspaceId) {
             if (newWorkspaceId) {
                 await ww.switchWorkspace(newWorkspaceId);
             } else {
-                console.log("delete-workspace closing window", workspaceId, ww?.waveWindowId);
+                console.log("delete-workspace closing window", workspaceId, ww?.remoteTermWindowId);
                 ww.destroy();
             }
         }
     });
 });
 
-export async function createNewWaveWindow() {
-    log("createNewWaveWindow");
+export async function createNewRemoteTermWindow() {
+    log("createNewRemoteTermWindow");
     const clientData = await ClientService.GetClientData();
     const fullConfig = await RpcApi.GetFullConfigCommand(ElectronWshClient);
     let recreatedWindow = false;
-    const allWindows = getAllWaveWindows();
+    const allWindows = getAllRemoteTermWindows();
     if (allWindows.length === 0 && clientData?.windowids?.length >= 1) {
         console.log("no windows, but clientData has windowids, recreating first window");
         // reopen the first window
@@ -897,10 +897,10 @@ export async function createNewWaveWindow() {
 export async function relaunchBrowserWindows() {
     console.log("relaunchBrowserWindows");
     setGlobalIsRelaunching(true);
-    const windows = getAllWaveWindows();
+    const windows = getAllRemoteTermWindows();
     if (windows.length > 0) {
         for (const window of windows) {
-            console.log("relaunch -- closing window", window.waveWindowId);
+            console.log("relaunch -- closing window", window.remoteTermWindowId);
             window.close();
         }
         await delay(1200);
@@ -910,7 +910,7 @@ export async function relaunchBrowserWindows() {
     const clientData = await ClientService.GetClientData();
     const fullConfig = await RpcApi.GetFullConfigCommand(ElectronWshClient);
     const windowIds = clientData.windowids ?? [];
-    const wins: WaveBrowserWindow[] = [];
+    const wins: RemoteTermBrowserWindow[] = [];
     const isFirstRelaunch = !hasCompletedFirstRelaunch;
     const primaryWindowId = windowIds.length > 0 ? windowIds[0] : null;
     for (const windowId of windowIds.slice().reverse()) {
@@ -935,12 +935,12 @@ export async function relaunchBrowserWindows() {
         wins.push(win);
         if (windowId === primaryWindowId) {
             quakeWindow = win;
-            console.log("designated quake window", win.waveWindowId);
+            console.log("designated quake window", win.remoteTermWindowId);
         }
     }
     hasCompletedFirstRelaunch = true;
     for (const win of wins) {
-        console.log("show window", win.waveWindowId);
+        console.log("show window", win.remoteTermWindowId);
         win.show();
     }
 }
@@ -961,7 +961,7 @@ function getDisplayForQuakeToggle() {
     return displayAtCursor ?? screen.getDisplayNearestPoint(cursorPoint);
 }
 
-function moveWindowToDisplay(win: WaveBrowserWindow, targetDisplay: Electron.Display) {
+function moveWindowToDisplay(win: RemoteTermBrowserWindow, targetDisplay: Electron.Display) {
     if (!win || !targetDisplay || win.isDestroyed()) {
         return;
     }
@@ -991,7 +991,7 @@ const FullscreenTransitionTimeoutMs = 2000;
 let quakeToggleInProgress = false;
 let quakeRestoreFullscreenOnShow = false;
 
-function waitForFullscreenLeave(window: WaveBrowserWindow): Promise<void> {
+function waitForFullscreenLeave(window: RemoteTermBrowserWindow): Promise<void> {
     if (!window.isFullScreen()) {
         return Promise.resolve();
     }
@@ -1010,7 +1010,7 @@ function waitForFullscreenLeave(window: WaveBrowserWindow): Promise<void> {
     });
 }
 
-function waitForFullscreenEnter(window: WaveBrowserWindow): Promise<void> {
+function waitForFullscreenEnter(window: RemoteTermBrowserWindow): Promise<void> {
     if (window.isFullScreen()) {
         return Promise.resolve();
     }
@@ -1041,7 +1041,7 @@ async function quakeToggle() {
             window = null;
         }
         if (window == null) {
-            await createNewWaveWindow();
+            await createNewRemoteTermWindow();
             return;
         }
         // Some environments don't hide or move the window if it's fullscreen (even when hidden), so leave fullscreen first
@@ -1101,7 +1101,7 @@ export function registerGlobalHotkey(rawGlobalHotKey: string) {
         return;
     }
     try {
-        const electronHotKey = waveKeyToElectronKey(rawGlobalHotKey);
+        const electronHotKey = remoteTermKeyToElectronKey(rawGlobalHotKey);
         const ok = globalShortcut.register(electronHotKey, () => {
             fireAndForget(quakeToggle);
         });

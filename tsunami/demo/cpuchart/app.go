@@ -4,9 +4,9 @@ import (
 	"log"
 	"time"
 
+	"github.com/LannCo/remoteterm/tsunami/app"
+	"github.com/LannCo/remoteterm/tsunami/vdom"
 	"github.com/shirou/gopsutil/v4/cpu"
-	"github.com/wavetermdev/waveterm/tsunami/app"
-	"github.com/wavetermdev/waveterm/tsunami/vdom"
 )
 
 var AppMeta = app.AppMeta{

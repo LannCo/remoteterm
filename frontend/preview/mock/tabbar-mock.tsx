@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { globalStore } from "@/app/store/jotaiStore";
-import { useWaveEnv, WaveEnv, WaveEnvContext } from "@/app/waveenv/waveenv";
+import { useWaveEnv, WaveEnv, WaveEnvContext } from "@/app/remotetermenv/remotetermenv";
 import { applyMockEnvOverrides, MockWaveEnv } from "@/preview/mock/mockwaveenv";
 import { PlatformMacOS } from "@/util/platformutil";
 import { atom } from "jotai";

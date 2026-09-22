@@ -113,7 +113,7 @@ export class TermViewModel implements ViewModel {
             const blockData = get(this.blockAtom);
             const termMode = get(this.termMode);
             if (termMode == "vdom") {
-                return "Wave App";
+                return "RT App";
             }
             if (blockData?.meta?.controller == "cmd") {
                 return "";
@@ -140,7 +140,7 @@ export class TermViewModel implements ViewModel {
                 rtn.push({
                     elemtype: "iconbutton",
                     icon: "bolt",
-                    title: "Switch to Wave App",
+                    title: "Switch to RT App",
                     click: () => {
                         this.setTermMode("vdom");
                     },

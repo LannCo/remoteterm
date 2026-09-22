@@ -1,12 +1,12 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import backgroundsJson from "../../../pkg/wconfig/defaultconfig/backgrounds.json";
-import mimetypesJson from "../../../pkg/wconfig/defaultconfig/mimetypes.json";
-import presetsJson from "../../../pkg/wconfig/defaultconfig/presets.json";
-import settingsJson from "../../../pkg/wconfig/defaultconfig/settings.json";
-import termthemesJson from "../../../pkg/wconfig/defaultconfig/termthemes.json";
-import widgetsJson from "../../../pkg/wconfig/defaultconfig/widgets.json";
+import backgroundsJson from "../../../pkg/rtconfig/defaultconfig/backgrounds.json";
+import mimetypesJson from "../../../pkg/rtconfig/defaultconfig/mimetypes.json";
+import presetsJson from "../../../pkg/rtconfig/defaultconfig/presets.json";
+import settingsJson from "../../../pkg/rtconfig/defaultconfig/settings.json";
+import termthemesJson from "../../../pkg/rtconfig/defaultconfig/termthemes.json";
+import widgetsJson from "../../../pkg/rtconfig/defaultconfig/widgets.json";
 
 export const DefaultFullConfig: FullConfigType = {
     settings: settingsJson as SettingsType,

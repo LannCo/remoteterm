@@ -35,7 +35,7 @@ import {
   SettingsKeyAtomFnType, // only if you use getSettingsKeyAtom
   WaveEnv,
   WaveEnvSubset,
-} from "@/app/waveenv/waveenv";
+} from "@/app/remotetermenv/remotetermenv";
 ```
 
 ## The Shape
@@ -114,7 +114,7 @@ Every `WaveEnvSubset<T>` automatically includes the mock fields — you never ne
 ## Using the Narrowed Type in Components
 
 ```ts
-import { useWaveEnv } from "@/app/waveenv/waveenv";
+import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { MyEnv } from "./myenv";
 
 const MyComponent = memo(() => {

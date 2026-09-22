@@ -19,38 +19,38 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/baseds"
+	"github.com/LannCo/remoteterm/pkg/blockcontroller"
+	"github.com/LannCo/remoteterm/pkg/blocklogger"
+	"github.com/LannCo/remoteterm/pkg/buildercontroller"
+	"github.com/LannCo/remoteterm/pkg/filebackup"
+	"github.com/LannCo/remoteterm/pkg/filestore"
+	"github.com/LannCo/remoteterm/pkg/genconn"
+	"github.com/LannCo/remoteterm/pkg/jobcontroller"
+	"github.com/LannCo/remoteterm/pkg/panichandler"
+	"github.com/LannCo/remoteterm/pkg/remote"
+	"github.com/LannCo/remoteterm/pkg/remote/conncontroller"
+	"github.com/LannCo/remoteterm/pkg/remote/fileshare/wshfs"
+	"github.com/LannCo/remoteterm/pkg/remotetermappstore"
+	"github.com/LannCo/remoteterm/pkg/remotetermapputil"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/remotetermjwt"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtconfig"
+	"github.com/LannCo/remoteterm/pkg/rtcore"
+	"github.com/LannCo/remoteterm/pkg/rtstore"
+	"github.com/LannCo/remoteterm/pkg/secretstore"
+	"github.com/LannCo/remoteterm/pkg/suggestion"
+	"github.com/LannCo/remoteterm/pkg/util/envutil"
+	"github.com/LannCo/remoteterm/pkg/util/shellutil"
+	"github.com/LannCo/remoteterm/pkg/util/utilfn"
+	"github.com/LannCo/remoteterm/pkg/wps"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
+	"github.com/LannCo/remoteterm/pkg/wsl"
+	"github.com/LannCo/remoteterm/pkg/wslconn"
+	"github.com/LannCo/remoteterm/tsunami/build"
 	"github.com/skratchdot/open-golang/open"
-	"github.com/wavetermdev/waveterm/pkg/baseds"
-	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
-	"github.com/wavetermdev/waveterm/pkg/blocklogger"
-	"github.com/wavetermdev/waveterm/pkg/buildercontroller"
-	"github.com/wavetermdev/waveterm/pkg/filebackup"
-	"github.com/wavetermdev/waveterm/pkg/filestore"
-	"github.com/wavetermdev/waveterm/pkg/genconn"
-	"github.com/wavetermdev/waveterm/pkg/jobcontroller"
-	"github.com/wavetermdev/waveterm/pkg/panichandler"
-	"github.com/wavetermdev/waveterm/pkg/remote"
-	"github.com/wavetermdev/waveterm/pkg/remote/conncontroller"
-	"github.com/wavetermdev/waveterm/pkg/remote/fileshare/wshfs"
-	"github.com/wavetermdev/waveterm/pkg/secretstore"
-	"github.com/wavetermdev/waveterm/pkg/suggestion"
-	"github.com/wavetermdev/waveterm/pkg/util/envutil"
-	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
-	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
-	"github.com/wavetermdev/waveterm/pkg/waveappstore"
-	"github.com/wavetermdev/waveterm/pkg/waveapputil"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/wavejwt"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
-	"github.com/wavetermdev/waveterm/pkg/wcore"
-	"github.com/wavetermdev/waveterm/pkg/wps"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
-	"github.com/wavetermdev/waveterm/pkg/wsl"
-	"github.com/wavetermdev/waveterm/pkg/wslconn"
-	"github.com/wavetermdev/waveterm/pkg/wstore"
-	"github.com/wavetermdev/waveterm/tsunami/build"
 )
 
 var InvalidWslDistroNames = []string{"docker-desktop", "docker-desktop-data"}
@@ -62,7 +62,7 @@ func (*WshServer) WshServerImpl() {}
 var WshServerImpl = WshServer{}
 
 func (ws *WshServer) GetJwtPublicKeyCommand(ctx context.Context) (string, error) {
-	return wavejwt.GetPublicKeyBase64(), nil
+	return remotetermjwt.GetPublicKeyBase64(), nil
 }
 
 func (ws *WshServer) TestCommand(ctx context.Context, data string) error {
@@ -107,11 +107,11 @@ func (ws *WshServer) StreamTestCommand(ctx context.Context) chan wshrpc.RespOrEr
 }
 
 func MakePlotData(ctx context.Context, blockId string) error {
-	block, err := wstore.DBMustGet[*waveobj.Block](ctx, blockId)
+	block, err := rtstore.DBMustGet[*remotetermobj.Block](ctx, blockId)
 	if err != nil {
 		return err
 	}
-	viewName := block.Meta.GetString(waveobj.MetaKey_View, "")
+	viewName := block.Meta.GetString(remotetermobj.MetaKey_View, "")
 	if viewName != "cpuplot" && viewName != "sysinfo" {
 		return fmt.Errorf("invalid view type: %s", viewName)
 	}
@@ -119,11 +119,11 @@ func MakePlotData(ctx context.Context, blockId string) error {
 }
 
 func SavePlotData(ctx context.Context, blockId string, history string) error {
-	block, err := wstore.DBMustGet[*waveobj.Block](ctx, blockId)
+	block, err := rtstore.DBMustGet[*remotetermobj.Block](ctx, blockId)
 	if err != nil {
 		return err
 	}
-	viewName := block.Meta.GetString(waveobj.MetaKey_View, "")
+	viewName := block.Meta.GetString(remotetermobj.MetaKey_View, "")
 	if viewName != "cpuplot" && viewName != "sysinfo" {
 		return fmt.Errorf("invalid view type: %s", viewName)
 	}
@@ -137,64 +137,64 @@ func SavePlotData(ctx context.Context, blockId string, history string) error {
 	return filestore.WFS.WriteFile(ctx, blockId, "cpuplotdata", historyBytes)
 }
 
-func (ws *WshServer) GetMetaCommand(ctx context.Context, data wshrpc.CommandGetMetaData) (waveobj.MetaMapType, error) {
-	obj, err := wstore.DBGetORef(ctx, data.ORef)
+func (ws *WshServer) GetMetaCommand(ctx context.Context, data wshrpc.CommandGetMetaData) (remotetermobj.MetaMapType, error) {
+	obj, err := rtstore.DBGetORef(ctx, data.ORef)
 	if err != nil {
 		return nil, fmt.Errorf("error getting object: %w", err)
 	}
 	if obj == nil {
 		return nil, fmt.Errorf("object not found: %s", data.ORef)
 	}
-	return waveobj.GetMeta(obj), nil
+	return remotetermobj.GetMeta(obj), nil
 }
 
 func (ws *WshServer) UpdateTabNameCommand(ctx context.Context, tabId string, newName string) error {
-	oref := waveobj.ORef{OType: waveobj.OType_Tab, OID: tabId}
-	err := wstore.UpdateTabName(ctx, tabId, newName)
+	oref := remotetermobj.ORef{OType: remotetermobj.OType_Tab, OID: tabId}
+	err := rtstore.UpdateTabName(ctx, tabId, newName)
 	if err != nil {
 		return fmt.Errorf("error updating tab name: %w", err)
 	}
-	wcore.SendWaveObjUpdate(oref)
+	rtcore.SendWaveObjUpdate(oref)
 	return nil
 }
 
 func (ws *WshServer) UpdateWorkspaceTabIdsCommand(ctx context.Context, workspaceId string, tabIds []string) error {
-	oref := waveobj.ORef{OType: waveobj.OType_Workspace, OID: workspaceId}
-	err := wcore.UpdateWorkspaceTabIds(ctx, workspaceId, tabIds)
+	oref := remotetermobj.ORef{OType: remotetermobj.OType_Workspace, OID: workspaceId}
+	err := rtcore.UpdateWorkspaceTabIds(ctx, workspaceId, tabIds)
 	if err != nil {
 		return fmt.Errorf("error updating workspace tab ids: %w", err)
 	}
-	wcore.SendWaveObjUpdate(oref)
+	rtcore.SendWaveObjUpdate(oref)
 	return nil
 }
 
 func (ws *WshServer) SetMetaCommand(ctx context.Context, data wshrpc.CommandSetMetaData) error {
 	log.Printf("SetMetaCommand: %s | %v\n", data.ORef, data.Meta)
 	oref := data.ORef
-	err := wstore.UpdateObjectMeta(ctx, oref, data.Meta, false)
+	err := rtstore.UpdateObjectMeta(ctx, oref, data.Meta, false)
 	if err != nil {
 		return fmt.Errorf("error updating object meta: %w", err)
 	}
-	wcore.SendWaveObjUpdate(oref)
+	rtcore.SendWaveObjUpdate(oref)
 	return nil
 }
 
-func (ws *WshServer) GetRTInfoCommand(ctx context.Context, data wshrpc.CommandGetRTInfoData) (*waveobj.ObjRTInfo, error) {
-	return wstore.GetRTInfo(data.ORef), nil
+func (ws *WshServer) GetRTInfoCommand(ctx context.Context, data wshrpc.CommandGetRTInfoData) (*remotetermobj.ObjRTInfo, error) {
+	return rtstore.GetRTInfo(data.ORef), nil
 }
 
 func (ws *WshServer) SetRTInfoCommand(ctx context.Context, data wshrpc.CommandSetRTInfoData) error {
 	if data.Delete {
-		wstore.DeleteRTInfo(data.ORef)
+		rtstore.DeleteRTInfo(data.ORef)
 		return nil
 	}
-	wstore.SetRTInfo(data.ORef, data.Data)
+	rtstore.SetRTInfo(data.ORef, data.Data)
 	return nil
 }
 
 func (ws *WshServer) ResolveIdsCommand(ctx context.Context, data wshrpc.CommandResolveIdsData) (wshrpc.CommandResolveIdsRtnData, error) {
 	rtn := wshrpc.CommandResolveIdsRtnData{}
-	rtn.ResolvedIds = make(map[string]waveobj.ORef)
+	rtn.ResolvedIds = make(map[string]remotetermobj.ORef)
 	var firstErr error
 	for _, simpleId := range data.Ids {
 		oref, err := resolveSimpleId(ctx, data, simpleId)
@@ -215,54 +215,54 @@ func (ws *WshServer) ResolveIdsCommand(ctx context.Context, data wshrpc.CommandR
 	return rtn, nil
 }
 
-func (ws *WshServer) CreateBlockCommand(ctx context.Context, data wshrpc.CommandCreateBlockData) (*waveobj.ORef, error) {
-	ctx = waveobj.ContextWithUpdates(ctx)
+func (ws *WshServer) CreateBlockCommand(ctx context.Context, data wshrpc.CommandCreateBlockData) (*remotetermobj.ORef, error) {
+	ctx = remotetermobj.ContextWithUpdates(ctx)
 	tabId := data.TabId
-	blockData, err := wcore.CreateBlock(ctx, tabId, data.BlockDef, data.RtOpts)
+	blockData, err := rtcore.CreateBlock(ctx, tabId, data.BlockDef, data.RtOpts)
 	if err != nil {
 		return nil, fmt.Errorf("error creating block: %w", err)
 	}
-	var layoutAction *waveobj.LayoutActionData
+	var layoutAction *remotetermobj.LayoutActionData
 	if data.TargetBlockId != "" {
 		switch data.TargetAction {
 		case "replace":
-			layoutAction = &waveobj.LayoutActionData{
-				ActionType:    wcore.LayoutActionDataType_Replace,
+			layoutAction = &remotetermobj.LayoutActionData{
+				ActionType:    rtcore.LayoutActionDataType_Replace,
 				TargetBlockId: data.TargetBlockId,
 				BlockId:       blockData.OID,
 				Focused:       data.Focused,
 			}
-			err = wcore.DeleteBlock(ctx, data.TargetBlockId, false)
+			err = rtcore.DeleteBlock(ctx, data.TargetBlockId, false)
 			if err != nil {
 				return nil, fmt.Errorf("error deleting block (trying to do block replace): %w", err)
 			}
 		case "splitright":
-			layoutAction = &waveobj.LayoutActionData{
-				ActionType:    wcore.LayoutActionDataType_SplitHorizontal,
+			layoutAction = &remotetermobj.LayoutActionData{
+				ActionType:    rtcore.LayoutActionDataType_SplitHorizontal,
 				BlockId:       blockData.OID,
 				TargetBlockId: data.TargetBlockId,
 				Position:      "after",
 				Focused:       data.Focused,
 			}
 		case "splitleft":
-			layoutAction = &waveobj.LayoutActionData{
-				ActionType:    wcore.LayoutActionDataType_SplitHorizontal,
+			layoutAction = &remotetermobj.LayoutActionData{
+				ActionType:    rtcore.LayoutActionDataType_SplitHorizontal,
 				BlockId:       blockData.OID,
 				TargetBlockId: data.TargetBlockId,
 				Position:      "before",
 				Focused:       data.Focused,
 			}
 		case "splitup":
-			layoutAction = &waveobj.LayoutActionData{
-				ActionType:    wcore.LayoutActionDataType_SplitVertical,
+			layoutAction = &remotetermobj.LayoutActionData{
+				ActionType:    rtcore.LayoutActionDataType_SplitVertical,
 				BlockId:       blockData.OID,
 				TargetBlockId: data.TargetBlockId,
 				Position:      "before",
 				Focused:       data.Focused,
 			}
 		case "splitdown":
-			layoutAction = &waveobj.LayoutActionData{
-				ActionType:    wcore.LayoutActionDataType_SplitVertical,
+			layoutAction = &remotetermobj.LayoutActionData{
+				ActionType:    rtcore.LayoutActionDataType_SplitVertical,
 				BlockId:       blockData.OID,
 				TargetBlockId: data.TargetBlockId,
 				Position:      "after",
@@ -272,30 +272,30 @@ func (ws *WshServer) CreateBlockCommand(ctx context.Context, data wshrpc.Command
 			return nil, fmt.Errorf("invalid target action: %s", data.TargetAction)
 		}
 	} else {
-		layoutAction = &waveobj.LayoutActionData{
-			ActionType: wcore.LayoutActionDataType_Insert,
+		layoutAction = &remotetermobj.LayoutActionData{
+			ActionType: rtcore.LayoutActionDataType_Insert,
 			BlockId:    blockData.OID,
 			Magnified:  data.Magnified,
 			Ephemeral:  data.Ephemeral,
 			Focused:    data.Focused,
 		}
 	}
-	err = wcore.QueueLayoutActionForTab(ctx, tabId, *layoutAction)
+	err = rtcore.QueueLayoutActionForTab(ctx, tabId, *layoutAction)
 	if err != nil {
 		return nil, fmt.Errorf("error queuing layout action: %w", err)
 	}
-	updates := waveobj.ContextGetUpdatesRtn(ctx)
+	updates := remotetermobj.ContextGetUpdatesRtn(ctx)
 	wps.Broker.SendUpdateEvents(updates)
-	return &waveobj.ORef{OType: waveobj.OType_Block, OID: blockData.OID}, nil
+	return &remotetermobj.ORef{OType: remotetermobj.OType_Block, OID: blockData.OID}, nil
 }
 
-func (ws *WshServer) CreateSubBlockCommand(ctx context.Context, data wshrpc.CommandCreateSubBlockData) (*waveobj.ORef, error) {
+func (ws *WshServer) CreateSubBlockCommand(ctx context.Context, data wshrpc.CommandCreateSubBlockData) (*remotetermobj.ORef, error) {
 	parentBlockId := data.ParentBlockId
-	blockData, err := wcore.CreateSubBlock(ctx, parentBlockId, data.BlockDef)
+	blockData, err := rtcore.CreateSubBlock(ctx, parentBlockId, data.BlockDef)
 	if err != nil {
 		return nil, fmt.Errorf("error creating block: %w", err)
 	}
-	blockRef := &waveobj.ORef{OType: waveobj.OType_Block, OID: blockData.OID}
+	blockRef := &remotetermobj.ORef{OType: remotetermobj.OType_Block, OID: blockData.OID}
 	return blockRef, nil
 }
 
@@ -332,7 +332,7 @@ func (ws *WshServer) ControllerAppendOutputCommand(ctx context.Context, data wsh
 	if err != nil {
 		return fmt.Errorf("error decoding output data: %w", err)
 	}
-	err = blockcontroller.HandleAppendBlockFile(data.BlockId, wavebase.BlockFile_Term, outputBuf[:nw])
+	err = blockcontroller.HandleAppendBlockFile(data.BlockId, remotetermbase.BlockFile_Term, outputBuf[:nw])
 	if err != nil {
 		return fmt.Errorf("error appending to block file: %w", err)
 	}
@@ -403,11 +403,11 @@ func (ws *WshServer) FileJoinCommand(ctx context.Context, paths []string) (*wshr
 }
 
 func (ws *WshServer) FileRestoreBackupCommand(ctx context.Context, data wshrpc.CommandFileRestoreBackupData) error {
-	expandedBackupPath, err := wavebase.ExpandHomeDir(data.BackupFilePath)
+	expandedBackupPath, err := remotetermbase.ExpandHomeDir(data.BackupFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to expand backup file path: %w", err)
 	}
-	expandedRestorePath, err := wavebase.ExpandHomeDir(data.RestoreToFileName)
+	expandedRestorePath, err := remotetermbase.ExpandHomeDir(data.RestoreToFileName)
 	if err != nil {
 		return fmt.Errorf("failed to expand restore file path: %w", err)
 	}
@@ -457,7 +457,7 @@ func (ws *WshServer) DeleteSubBlockCommand(ctx context.Context, data wshrpc.Comm
 	if data.BlockId == "" {
 		return fmt.Errorf("blockid is required")
 	}
-	err := wcore.DeleteBlock(ctx, data.BlockId, false)
+	err := rtcore.DeleteBlock(ctx, data.BlockId, false)
 	if err != nil {
 		return fmt.Errorf("error deleting block: %w", err)
 	}
@@ -468,23 +468,23 @@ func (ws *WshServer) DeleteBlockCommand(ctx context.Context, data wshrpc.Command
 	if data.BlockId == "" {
 		return fmt.Errorf("blockid is required")
 	}
-	ctx = waveobj.ContextWithUpdates(ctx)
-	tabId, err := wstore.DBFindTabForBlockId(ctx, data.BlockId)
+	ctx = remotetermobj.ContextWithUpdates(ctx)
+	tabId, err := rtstore.DBFindTabForBlockId(ctx, data.BlockId)
 	if err != nil {
 		return fmt.Errorf("error finding tab for block: %w", err)
 	}
 	if tabId == "" {
 		return fmt.Errorf("no tab found for block")
 	}
-	err = wcore.DeleteBlock(ctx, data.BlockId, true)
+	err = rtcore.DeleteBlock(ctx, data.BlockId, true)
 	if err != nil {
 		return fmt.Errorf("error deleting block: %w", err)
 	}
-	wcore.QueueLayoutActionForTab(ctx, tabId, waveobj.LayoutActionData{
-		ActionType: wcore.LayoutActionDataType_Remove,
+	rtcore.QueueLayoutActionForTab(ctx, tabId, remotetermobj.LayoutActionData{
+		ActionType: rtcore.LayoutActionDataType_Remove,
 		BlockId:    data.BlockId,
 	})
-	updates := waveobj.ContextGetUpdatesRtn(ctx)
+	updates := remotetermobj.ContextGetUpdatesRtn(ctx)
 	wps.Broker.SendUpdateEvents(updates)
 	return nil
 }
@@ -545,15 +545,15 @@ func (ws *WshServer) EventReadHistoryCommand(ctx context.Context, data wshrpc.Co
 }
 
 func (ws *WshServer) SetConfigCommand(ctx context.Context, data wshrpc.MetaSettingsType) error {
-	return wconfig.SetBaseConfigValue(data.MetaMapType)
+	return rtconfig.SetBaseConfigValue(data.MetaMapType)
 }
 
 func (ws *WshServer) SetConnectionsConfigCommand(ctx context.Context, data wshrpc.ConnConfigRequest) error {
-	return wconfig.SetConnectionsConfigValue(data.Host, data.MetaMapType)
+	return rtconfig.SetConnectionsConfigValue(data.Host, data.MetaMapType)
 }
 
-func (ws *WshServer) GetFullConfigCommand(ctx context.Context) (wconfig.FullConfigType, error) {
-	watcher := wconfig.GetWatcher()
+func (ws *WshServer) GetFullConfigCommand(ctx context.Context) (rtconfig.FullConfigType, error) {
+	watcher := rtconfig.GetWatcher()
 	return watcher.GetFullConfig(), nil
 }
 
@@ -571,11 +571,11 @@ func termCtxWithLogBlockId(ctx context.Context, logBlockId string) context.Conte
 	if logBlockId == "" {
 		return ctx
 	}
-	block, err := wstore.DBMustGet[*waveobj.Block](ctx, logBlockId)
+	block, err := rtstore.DBMustGet[*remotetermobj.Block](ctx, logBlockId)
 	if err != nil {
 		return ctx
 	}
-	connDebug := block.Meta.GetString(waveobj.MetaKey_TermConnDebug, "")
+	connDebug := block.Meta.GetString(remotetermobj.MetaKey_TermConnDebug, "")
 	if connDebug == "" {
 		return ctx
 	}
@@ -808,7 +808,7 @@ func (ws *WshServer) NotifySystemResumeCommand(ctx context.Context) error {
 }
 
 func (ws *WshServer) FindGitBashCommand(ctx context.Context, rescan bool) (string, error) {
-	fullConfig := wconfig.GetWatcher().GetFullConfig()
+	fullConfig := rtconfig.GetWatcher().GetFullConfig()
 	return shellutil.FindGitBash(&fullConfig, rescan), nil
 }
 
@@ -825,15 +825,15 @@ func waveFileToWaveFileInfo(wf *filestore.WaveFile) *wshrpc.WaveFileInfo {
 }
 
 func (ws *WshServer) BlockInfoCommand(ctx context.Context, blockId string) (*wshrpc.BlockInfoData, error) {
-	blockData, err := wstore.DBMustGet[*waveobj.Block](ctx, blockId)
+	blockData, err := rtstore.DBMustGet[*remotetermobj.Block](ctx, blockId)
 	if err != nil {
 		return nil, fmt.Errorf("error getting block: %w", err)
 	}
-	tabId, err := wstore.DBFindTabForBlockId(ctx, blockId)
+	tabId, err := rtstore.DBFindTabForBlockId(ctx, blockId)
 	if err != nil {
 		return nil, fmt.Errorf("error finding tab for block: %w", err)
 	}
-	workspaceId, err := wstore.DBFindWorkspaceForTabId(ctx, tabId)
+	workspaceId, err := rtstore.DBFindWorkspaceForTabId(ctx, tabId)
 	if err != nil {
 		return nil, fmt.Errorf("error finding window for tab: %w", err)
 	}
@@ -861,7 +861,7 @@ func (ws *WshServer) DebugTermCommand(ctx context.Context, data wshrpc.CommandDe
 	if data.Size <= 0 {
 		return nil, fmt.Errorf("size must be greater than 0")
 	}
-	waveFile, err := filestore.WFS.Stat(ctx, data.BlockId, wavebase.BlockFile_Term)
+	waveFile, err := filestore.WFS.Stat(ctx, data.BlockId, remotetermbase.BlockFile_Term)
 	if err == fs.ErrNotExist {
 		return &wshrpc.CommandDebugTermRtnData{}, nil
 	}
@@ -874,7 +874,7 @@ func (ws *WshServer) DebugTermCommand(ctx context.Context, data wshrpc.CommandDe
 		readSize = dataLength
 	}
 	readOffset := waveFile.Size - readSize
-	readOffset, readData, err := filestore.WFS.ReadAt(ctx, data.BlockId, wavebase.BlockFile_Term, readOffset, readSize)
+	readOffset, readData, err := filestore.WFS.ReadAt(ctx, data.BlockId, remotetermbase.BlockFile_Term, readOffset, readSize)
 	if err != nil {
 		return nil, fmt.Errorf("error reading term file: %w", err)
 	}
@@ -886,16 +886,16 @@ func (ws *WshServer) DebugTermCommand(ctx context.Context, data wshrpc.CommandDe
 
 func (ws *WshServer) WaveInfoCommand(ctx context.Context) (*wshrpc.WaveInfoData, error) {
 	return &wshrpc.WaveInfoData{
-		Version:   wavebase.WaveVersion,
-		ClientId:  wstore.GetClientId(),
-		BuildTime: wavebase.BuildTime,
-		ConfigDir: wavebase.GetWaveConfigDir(),
-		DataDir:   wavebase.GetWaveDataDir(),
+		Version:   remotetermbase.WaveVersion,
+		ClientId:  rtstore.GetClientId(),
+		BuildTime: remotetermbase.BuildTime,
+		ConfigDir: remotetermbase.GetWaveConfigDir(),
+		DataDir:   remotetermbase.GetWaveDataDir(),
 	}, nil
 }
 
 func (ws *WshServer) MacOSVersionCommand(ctx context.Context) (string, error) {
-	return wavebase.ClientMacOSVersion(), nil
+	return remotetermbase.ClientMacOSVersion(), nil
 }
 
 // BlocksListCommand returns every block visible in the requested
@@ -910,21 +910,21 @@ func (ws *WshServer) BlocksListCommand(
 	if req.WorkspaceId != "" {
 		workspaceIDs = []string{req.WorkspaceId}
 	} else if req.WindowId != "" {
-		win, err := wcore.GetWindow(ctx, req.WindowId)
+		win, err := rtcore.GetWindow(ctx, req.WindowId)
 		if err != nil {
 			return nil, err
 		}
 		workspaceIDs = []string{win.WorkspaceId}
 	} else {
 		// "current" == first workspace in client focus list
-		client, err := wstore.DBGetSingleton[*waveobj.Client](ctx)
+		client, err := rtstore.DBGetSingleton[*remotetermobj.Client](ctx)
 		if err != nil {
 			return nil, err
 		}
 		if len(client.WindowIds) == 0 {
 			return nil, fmt.Errorf("no active window")
 		}
-		win, err := wcore.GetWindow(ctx, client.WindowIds[0])
+		win, err := rtcore.GetWindow(ctx, client.WindowIds[0])
 		if err != nil {
 			return nil, err
 		}
@@ -932,23 +932,23 @@ func (ws *WshServer) BlocksListCommand(
 	}
 
 	for _, wsID := range workspaceIDs {
-		wsData, err := wcore.GetWorkspace(ctx, wsID)
+		wsData, err := rtcore.GetWorkspace(ctx, wsID)
 		if err != nil {
 			return nil, err
 		}
 
-		windowId, err := wstore.DBFindWindowForWorkspaceId(ctx, wsID)
+		windowId, err := rtstore.DBFindWindowForWorkspaceId(ctx, wsID)
 		if err != nil {
 			log.Printf("error finding window for workspace %s: %v", wsID, err)
 		}
 
 		for _, tabID := range wsData.TabIds {
-			tab, err := wstore.DBMustGet[*waveobj.Tab](ctx, tabID)
+			tab, err := rtstore.DBMustGet[*remotetermobj.Tab](ctx, tabID)
 			if err != nil {
 				return nil, err
 			}
 			for _, blkID := range tab.BlockIds {
-				blk, err := wstore.DBMustGet[*waveobj.Block](ctx, blkID)
+				blk, err := rtstore.DBMustGet[*remotetermobj.Block](ctx, blkID)
 				if err != nil {
 					return nil, err
 				}
@@ -966,13 +966,13 @@ func (ws *WshServer) BlocksListCommand(
 }
 
 func (ws *WshServer) WorkspaceListCommand(ctx context.Context) ([]wshrpc.WorkspaceInfoData, error) {
-	workspaceList, err := wcore.ListWorkspaces(ctx)
+	workspaceList, err := rtcore.ListWorkspaces(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error listing workspaces: %w", err)
 	}
 	var rtn []wshrpc.WorkspaceInfoData
 	for _, workspaceEntry := range workspaceList {
-		workspaceData, err := wcore.GetWorkspace(ctx, workspaceEntry.WorkspaceId)
+		workspaceData, err := rtcore.GetWorkspace(ctx, workspaceEntry.WorkspaceId)
 		if err != nil {
 			return nil, fmt.Errorf("error getting workspace: %w", err)
 		}
@@ -985,18 +985,18 @@ func (ws *WshServer) WorkspaceListCommand(ctx context.Context) ([]wshrpc.Workspa
 }
 
 func (ws *WshServer) ListAllAppsCommand(ctx context.Context) ([]wshrpc.AppInfo, error) {
-	return waveappstore.ListAllApps()
+	return remotetermappstore.ListAllApps()
 }
 
 func (ws *WshServer) ListAllEditableAppsCommand(ctx context.Context) ([]wshrpc.AppInfo, error) {
-	return waveappstore.ListAllEditableApps()
+	return remotetermappstore.ListAllEditableApps()
 }
 
 func (ws *WshServer) ListAllAppFilesCommand(ctx context.Context, data wshrpc.CommandListAllAppFilesData) (*wshrpc.CommandListAllAppFilesRtnData, error) {
 	if data.AppId == "" {
 		return nil, fmt.Errorf("must provide an appId to ListAllAppFilesCommand")
 	}
-	result, err := waveappstore.ListAllAppFiles(data.AppId)
+	result, err := remotetermappstore.ListAllAppFiles(data.AppId)
 	if err != nil {
 		return nil, err
 	}
@@ -1027,7 +1027,7 @@ func (ws *WshServer) ReadAppFileCommand(ctx context.Context, data wshrpc.Command
 	if data.AppId == "" {
 		return nil, fmt.Errorf("must provide an appId to ReadAppFileCommand")
 	}
-	fileData, err := waveappstore.ReadAppFile(data.AppId, data.FileName)
+	fileData, err := remotetermappstore.ReadAppFile(data.AppId, data.FileName)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return &wshrpc.CommandReadAppFileRtnData{
@@ -1050,7 +1050,7 @@ func (ws *WshServer) WriteAppFileCommand(ctx context.Context, data wshrpc.Comman
 	if err != nil {
 		return fmt.Errorf("failed to decode data64: %w", err)
 	}
-	return waveappstore.WriteAppFile(data.AppId, data.FileName, contents)
+	return remotetermappstore.WriteAppFile(data.AppId, data.FileName, contents)
 }
 
 func (ws *WshServer) WaveFileReadStreamCommand(ctx context.Context, data wshrpc.CommandWaveFileReadStreamData) (*wshrpc.WaveFileInfo, error) {
@@ -1115,9 +1115,9 @@ func (ws *WshServer) WriteAppGoFileCommand(ctx context.Context, data wshrpc.Comm
 		return nil, fmt.Errorf("failed to decode data64: %w", err)
 	}
 
-	formattedOutput := waveapputil.FormatGoCode(contents)
+	formattedOutput := remotetermapputil.FormatGoCode(contents)
 
-	err = waveappstore.WriteAppFile(data.AppId, "app.go", formattedOutput)
+	err = remotetermappstore.WriteAppFile(data.AppId, "app.go", formattedOutput)
 	if err != nil {
 		return nil, err
 	}
@@ -1130,21 +1130,21 @@ func (ws *WshServer) DeleteAppFileCommand(ctx context.Context, data wshrpc.Comma
 	if data.AppId == "" {
 		return fmt.Errorf("must provide an appId to DeleteAppFileCommand")
 	}
-	return waveappstore.DeleteAppFile(data.AppId, data.FileName)
+	return remotetermappstore.DeleteAppFile(data.AppId, data.FileName)
 }
 
 func (ws *WshServer) RenameAppFileCommand(ctx context.Context, data wshrpc.CommandRenameAppFileData) error {
 	if data.AppId == "" {
 		return fmt.Errorf("must provide an appId to RenameAppFileCommand")
 	}
-	return waveappstore.RenameAppFile(data.AppId, data.FromFileName, data.ToFileName)
+	return remotetermappstore.RenameAppFile(data.AppId, data.FromFileName, data.ToFileName)
 }
 
 func (ws *WshServer) WriteAppSecretBindingsCommand(ctx context.Context, data wshrpc.CommandWriteAppSecretBindingsData) error {
 	if data.AppId == "" {
 		return fmt.Errorf("must provide an appId to WriteAppSecretBindingsCommand")
 	}
-	return waveappstore.WriteAppSecretBindings(data.AppId, data.Bindings)
+	return remotetermappstore.WriteAppSecretBindings(data.AppId, data.Bindings)
 }
 
 func (ws *WshServer) DeleteBuilderCommand(ctx context.Context, builderId string) error {
@@ -1160,7 +1160,7 @@ func (ws *WshServer) StartBuilderCommand(ctx context.Context, data wshrpc.Comman
 		return fmt.Errorf("must provide a builderId to StartBuilderCommand")
 	}
 	bc := buildercontroller.GetOrCreateController(data.BuilderId)
-	rtInfo := wstore.GetRTInfo(waveobj.MakeORef("builder", data.BuilderId))
+	rtInfo := rtstore.GetRTInfo(remotetermobj.MakeORef("builder", data.BuilderId))
 	if rtInfo == nil {
 		return fmt.Errorf("builder rtinfo not found for builderid: %s", data.BuilderId)
 	}
@@ -1188,7 +1188,7 @@ func (ws *WshServer) RestartBuilderAndWaitCommand(ctx context.Context, data wshr
 	}
 
 	bc := buildercontroller.GetOrCreateController(data.BuilderId)
-	rtInfo := wstore.GetRTInfo(waveobj.MakeORef("builder", data.BuilderId))
+	rtInfo := rtstore.GetRTInfo(remotetermobj.MakeORef("builder", data.BuilderId))
 	if rtInfo == nil {
 		return nil, fmt.Errorf("builder rtinfo not found for builderid: %s", data.BuilderId)
 	}
@@ -1228,7 +1228,7 @@ func (ws *WshServer) GetBuilderOutputCommand(ctx context.Context, builderId stri
 }
 
 func (ws *WshServer) CheckGoVersionCommand(ctx context.Context) (*wshrpc.CommandCheckGoVersionRtnData, error) {
-	watcher := wconfig.GetWatcher()
+	watcher := rtconfig.GetWatcher()
 	fullConfig := watcher.GetFullConfig()
 	goPath := fullConfig.Settings.TsunamiGoPath
 
@@ -1243,7 +1243,7 @@ func (ws *WshServer) CheckGoVersionCommand(ctx context.Context) (*wshrpc.Command
 }
 
 func (ws *WshServer) PublishAppCommand(ctx context.Context, data wshrpc.CommandPublishAppData) (*wshrpc.CommandPublishAppRtnData, error) {
-	publishedAppId, err := waveappstore.PublishDraft(data.AppId)
+	publishedAppId, err := remotetermappstore.PublishDraft(data.AppId)
 	if err != nil {
 		return nil, fmt.Errorf("error publishing app: %w", err)
 	}
@@ -1253,7 +1253,7 @@ func (ws *WshServer) PublishAppCommand(ctx context.Context, data wshrpc.CommandP
 }
 
 func (ws *WshServer) MakeDraftFromLocalCommand(ctx context.Context, data wshrpc.CommandMakeDraftFromLocalData) (*wshrpc.CommandMakeDraftFromLocalRtnData, error) {
-	draftAppId, err := waveappstore.MakeDraftFromLocal(data.LocalAppId)
+	draftAppId, err := remotetermappstore.MakeDraftFromLocal(data.LocalAppId)
 	if err != nil {
 		return nil, fmt.Errorf("error making draft from local: %w", err)
 	}
@@ -1328,11 +1328,11 @@ func (ws *WshServer) PathCommand(ctx context.Context, data wshrpc.PathCommandDat
 	var path string
 	switch pathType {
 	case "config":
-		path = wavebase.GetWaveConfigDir()
+		path = remotetermbase.GetWaveConfigDir()
 	case "data":
-		path = wavebase.GetWaveDataDir()
+		path = remotetermbase.GetWaveDataDir()
 	case "log":
-		path = filepath.Join(wavebase.GetWaveDataDir(), "waveapp.log")
+		path = filepath.Join(remotetermbase.GetWaveDataDir(), "rtapp.log")
 	}
 
 	if openInternal && openExternal {
@@ -1342,9 +1342,9 @@ func (ws *WshServer) PathCommand(ctx context.Context, data wshrpc.PathCommandDat
 	if openInternal {
 		_, err := ws.CreateBlockCommand(ctx, wshrpc.CommandCreateBlockData{
 			TabId: data.TabId,
-			BlockDef: &waveobj.BlockDef{Meta: map[string]any{
-				waveobj.MetaKey_View: "preview",
-				waveobj.MetaKey_File: path,
+			BlockDef: &remotetermobj.BlockDef{Meta: map[string]any{
+				remotetermobj.MetaKey_View: "preview",
+				remotetermobj.MetaKey_File: path,
 			}},
 			Ephemeral: true,
 			Focused:   true,
@@ -1371,8 +1371,8 @@ func (ws *WshServer) DisposeSuggestionsCommand(ctx context.Context, widgetId str
 	return nil
 }
 
-func (ws *WshServer) GetTabCommand(ctx context.Context, tabId string) (*waveobj.Tab, error) {
-	tab, err := wstore.DBGet[*waveobj.Tab](ctx, tabId)
+func (ws *WshServer) GetTabCommand(ctx context.Context, tabId string) (*remotetermobj.Tab, error) {
+	tab, err := rtstore.DBGet[*remotetermobj.Tab](ctx, tabId)
 	if err != nil {
 		return nil, fmt.Errorf("error getting tab: %w", err)
 	}
@@ -1380,7 +1380,7 @@ func (ws *WshServer) GetTabCommand(ctx context.Context, tabId string) (*waveobj.
 }
 
 func (ws *WshServer) GetAllBadgesCommand(ctx context.Context) ([]baseds.BadgeEvent, error) {
-	return wcore.GetAllBadges(), nil
+	return rtcore.GetAllBadges(), nil
 }
 
 func (ws *WshServer) GetSecretsCommand(ctx context.Context, names []string) (map[string]string, error) {
@@ -1434,8 +1434,8 @@ func (ws *WshServer) JobCmdExitedCommand(ctx context.Context, data wshrpc.Comman
 	return jobcontroller.HandleCmdJobExited(ctx, data.JobId, data)
 }
 
-func (ws *WshServer) JobControllerListCommand(ctx context.Context) ([]*waveobj.Job, error) {
-	return wstore.DBGetAllObjsByType[*waveobj.Job](ctx, waveobj.OType_Job)
+func (ws *WshServer) JobControllerListCommand(ctx context.Context) ([]*remotetermobj.Job, error) {
+	return rtstore.DBGetAllObjsByType[*remotetermobj.Job](ctx, remotetermobj.OType_Job)
 }
 
 func (ws *WshServer) JobControllerDeleteJobCommand(ctx context.Context, jobId string) error {

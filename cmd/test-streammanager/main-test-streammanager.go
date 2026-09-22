@@ -10,10 +10,10 @@ import (
 	"os"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/jobmanager"
+	"github.com/LannCo/remoteterm/pkg/streamclient"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/jobmanager"
-	"github.com/wavetermdev/waveterm/pkg/streamclient"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
 type TestConfig struct {

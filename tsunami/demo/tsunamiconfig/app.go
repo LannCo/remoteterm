@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wavetermdev/waveterm/tsunami/app"
-	"github.com/wavetermdev/waveterm/tsunami/vdom"
+	"github.com/LannCo/remoteterm/tsunami/app"
+	"github.com/LannCo/remoteterm/tsunami/vdom"
 )
 
 var AppMeta = app.AppMeta{

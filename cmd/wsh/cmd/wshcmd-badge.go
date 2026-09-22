@@ -7,14 +7,14 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/LannCo/remoteterm/pkg/baseds"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/wps"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/baseds"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wps"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
 )
 
 var badgeCmd = &cobra.Command{
@@ -56,7 +56,7 @@ func badgeRun(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("resolving block: %v", err)
 	}
-	if oref.OType != waveobj.OType_Block && oref.OType != waveobj.OType_Tab {
+	if oref.OType != remotetermobj.OType_Block && oref.OType != remotetermobj.OType_Tab {
 		return fmt.Errorf("badge oref must be a block or tab (got %q)", oref.OType)
 	}
 

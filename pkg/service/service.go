@@ -9,16 +9,16 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/wavetermdev/waveterm/pkg/service/blockservice"
-	"github.com/wavetermdev/waveterm/pkg/service/clientservice"
-	"github.com/wavetermdev/waveterm/pkg/service/objectservice"
-	"github.com/wavetermdev/waveterm/pkg/service/userinputservice"
-	"github.com/wavetermdev/waveterm/pkg/service/windowservice"
-	"github.com/wavetermdev/waveterm/pkg/service/workspaceservice"
-	"github.com/wavetermdev/waveterm/pkg/tsgen/tsgenmeta"
-	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/web/webcmd"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/service/blockservice"
+	"github.com/LannCo/remoteterm/pkg/service/clientservice"
+	"github.com/LannCo/remoteterm/pkg/service/objectservice"
+	"github.com/LannCo/remoteterm/pkg/service/userinputservice"
+	"github.com/LannCo/remoteterm/pkg/service/windowservice"
+	"github.com/LannCo/remoteterm/pkg/service/workspaceservice"
+	"github.com/LannCo/remoteterm/pkg/tsgen/tsgenmeta"
+	"github.com/LannCo/remoteterm/pkg/util/utilfn"
+	"github.com/LannCo/remoteterm/pkg/web/webcmd"
 )
 
 var ServiceMap = map[string]any{
@@ -32,28 +32,28 @@ var ServiceMap = map[string]any{
 
 var contextRType = reflect.TypeOf((*context.Context)(nil)).Elem()
 var errorRType = reflect.TypeOf((*error)(nil)).Elem()
-var updatesRType = reflect.TypeOf(([]waveobj.WaveObjUpdate{}))
-var waveObjRType = reflect.TypeOf((*waveobj.WaveObj)(nil)).Elem()
-var waveObjSliceRType = reflect.TypeOf([]waveobj.WaveObj{})
-var waveObjMapRType = reflect.TypeOf(map[string]waveobj.WaveObj{})
+var updatesRType = reflect.TypeOf(([]remotetermobj.WaveObjUpdate{}))
+var waveObjRType = reflect.TypeOf((*remotetermobj.WaveObj)(nil)).Elem()
+var waveObjSliceRType = reflect.TypeOf([]remotetermobj.WaveObj{})
+var waveObjMapRType = reflect.TypeOf(map[string]remotetermobj.WaveObj{})
 var methodMetaRType = reflect.TypeOf(tsgenmeta.MethodMeta{})
-var waveObjUpdateRType = reflect.TypeOf(waveobj.WaveObjUpdate{})
-var uiContextRType = reflect.TypeOf((*waveobj.UIContext)(nil)).Elem()
+var waveObjUpdateRType = reflect.TypeOf(remotetermobj.WaveObjUpdate{})
+var uiContextRType = reflect.TypeOf((*remotetermobj.UIContext)(nil)).Elem()
 var wsCommandRType = reflect.TypeOf((*webcmd.WSCommandType)(nil)).Elem()
-var orefRType = reflect.TypeOf((*waveobj.ORef)(nil)).Elem()
+var orefRType = reflect.TypeOf((*remotetermobj.ORef)(nil)).Elem()
 
 type WebCallType struct {
-	Service   string             `json:"service"`
-	Method    string             `json:"method"`
-	UIContext *waveobj.UIContext `json:"uicontext,omitempty"`
-	Args      []any              `json:"args"`
+	Service   string                   `json:"service"`
+	Method    string                   `json:"method"`
+	UIContext *remotetermobj.UIContext `json:"uicontext,omitempty"`
+	Args      []any                    `json:"args"`
 }
 
 type WebReturnType struct {
-	Success bool                    `json:"success,omitempty"`
-	Error   string                  `json:"error,omitempty"`
-	Data    any                     `json:"data,omitempty"`
-	Updates []waveobj.WaveObjUpdate `json:"updates,omitempty"`
+	Success bool                          `json:"success,omitempty"`
+	Error   string                        `json:"error,omitempty"`
+	Data    any                           `json:"data,omitempty"`
+	Updates []remotetermobj.WaveObjUpdate `json:"updates,omitempty"`
 }
 
 func convertNumber(argType reflect.Type, jsonArg float64) (any, error) {
@@ -116,7 +116,7 @@ func convertSpecial(argType reflect.Type, jsonArg any) (any, error) {
 		if jsonType.Kind() != reflect.String {
 			return nil, fmt.Errorf("cannot convert %T to %s", jsonArg, argType)
 		}
-		oref, err := waveobj.ParseORef(jsonArg.(string))
+		oref, err := remotetermobj.ParseORef(jsonArg.(string))
 		if err != nil {
 			return nil, fmt.Errorf("invalid oref string: %v", err)
 		}
@@ -127,19 +127,19 @@ func convertSpecial(argType reflect.Type, jsonArg any) (any, error) {
 		if jsonType.Kind() != reflect.Map {
 			return nil, fmt.Errorf("cannot convert %T to %s", jsonArg, argType)
 		}
-		return waveobj.FromJsonMap(jsonArg.(map[string]any))
+		return remotetermobj.FromJsonMap(jsonArg.(map[string]any))
 	} else if argType == waveObjSliceRType {
 		if jsonType.Kind() != reflect.Slice {
 			return nil, fmt.Errorf("cannot convert %T to %s", jsonArg, argType)
 		}
 		sliceArg := jsonArg.([]any)
-		nativeSlice := make([]waveobj.WaveObj, len(sliceArg))
+		nativeSlice := make([]remotetermobj.WaveObj, len(sliceArg))
 		for idx, elem := range sliceArg {
 			elemMap, ok := elem.(map[string]any)
 			if !ok {
 				return nil, fmt.Errorf("cannot convert %T to %s (idx %d is not a map, is %T)", jsonArg, waveObjSliceRType, idx, elem)
 			}
-			nativeObj, err := waveobj.FromJsonMap(elemMap)
+			nativeObj, err := remotetermobj.FromJsonMap(elemMap)
 			if err != nil {
 				return nil, fmt.Errorf("cannot convert %T to %s (idx %d) error: %v", jsonArg, waveObjSliceRType, idx, err)
 			}
@@ -151,13 +151,13 @@ func convertSpecial(argType reflect.Type, jsonArg any) (any, error) {
 			return nil, fmt.Errorf("cannot convert %T to %s", jsonArg, argType)
 		}
 		mapArg := jsonArg.(map[string]any)
-		nativeMap := make(map[string]waveobj.WaveObj)
+		nativeMap := make(map[string]remotetermobj.WaveObj)
 		for key, elem := range mapArg {
 			elemMap, ok := elem.(map[string]any)
 			if !ok {
 				return nil, fmt.Errorf("cannot convert %T to %s (key %s is not a map, is %T)", jsonArg, waveObjMapRType, key, elem)
 			}
-			nativeObj, err := waveobj.FromJsonMap(elemMap)
+			nativeObj, err := remotetermobj.FromJsonMap(elemMap)
 			if err != nil {
 				return nil, fmt.Errorf("cannot convert %T to %s (key %s) error: %v", jsonArg, waveObjMapRType, key, err)
 			}
@@ -171,12 +171,12 @@ func convertSpecial(argType reflect.Type, jsonArg any) (any, error) {
 
 func convertSpecialForReturn(argType reflect.Type, nativeArg any) (any, error) {
 	if argType == waveObjRType {
-		return waveobj.ToJsonMap(nativeArg.(waveobj.WaveObj))
+		return remotetermobj.ToJsonMap(nativeArg.(remotetermobj.WaveObj))
 	} else if argType == waveObjSliceRType {
-		nativeSlice := nativeArg.([]waveobj.WaveObj)
+		nativeSlice := nativeArg.([]remotetermobj.WaveObj)
 		jsonSlice := make([]map[string]any, len(nativeSlice))
 		for idx, elem := range nativeSlice {
-			elemMap, err := waveobj.ToJsonMap(elem)
+			elemMap, err := remotetermobj.ToJsonMap(elem)
 			if err != nil {
 				return nil, err
 			}
@@ -184,10 +184,10 @@ func convertSpecialForReturn(argType reflect.Type, nativeArg any) (any, error) {
 		}
 		return jsonSlice, nil
 	} else if argType == waveObjMapRType {
-		nativeMap := nativeArg.(map[string]waveobj.WaveObj)
+		nativeMap := nativeArg.(map[string]remotetermobj.WaveObj)
 		jsonMap := make(map[string]map[string]any)
 		for key, elem := range nativeMap {
-			elemMap, err := waveobj.ToJsonMap(elem)
+			elemMap, err := remotetermobj.ToJsonMap(elem)
 			if err != nil {
 				return nil, err
 			}
@@ -288,7 +288,7 @@ func convertReturnValues(rtnVals []reflect.Value) *WebReturnType {
 		}
 		if valType == updatesRType {
 			// has a special MarshalJSON method
-			rtn.Updates = val.Interface().([]waveobj.WaveObjUpdate)
+			rtn.Updates = val.Interface().([]remotetermobj.WaveObjUpdate)
 			continue
 		}
 		if isSpecialWaveArgType(valType) {
@@ -384,7 +384,7 @@ func baseValidateServiceArg(argType reflect.Type) error {
 }
 
 func validateMethodReturnArg(retType reflect.Type) error {
-	// specifically allow waveobj.WaveObj, []waveobj.WaveObj, map[string]waveobj.WaveObj, and error
+	// specifically allow remotetermobj.WaveObj, []remotetermobj.WaveObj, map[string]remotetermobj.WaveObj, and error
 	if isSpecialWaveArgType(retType) || retType == errorRType {
 		return nil
 	}
@@ -392,7 +392,7 @@ func validateMethodReturnArg(retType reflect.Type) error {
 }
 
 func validateMethodArg(argType reflect.Type) error {
-	// specifically allow waveobj.WaveObj, []waveobj.WaveObj, map[string]waveobj.WaveObj, and context.Context
+	// specifically allow remotetermobj.WaveObj, []remotetermobj.WaveObj, map[string]remotetermobj.WaveObj, and context.Context
 	if isSpecialWaveArgType(argType) || argType == contextRType {
 		return nil
 	}

@@ -8,13 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
 )
 
 const DevModeCorsOrigins = "http://localhost:5173,http://localhost:5174"
 
 func GetTsunamiAppCachePath(scope string, appName string, osArch string) (string, error) {
-	cachesDir := wavebase.GetWaveCachesDir()
+	cachesDir := remotetermbase.GetWaveCachesDir()
 	tsunamiCacheDir := filepath.Join(cachesDir, "tsunami-build-cache")
 	fullAppName := appName + "." + osArch
 	if strings.HasPrefix(osArch, "windows") {
@@ -23,7 +23,7 @@ func GetTsunamiAppCachePath(scope string, appName string, osArch string) (string
 	fullPath := filepath.Join(tsunamiCacheDir, scope, fullAppName)
 
 	dirPath := filepath.Dir(fullPath)
-	err := wavebase.TryMkdirs(dirPath, 0755, "tsunami cache directory")
+	err := remotetermbase.TryMkdirs(dirPath, 0755, "tsunami cache directory")
 	if err != nil {
 		return "", fmt.Errorf("failed to create tsunami cache directory: %w", err)
 	}

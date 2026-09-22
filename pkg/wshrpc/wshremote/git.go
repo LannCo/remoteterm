@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/wavetermdev/waveterm/pkg/secretstore"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/secretstore"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
 )
 
 // GitStatusCommand returns the working tree status for a git repository
@@ -974,9 +974,9 @@ func detectLanguage(path string) string {
 
 // DiffHunk represents a parsed hunk from unified diff output
 type DiffHunk struct {
-	Header   string
+	Header    string
 	StartLine int
-	Lines    []string
+	Lines     []string
 }
 
 // parseDiffHunks extracts individual hunks from unified diff output

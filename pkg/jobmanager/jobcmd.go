@@ -12,17 +12,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/util/unixutil"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
 	"github.com/creack/pty"
-	"github.com/wavetermdev/waveterm/pkg/util/unixutil"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
 type CmdDef struct {
 	Cmd      string
 	Args     []string
 	Env      map[string]string
-	TermSize waveobj.TermSize
+	TermSize remotetermobj.TermSize
 }
 
 type JobCmd struct {
@@ -31,7 +31,7 @@ type JobCmd struct {
 	cmd           *exec.Cmd
 	cmdPty        pty.Pty
 	ptsName       string
-	termSize      waveobj.TermSize
+	termSize      remotetermobj.TermSize
 	cleanedUp     bool
 	ptyClosed     bool
 	processExited bool
@@ -152,7 +152,7 @@ func (jm *JobCmd) GetExitInfo() (bool, *wshrpc.CommandJobCmdExitedData) {
 	return true, exitData
 }
 
-func (jm *JobCmd) setTermSize_withlock(termSize waveobj.TermSize) error {
+func (jm *JobCmd) setTermSize_withlock(termSize remotetermobj.TermSize) error {
 	if jm.cmdPty == nil {
 		return fmt.Errorf("no active pty")
 	}
@@ -170,7 +170,7 @@ func (jm *JobCmd) setTermSize_withlock(termSize waveobj.TermSize) error {
 	return nil
 }
 
-func (jm *JobCmd) SetTermSize(termSize waveobj.TermSize) error {
+func (jm *JobCmd) SetTermSize(termSize remotetermobj.TermSize) error {
 	jm.lock.Lock()
 	defer jm.lock.Unlock()
 	return jm.setTermSize_withlock(termSize)

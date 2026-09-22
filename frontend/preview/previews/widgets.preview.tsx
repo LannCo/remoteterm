@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { useWaveEnv, WaveEnv, WaveEnvContext } from "@/app/waveenv/waveenv";
+import { useWaveEnv, WaveEnv, WaveEnvContext } from "@/app/remotetermenv/remotetermenv";
 import { Widgets } from "@/app/workspace/widgets";
 import { atom, useAtom, useAtomValue } from "jotai";
 import { useRef } from "react";
@@ -57,7 +57,7 @@ const mockWidgets: { [key: string]: WidgetConfigType } = {
         label: "Web",
         description: "Open a web browser",
         "display:order": 2,
-        blockdef: { meta: { view: "web", url: "https://waveterm.dev" } },
+        blockdef: { meta: { view: "web", url: "https://example.com" } },
     },
     "defwidget@files": {
         icon: "folder",

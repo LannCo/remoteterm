@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/LannCo/remoteterm/pkg/util/shellutil"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
 )
 
 func init() {

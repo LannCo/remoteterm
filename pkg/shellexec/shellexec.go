@@ -19,19 +19,19 @@ import (
 
 	"maps"
 
+	"github.com/LannCo/remoteterm/pkg/blocklogger"
+	"github.com/LannCo/remoteterm/pkg/jobcontroller"
+	"github.com/LannCo/remoteterm/pkg/panichandler"
+	"github.com/LannCo/remoteterm/pkg/remote/conncontroller"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/util/pamparse"
+	"github.com/LannCo/remoteterm/pkg/util/shellutil"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
+	"github.com/LannCo/remoteterm/pkg/wslconn"
 	"github.com/creack/pty"
-	"github.com/wavetermdev/waveterm/pkg/blocklogger"
-	"github.com/wavetermdev/waveterm/pkg/jobcontroller"
-	"github.com/wavetermdev/waveterm/pkg/panichandler"
-	"github.com/wavetermdev/waveterm/pkg/remote/conncontroller"
-	"github.com/wavetermdev/waveterm/pkg/util/pamparse"
-	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
-	"github.com/wavetermdev/waveterm/pkg/wslconn"
 )
 
 const DefaultGracefulKillWait = 400 * time.Millisecond
@@ -155,7 +155,7 @@ func (pp *PipePty) WriteString(s string) (n int, err error) {
 	return pp.Write([]byte(s))
 }
 
-func StartWslShellProcNoWsh(ctx context.Context, termSize waveobj.TermSize, cmdStr string, cmdOpts CommandOptsType, conn *wslconn.WslConn) (*ShellProc, error) {
+func StartWslShellProcNoWsh(ctx context.Context, termSize remotetermobj.TermSize, cmdStr string, cmdOpts CommandOptsType, conn *wslconn.WslConn) (*ShellProc, error) {
 	client := conn.GetClient()
 	conn.Infof(ctx, "WSL-NEWSESSION (StartWslShellProcNoWsh)")
 
@@ -176,7 +176,7 @@ func StartWslShellProcNoWsh(ctx context.Context, termSize waveobj.TermSize, cmdS
 	return &ShellProc{Cmd: cmdWrap, ConnName: conn.GetName(), CloseOnce: &sync.Once{}, DoneCh: make(chan any)}, nil
 }
 
-func StartWslShellProc(ctx context.Context, termSize waveobj.TermSize, cmdStr string, cmdOpts CommandOptsType, conn *wslconn.WslConn) (*ShellProc, error) {
+func StartWslShellProc(ctx context.Context, termSize remotetermobj.TermSize, cmdStr string, cmdOpts CommandOptsType, conn *wslconn.WslConn) (*ShellProc, error) {
 	if cmdOpts.SwapToken == nil {
 		return nil, fmt.Errorf("SwapToken is required in CommandOptsType")
 	}
@@ -232,12 +232,12 @@ func StartWslShellProc(ctx context.Context, termSize waveobj.TermSize, cmdStr st
 			if cmdOpts.Login {
 				shellOpts = append(shellOpts, "-l")
 			}
-			// source the wave.fish file
-			waveFishPath := fmt.Sprintf("~/.waveterm/%s/wave.fish", shellutil.FishIntegrationDir)
+			// source the remoteterm.fish file
+			waveFishPath := fmt.Sprintf("~/.waveterm/%s/remoteterm.fish", shellutil.FishIntegrationDir)
 			carg := fmt.Sprintf(`"source %s"`, waveFishPath)
 			shellOpts = append(shellOpts, "-C", carg)
 		} else if shellType == shellutil.ShellType_pwsh {
-			pwshPath := fmt.Sprintf("~/.waveterm/%s/wavepwsh.ps1", shellutil.PwshIntegrationDir)
+			pwshPath := fmt.Sprintf("~/.waveterm/%s/remotetermpwsh.ps1", shellutil.PwshIntegrationDir)
 			// powershell is weird about quoted path executables and requires an ampersand first
 			shellPath = "& " + shellPath
 			shellOpts = append(shellOpts, "-ExecutionPolicy", "Bypass", "-NoExit", "-File", pwshPath)
@@ -269,12 +269,17 @@ func StartWslShellProc(ctx context.Context, termSize waveobj.TermSize, cmdStr st
 		conn.Infof(ctx, "error packing swap token: %v", err)
 	} else {
 		conn.Debugf(ctx, "packed swaptoken %s\n", shellutil.RedactSecret(packedToken))
-		cmdCombined = fmt.Sprintf(`%s=%s %s`, wavebase.WaveSwapTokenVarName, packedToken, cmdCombined)
+		cmdCombined = fmt.Sprintf(`%s=%s %s`, remotetermbase.WaveSwapTokenVarName, packedToken, cmdCombined)
 	}
-	jwtToken := cmdOpts.SwapToken.Env[wavebase.WaveJwtTokenVarName]
+	jwtToken := remotetermbase.GetMapValNewOrLegacy(cmdOpts.SwapToken.Env, remotetermbase.WaveJwtTokenVarName, remotetermbase.LegacyWaveJwtTokenVarName)
 	if jwtToken != "" && cmdOpts.ForceJwt {
 		conn.Debugf(ctx, "adding JWT token to environment\n")
-		cmdCombined = fmt.Sprintf(`%s=%s %s`, wavebase.WaveJwtTokenVarName, jwtToken, cmdCombined)
+		cmdCombined = fmt.Sprintf(
+			`%s=%s %s=%s %s`,
+			remotetermbase.WaveJwtTokenVarName, jwtToken,
+			remotetermbase.LegacyWaveJwtTokenVarName, jwtToken,
+			cmdCombined,
+		)
 	}
 	// The assembled command carries the swaptoken/JWT env-var prefixes inline, so redact
 	// both known secret values before logging; kept at Debugf (verbose-gated) since it's
@@ -304,7 +309,7 @@ func StartWslShellProc(ctx context.Context, termSize waveobj.TermSize, cmdStr st
 	return &ShellProc{Cmd: cmdWrap, ConnName: conn.GetName(), CloseOnce: &sync.Once{}, DoneCh: make(chan any)}, nil
 }
 
-func StartRemoteShellProcNoWsh(ctx context.Context, termSize waveobj.TermSize, cmdStr string, cmdOpts CommandOptsType, conn *conncontroller.SSHConn) (*ShellProc, error) {
+func StartRemoteShellProcNoWsh(ctx context.Context, termSize remotetermobj.TermSize, cmdStr string, cmdOpts CommandOptsType, conn *conncontroller.SSHConn) (*ShellProc, error) {
 	client := conn.GetClient()
 	conn.Infof(ctx, "SSH-NEWSESSION (StartRemoteShellProcNoWsh)")
 	session, err := client.NewSession()
@@ -347,7 +352,7 @@ func StartRemoteShellProcNoWsh(ctx context.Context, termSize waveobj.TermSize, c
 	return &ShellProc{Cmd: sessionWrap, ConnName: conn.GetName(), CloseOnce: &sync.Once{}, DoneCh: make(chan any)}, nil
 }
 
-func StartRemoteShellProc(ctx context.Context, logCtx context.Context, termSize waveobj.TermSize, cmdStr string, cmdOpts CommandOptsType, conn *conncontroller.SSHConn) (*ShellProc, error) {
+func StartRemoteShellProc(ctx context.Context, logCtx context.Context, termSize remotetermobj.TermSize, cmdStr string, cmdOpts CommandOptsType, conn *conncontroller.SSHConn) (*ShellProc, error) {
 	if cmdOpts.SwapToken == nil {
 		return nil, fmt.Errorf("SwapToken is required in CommandOptsType")
 	}
@@ -400,12 +405,12 @@ func StartRemoteShellProc(ctx context.Context, logCtx context.Context, termSize 
 			if cmdOpts.Login {
 				shellOpts = append(shellOpts, "-l")
 			}
-			// source the wave.fish file
-			waveFishPath := fmt.Sprintf("%s/.waveterm/%s/wave.fish", remoteInfo.HomeDir, shellutil.FishIntegrationDir)
+			// source the remoteterm.fish file
+			waveFishPath := fmt.Sprintf("%s/.waveterm/%s/remoteterm.fish", remoteInfo.HomeDir, shellutil.FishIntegrationDir)
 			carg := fmt.Sprintf(`"source %s"`, waveFishPath)
 			shellOpts = append(shellOpts, "-C", carg)
 		} else if shellType == shellutil.ShellType_pwsh {
-			pwshPath := fmt.Sprintf("%s/.waveterm/%s/wavepwsh.ps1", remoteInfo.HomeDir, shellutil.PwshIntegrationDir)
+			pwshPath := fmt.Sprintf("%s/.waveterm/%s/remotetermpwsh.ps1", remoteInfo.HomeDir, shellutil.PwshIntegrationDir)
 			// powershell is weird about quoted path executables and requires an ampersand first
 			shellPath = "& " + shellPath
 			shellOpts = append(shellOpts, "-ExecutionPolicy", "Bypass", "-NoExit", "-File", pwshPath)
@@ -464,12 +469,17 @@ func StartRemoteShellProc(ctx context.Context, logCtx context.Context, termSize 
 		conn.Infof(logCtx, "error packing swap token: %v", err)
 	} else {
 		conn.Debugf(logCtx, "packed swaptoken %s\n", shellutil.RedactSecret(packedToken))
-		cmdCombined = fmt.Sprintf(`%s=%s %s`, wavebase.WaveSwapTokenVarName, packedToken, cmdCombined)
+		cmdCombined = fmt.Sprintf(`%s=%s %s`, remotetermbase.WaveSwapTokenVarName, packedToken, cmdCombined)
 	}
-	jwtToken := cmdOpts.SwapToken.Env[wavebase.WaveJwtTokenVarName]
+	jwtToken := remotetermbase.GetMapValNewOrLegacy(cmdOpts.SwapToken.Env, remotetermbase.WaveJwtTokenVarName, remotetermbase.LegacyWaveJwtTokenVarName)
 	if jwtToken != "" && cmdOpts.ForceJwt {
 		conn.Debugf(logCtx, "adding JWT token to environment\n")
-		cmdCombined = fmt.Sprintf(`%s=%s %s`, wavebase.WaveJwtTokenVarName, jwtToken, cmdCombined)
+		cmdCombined = fmt.Sprintf(
+			`%s=%s %s=%s %s`,
+			remotetermbase.WaveJwtTokenVarName, jwtToken,
+			remotetermbase.LegacyWaveJwtTokenVarName, jwtToken,
+			cmdCombined,
+		)
 	}
 	shellutil.AddTokenSwapEntry(cmdOpts.SwapToken)
 	session.RequestPty("xterm-256color", termSize.Rows, termSize.Cols, nil)
@@ -482,7 +492,7 @@ func StartRemoteShellProc(ctx context.Context, logCtx context.Context, termSize 
 	return &ShellProc{Cmd: sessionWrap, ConnName: conn.GetName(), CloseOnce: &sync.Once{}, DoneCh: make(chan any)}, nil
 }
 
-func StartRemoteShellJob(ctx context.Context, logCtx context.Context, termSize waveobj.TermSize, cmdStr string, cmdOpts CommandOptsType, conn *conncontroller.SSHConn, optBlockId string) (string, error) {
+func StartRemoteShellJob(ctx context.Context, logCtx context.Context, termSize remotetermobj.TermSize, cmdStr string, cmdOpts CommandOptsType, conn *conncontroller.SSHConn, optBlockId string) (string, error) {
 	connRoute := wshutil.MakeConnectionRouteId(conn.GetName())
 	rpcClient := wshclient.GetBareRpcClient()
 	remoteInfo, err := wshclient.RemoteGetInfoCommand(rpcClient, &wshrpc.RpcOpts{Route: connRoute, Timeout: 2000})
@@ -526,11 +536,11 @@ func StartRemoteShellJob(ctx context.Context, logCtx context.Context, termSize w
 			if cmdOpts.Login {
 				shellOpts = append(shellOpts, "-l")
 			}
-			waveFishPath := fmt.Sprintf("%s/.waveterm/%s/wave.fish", remoteInfo.HomeDir, shellutil.FishIntegrationDir)
+			waveFishPath := fmt.Sprintf("%s/.waveterm/%s/remoteterm.fish", remoteInfo.HomeDir, shellutil.FishIntegrationDir)
 			carg := fmt.Sprintf(`source %s`, waveFishPath)
 			shellOpts = append(shellOpts, "-C", carg)
 		} else if shellType == shellutil.ShellType_pwsh {
-			pwshPath := fmt.Sprintf("%s/.waveterm/%s/wavepwsh.ps1", remoteInfo.HomeDir, shellutil.PwshIntegrationDir)
+			pwshPath := fmt.Sprintf("%s/.waveterm/%s/remotetermpwsh.ps1", remoteInfo.HomeDir, shellutil.PwshIntegrationDir)
 			shellOpts = append(shellOpts, "-ExecutionPolicy", "Bypass", "-NoExit", "-File", pwshPath)
 		} else {
 			if cmdOpts.Login {
@@ -566,12 +576,12 @@ func StartRemoteShellJob(ctx context.Context, logCtx context.Context, termSize w
 			conn.Infof(logCtx, "error packing swap token: %v", err)
 		} else {
 			conn.Debugf(logCtx, "packed swaptoken %s\n", shellutil.RedactSecret(packedToken))
-			env[wavebase.WaveSwapTokenVarName] = packedToken
+			env[remotetermbase.WaveSwapTokenVarName] = packedToken
 		}
-		jwtToken := cmdOpts.SwapToken.Env[wavebase.WaveJwtTokenVarName]
+		jwtToken := remotetermbase.GetMapValNewOrLegacy(cmdOpts.SwapToken.Env, remotetermbase.WaveJwtTokenVarName, remotetermbase.LegacyWaveJwtTokenVarName)
 		if jwtToken != "" && cmdOpts.ForceJwt {
 			conn.Debugf(logCtx, "adding JWT token to environment\n")
-			env[wavebase.WaveJwtTokenVarName] = jwtToken
+			remotetermbase.SetDualEnv(env, remotetermbase.WaveJwtTokenVarName, remotetermbase.LegacyWaveJwtTokenVarName, jwtToken)
 		}
 		shellutil.AddTokenSwapEntry(cmdOpts.SwapToken)
 	}
@@ -593,7 +603,7 @@ func StartRemoteShellJob(ctx context.Context, logCtx context.Context, termSize w
 	return jobId, nil
 }
 
-func StartLocalShellProc(logCtx context.Context, termSize waveobj.TermSize, cmdStr string, cmdOpts CommandOptsType, connName string) (*ShellProc, error) {
+func StartLocalShellProc(logCtx context.Context, termSize remotetermobj.TermSize, cmdStr string, cmdOpts CommandOptsType, connName string) (*ShellProc, error) {
 	if cmdOpts.SwapToken == nil {
 		return nil, fmt.Errorf("SwapToken is required in CommandOptsType")
 	}
@@ -648,12 +658,15 @@ func StartLocalShellProc(logCtx context.Context, termSize waveobj.TermSize, cmdS
 		blocklogger.Infof(logCtx, "error packing swap token: %v", err)
 	} else {
 		blocklogger.Debugf(logCtx, "packed swaptoken %s\n", shellutil.RedactSecret(packedToken))
-		shellutil.UpdateCmdEnv(ecmd, map[string]string{wavebase.WaveSwapTokenVarName: packedToken})
+		shellutil.UpdateCmdEnv(ecmd, map[string]string{remotetermbase.WaveSwapTokenVarName: packedToken})
 	}
-	jwtToken := cmdOpts.SwapToken.Env[wavebase.WaveJwtTokenVarName]
+	jwtToken := remotetermbase.GetMapValNewOrLegacy(cmdOpts.SwapToken.Env, remotetermbase.WaveJwtTokenVarName, remotetermbase.LegacyWaveJwtTokenVarName)
 	if jwtToken != "" && cmdOpts.ForceJwt {
 		blocklogger.Debugf(logCtx, "adding JWT token to environment\n")
-		shellutil.UpdateCmdEnv(ecmd, map[string]string{wavebase.WaveJwtTokenVarName: jwtToken})
+		shellutil.UpdateCmdEnv(ecmd, map[string]string{
+			remotetermbase.WaveJwtTokenVarName:       jwtToken,
+			remotetermbase.LegacyWaveJwtTokenVarName: jwtToken,
+		})
 	}
 
 	/*
@@ -682,11 +695,11 @@ func StartLocalShellProc(logCtx context.Context, termSize waveobj.TermSize, cmdS
 		ecmd.Dir = cmdOpts.Cwd
 	}
 	if cwdErr := checkCwd(ecmd.Dir); cwdErr != nil {
-		ecmd.Dir = wavebase.GetHomeDir()
+		ecmd.Dir = remotetermbase.GetHomeDir()
 	}
 	envToAdd := shellutil.WaveshellLocalEnvVars(shellutil.DefaultTermType)
 	if os.Getenv("LANG") == "" {
-		envToAdd["LANG"] = wavebase.DetermineLang()
+		envToAdd["LANG"] = remotetermbase.DetermineLang()
 	}
 	shellutil.UpdateCmdEnv(ecmd, envToAdd)
 	if termSize.Rows == 0 || termSize.Cols == 0 {
@@ -705,7 +718,7 @@ func StartLocalShellProc(logCtx context.Context, termSize waveobj.TermSize, cmdS
 	return &ShellProc{Cmd: cmdWrap, ConnName: connName, CloseOnce: &sync.Once{}, DoneCh: make(chan any)}, nil
 }
 
-func RunSimpleCmdInPty(ecmd *exec.Cmd, termSize waveobj.TermSize) ([]byte, error) {
+func RunSimpleCmdInPty(ecmd *exec.Cmd, termSize remotetermobj.TermSize) ([]byte, error) {
 	ecmd.Env = os.Environ()
 	shellutil.UpdateCmdEnv(ecmd, shellutil.WaveshellLocalEnvVars(shellutil.DefaultTermType))
 	if termSize.Rows == 0 || termSize.Cols == 0 {
@@ -764,7 +777,7 @@ func tryGetPamEnvVars() map[string]string {
 	if err != nil {
 		log.Printf("error parsing %s: %v", etcSecurityPath, err)
 	}
-	envVars3, err := pamparse.ParseEnvironmentConfFile(wavebase.ExpandHomeDirSafe(userEnvironmentPath), pamParseOpts)
+	envVars3, err := pamparse.ParseEnvironmentConfFile(remotetermbase.ExpandHomeDirSafe(userEnvironmentPath), pamParseOpts)
 	if err != nil {
 		log.Printf("error parsing %s: %v", userEnvironmentPath, err)
 	}

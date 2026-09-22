@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { WaveEnv, WaveEnvSubset } from "@/app/waveenv/waveenv";
+import { WaveEnv, WaveEnvSubset } from "@/app/remotetermenv/remotetermenv";
 import { atom, Atom, PrimitiveAtom } from "jotai";
 import { createContext, useContext } from "react";
 import { globalStore } from "./jotaiStore";

@@ -1395,6 +1395,25 @@ depends on everything upstream of it in Taskfile.yml. Do not merge Phase 5 witho
 one green CI run on the exact commit. On gate failure: do not merge, report to the repo owner
 (see Phase 3's verification for the general rule).
 
+**Two Phase 5 decisions RESOLVED 2026-09-22 by repo owner:**
+- **Step 13, `WAVE_BUILDER_APPID`/`WAVE_BUILDER_KEY`: deferred**, not renamed. No RemoteTerm-named
+  GitHub App or repo secret exists yet under a new name. Context for the deferral: the upstream
+  Wave Terminal maintainer has been inactive for a while and this fork is not expected to keep
+  tracking upstream `main` — it's becoming its own standalone, de-facto-maintained project. Bundle
+  this rename into a future full-infra-standup pass alongside the other still-deferred
+  release-infra strings (steps 14/15's `Taskfile.yml` carve-out) once a real RemoteTerm GitHub App
+  + secrets are actually created — not before. `WAVETERM_VERSION`->`REMOTETERM_VERSION` (the
+  workflow-internal output var, zero external dependents) was renamed in both
+  `bump-version.yml` and `build-helper.yml` as planned; only the App/secret var *names* are held
+  back.
+- **Step 16, `CNAME`: renamed to `docs.rterm.dev`**, not `docs.remoteterm.dev`. Owner is buying
+  `rterm.dev` as the project's real new domain for docs hosting — separate from `remoteterm.dev`,
+  which stays the root/homepage domain already in place from Phase 1 (`package.json` `homepage`,
+  `about.tsx`, README badges). This is a deliberate two-domain split, not an inconsistency — do
+  not "fix" `remoteterm.dev` references toward `rterm.dev` without a fresh owner decision.
+  Real-world DNS for `rterm.dev` may not exist yet; treat the committed `CNAME` value as staged
+  ahead of DNS being live, same caution as this step's Rollback Position note above.
+
 **Phase 6: Cleanup pass + residual-reference grep sweep**
 
 18. Re-run the inventory scan against the post-Phase-5 tree using **this literal command**,

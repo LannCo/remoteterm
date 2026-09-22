@@ -8,8 +8,8 @@ import (
 	"reflect"
 	"runtime"
 
-	"github.com/wavetermdev/waveterm/tsunami/engine"
-	"github.com/wavetermdev/waveterm/tsunami/util"
+	"github.com/LannCo/remoteterm/tsunami/engine"
+	"github.com/LannCo/remoteterm/tsunami/util"
 )
 
 // AtomMeta provides metadata about an atom for validation and documentation
