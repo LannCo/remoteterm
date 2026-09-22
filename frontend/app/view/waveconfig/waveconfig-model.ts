@@ -160,6 +160,7 @@ export class WaveConfigViewModel implements ViewModel {
     // set this key" apart from "showing the merged-in default" (fullConfigAtom.settings always
     // has defaults merged in, so it can't answer that question by itself).
     generalRawSettingsAtom: Atom<SettingsType>;
+    generalSearchAtom: PrimitiveAtom<string>;
 
     constructor({ blockId, nodeModel, tabModel, waveEnv }: ViewModelInitType) {
         this.blockId = blockId;
@@ -275,6 +276,7 @@ export class WaveConfigViewModel implements ViewModel {
             }
             return {};
         });
+        this.generalSearchAtom = atom<string>("");
 
         this.checkPresetsJsonExists();
         this.initialize();
