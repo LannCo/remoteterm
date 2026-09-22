@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { globalStore } from "@/app/store/jotaiStore";
 import { useWaveEnv, WaveEnv, WaveEnvContext } from "@/app/remotetermenv/remotetermenv";
+import { globalStore } from "@/app/store/jotaiStore";
 import { applyMockEnvOverrides, MockWaveEnv } from "@/preview/mock/mockwaveenv";
 import { PlatformMacOS } from "@/util/platformutil";
 import { atom } from "jotai";

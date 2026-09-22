@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Tooltip } from "@/app/element/tooltip";
+import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { globalStore } from "@/app/store/jotaiStore";
 import { tryReinjectKey } from "@/app/store/keymodel";
 import { CodeEditor } from "@/app/view/codeeditor/codeeditor";
 import type { ConfigFile, RemoteTermConfigViewModel } from "@/app/view/remotetermconfig/remotetermconfig-model";
 import type { RemoteTermConfigEnv } from "@/app/view/remotetermconfig/remotetermconfigenv";
-import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { adaptFromReactOrNativeKeyEvent, checkKeyPressed, keydownWrapper } from "@/util/keyutil";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
@@ -215,28 +215,33 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
                                     </div>
                                 </div>
                                 <div className="flex gap-2 items-baseline shrink-0">
-                                    {selectedFile.hasJsonView && (!selectedFile.visualComponent || activeTab === "json") && (
-                                        <>
-                                            {hasChanges && (
-                                                <span className="text-xs text-warning pb-0.5 @max-w450:hidden">
-                                                    Unsaved changes
-                                                </span>
-                                            )}
-                                            <Tooltip content={saveTooltip} placement="bottom" divClassName="shrink-0">
-                                                <button
-                                                    onClick={() => model.saveFile()}
-                                                    disabled={!hasChanges || isSaving}
-                                                    className={`px-3 py-1 rounded transition-colors text-sm ${
-                                                        !hasChanges || isSaving
-                                                            ? "border border-border text-muted-foreground opacity-50"
-                                                            : "bg-accent/80 text-background hover:bg-accent cursor-pointer"
-                                                    }`}
+                                    {selectedFile.hasJsonView &&
+                                        (!selectedFile.visualComponent || activeTab === "json") && (
+                                            <>
+                                                {hasChanges && (
+                                                    <span className="text-xs text-warning pb-0.5 @max-w450:hidden">
+                                                        Unsaved changes
+                                                    </span>
+                                                )}
+                                                <Tooltip
+                                                    content={saveTooltip}
+                                                    placement="bottom"
+                                                    divClassName="shrink-0"
                                                 >
-                                                    {isSaving ? "Saving..." : "Save"}
-                                                </button>
-                                            </Tooltip>
-                                        </>
-                                    )}
+                                                    <button
+                                                        onClick={() => model.saveFile()}
+                                                        disabled={!hasChanges || isSaving}
+                                                        className={`px-3 py-1 rounded transition-colors text-sm ${
+                                                            !hasChanges || isSaving
+                                                                ? "border border-border text-muted-foreground opacity-50"
+                                                                : "bg-accent/80 text-background hover:bg-accent cursor-pointer"
+                                                        }`}
+                                                    >
+                                                        {isSaving ? "Saving..." : "Save"}
+                                                    </button>
+                                                </Tooltip>
+                                            </>
+                                        )}
                                 </div>
                             </div>
                             {selectedFile.visualComponent && selectedFile.hasJsonView && (

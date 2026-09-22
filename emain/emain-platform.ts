@@ -163,7 +163,10 @@ function migrateDataRoot(spec: MigrationRootSpec) {
     try {
         mkdirSync(path.dirname(spec.dest), { recursive: true });
         renameSync(spec.source, spec.dest);
-        writeFileSync(path.join(spec.dest, MigrationMarkerFileName), `moved-from:${spec.source}\n${new Date().toISOString()}\n`);
+        writeFileSync(
+            path.join(spec.dest, MigrationMarkerFileName),
+            `moved-from:${spec.source}\n${new Date().toISOString()}\n`
+        );
         console.log(`[migration] migrated ${spec.name} root from ${spec.source} to ${spec.dest}`);
     } catch (e) {
         if (e && e.code === "ENOENT") {
@@ -499,8 +502,8 @@ export {
     getXdgCurrentDesktop,
     isDev,
     isDevVite,
-    unameArch,
-    unamePlatform,
     RemoteTermConfigHomeVarName,
     RemoteTermDataHomeVarName,
+    unameArch,
+    unamePlatform,
 };

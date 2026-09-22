@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sortByDisplayOrder } from "@/app/workspace/widgetfilter";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mock atom store — mirrors the pattern in sourcecontrol/review-mode.test.ts
@@ -198,14 +198,7 @@ describe("RemoteTermConfigViewModel — sidebar widgets (reorder / toggle / pers
 
         const merged = { ...makeDefaultWidgetsMap(), ...rawWidgetsFileOnDisk };
         const sortedKeys = sortByDisplayOrder(merged).map((w) => w.label);
-        expect(sortedKeys).toEqual([
-            "source\ncontrol",
-            "terminal",
-            "files",
-            "web",
-            "sysinfo",
-            "processes",
-        ]);
+        expect(sortedKeys).toEqual(["source\ncontrol", "terminal", "files", "web", "sysinfo", "processes"]);
     });
 
     it("moving a widget to the very front (no prev neighbor) still sorts it before everything else", async () => {

@@ -4,7 +4,11 @@
 import { ipcMain, webContents, WebContents } from "electron";
 import { RemoteTermBrowserWindow } from "./emain-window";
 
-export function getWebContentsByBlockId(ww: RemoteTermBrowserWindow, tabId: string, blockId: string): Promise<WebContents> {
+export function getWebContentsByBlockId(
+    ww: RemoteTermBrowserWindow,
+    tabId: string,
+    blockId: string
+): Promise<WebContents> {
     const prtn = new Promise<WebContents>((resolve, reject) => {
         const randId = Math.floor(Math.random() * 1000000000).toString();
         const respCh = `getWebContentsByBlockId-${randId}`;

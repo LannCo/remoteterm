@@ -187,7 +187,9 @@ async function initWave(initOpts: RemoteTermInitOpts) {
         document.title = `RemoteTerm - ${initialTab.name}`; // TODO update with tab name change
     } catch (e) {
         console.error("Failed initialization error", e);
-        getApi().sendLog("Error in initialization (remoteterm.ts, loading required objects) " + e.message + "\n" + e.stack);
+        getApi().sendLog(
+            "Error in initialization (remoteterm.ts, loading required objects) " + e.message + "\n" + e.stack
+        );
     }
     registerGlobalKeys();
     registerElectronReinjectKeyHandler();

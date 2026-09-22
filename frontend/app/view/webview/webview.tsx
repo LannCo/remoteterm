@@ -3,6 +3,8 @@
 
 import { BlockNodeModel } from "@/app/block/blocktypes";
 import { Search, useSearch } from "@/app/element/search";
+import { MockBoundary } from "@/app/remotetermenv/mockboundary";
+import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { globalStore } from "@/app/store/jotaiStore";
 import { getSimpleControlShiftAtom } from "@/app/store/keymodel";
 import type { TabModel } from "@/app/store/tab-model";
@@ -13,8 +15,6 @@ import {
     SuggestionControlNoData,
     SuggestionControlNoResults,
 } from "@/app/suggestion/suggestion";
-import { MockBoundary } from "@/app/remotetermenv/mockboundary";
-import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { openLink } from "@/store/global";
 import { adaptFromReactOrNativeKeyEvent, checkKeyPressed } from "@/util/keyutil";
 import { fireAndForget, useAtomValueSafe } from "@/util/util";

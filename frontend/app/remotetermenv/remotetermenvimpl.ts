@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { WaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import {
     atoms,
@@ -17,7 +18,6 @@ import {
 } from "@/app/store/global";
 import { AllServiceImpls } from "@/app/store/services";
 import { RpcApi } from "@/app/store/wshclientapi";
-import { WaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { isMacOS, isWindows, PLATFORM } from "@/util/platformutil";
 
 export function makeWaveEnvImpl(): WaveEnv {
