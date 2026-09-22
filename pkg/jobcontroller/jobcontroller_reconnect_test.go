@@ -325,3 +325,42 @@ func TestReconnectWaiterSkipsAfterHolderRestoresStream(t *testing.T) {
 		t.Fatalf("expected job Connected, got %q", got)
 	}
 }
+
+// TestStartJobFailureReleasesStream: a StartJob that fails after registering its
+// output stream must not leave the reader registered or stream health claiming an
+// active output loop for a job that never started one.
+func TestStartJobFailureReleasesStream(t *testing.T) {
+	initStoreFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	defer cancel()
+	cmd := "bash-" + uuid.New().String()
+
+	// No conn:local route is registered, so RemoteStartJobCommand fails.
+	if _, err := StartJob(ctx, StartJobParams{ConnName: "local", JobKind: JobKind_Shell, Cmd: cmd}); err == nil {
+		t.Fatalf("expected StartJob to fail with no connection route")
+	}
+
+	jobs, err := rtstore.DBGetAllObjsByType[*remotetermobj.Job](ctx, remotetermobj.OType_Job)
+	if err != nil {
+		t.Fatalf("list jobs: %v", err)
+	}
+	var jobId string
+	for _, job := range jobs {
+		if job.Cmd == cmd {
+			jobId = job.OID
+		}
+	}
+	if jobId == "" {
+		t.Fatalf("failed job not found in store")
+	}
+	health, healthOk := jobStreamHealth.GetEx(jobId)
+	if hasActiveStream(health, healthOk) {
+		t.Errorf("stream health still active after failed start: %+v", health)
+	}
+	if _, ok := jobReaders.GetEx(jobId); ok {
+		t.Errorf("reader still registered after failed start")
+	}
+	if _, ok := jobStreamIds.GetEx(jobId); ok {
+		t.Errorf("stream id still registered after failed start")
+	}
+}

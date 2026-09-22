@@ -1516,6 +1516,13 @@ func registerNewJobStream(jobId string, reader *streamclient.Reader, streamId st
 	})
 }
 
+func unregisterJobStream(jobId string, reader *streamclient.Reader) {
+	reader.Close()
+	jobStreamIds.Delete(jobId)
+	jobReaders.Delete(jobId)
+	jobStreamHealth.Delete(jobId)
+}
+
 func CheckJobConnected(ctx context.Context, jobId string) (*remotetermobj.Job, error) {
 	job, err := rtstore.DBMustGet[*remotetermobj.Job](ctx, jobId)
 	if err != nil {
@@ -1617,6 +1624,12 @@ func StartJob(ctx context.Context, params StartJobParams) (string, error) {
 	writerRouteId := wshutil.MakeJobRouteId(jobId)
 	reader, streamMeta := broker.CreateStreamReader(readerRouteId, writerRouteId, DefaultStreamRwnd)
 	registerNewJobStream(jobId, reader, streamMeta.Id)
+	outputLoopStarted := false
+	defer func() {
+		if !outputLoopStarted {
+			unregisterJobStream(jobId, reader)
+		}
+	}()
 
 	fileOpts := wshrpc.FileOpts{
 		MaxSize:  10 * 1024 * 1024,
@@ -1686,6 +1699,7 @@ func StartJob(ctx context.Context, params StartJobParams) (string, error) {
 		sendBlockJobStatusEventByJob(ctx, updatedJob)
 	}
 
+	outputLoopStarted = true
 	go func() {
 		defer func() {
 			panichandler.PanicHandler("jobcontroller:runOutputLoop", recover())
