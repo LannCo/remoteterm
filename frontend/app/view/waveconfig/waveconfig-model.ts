@@ -879,8 +879,12 @@ export class WaveConfigViewModel implements ViewModel {
             (max, entry) => Math.max(max, entry["display:order"] ?? 0),
             0
         );
+        // 0.3 matches the shipped defaultconfig presets that (like a hand-typed quick-add)
+        // are a single flat CSS value rather than a multi-layer gradient — Rainbow, Green,
+        // Blue, and Red in pkg/wconfig/defaultconfig/backgrounds.json all use it, and none
+        // of those set bg:blendmode either.
         await this.persistBackgroundPatch({
-            [key]: { "display:name": name, bg, "display:order": maxOrder + 1 },
+            [key]: { "display:name": name, bg, "bg:opacity": 0.3, "display:order": maxOrder + 1 },
         });
         return key;
     }
