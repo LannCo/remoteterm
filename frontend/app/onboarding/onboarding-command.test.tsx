@@ -7,11 +7,13 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import fs from "fs";
 import path from "path";
 import { afterEach, expect, it, vi } from "vitest";
-import { ViewLogoCommand } from "./onboarding-command";
+import { EditBashrcCommand, ViewLogoCommand } from "./onboarding-command";
 
 vi.mock("./onboarding-layout-term", () => ({ FakeTermBlock: () => null }));
 vi.mock("@/app/element/streamdown", () => ({ WaveStreamdown: () => null }));
-vi.mock("@/app/view/codeeditor/codeeditor", () => ({ CodeEditor: () => null }));
+vi.mock("@/app/view/codeeditor/codeeditor", () => ({
+    CodeEditor: ({ text }: { text: string }) => <pre data-testid="editor">{text}</pre>,
+}));
 
 const PublicDir = path.resolve(import.meta.dirname, "../../../public");
 
@@ -40,4 +42,16 @@ it("first-run logo demo types and shows the RemoteTerm logo, not Wave art", () =
     const file = path.join(PublicDir, src.replace(/^\//, ""));
     expect(fs.existsSync(file), file).toBe(true);
     expect(pngSize(file)).toEqual(pngSize(path.join(PublicDir, "logos/wave-logo.png")));
+});
+
+it("first-run .bashrc demo aliases wsh as rt, not wave", () => {
+    vi.useFakeTimers();
+    render(<EditBashrcCommand />);
+    act(() => {
+        vi.advanceTimersByTime(100 * 60);
+    });
+
+    const text = screen.getByTestId("editor").textContent;
+    expect(text).toContain('alias rt="wsh"');
+    expect(text).not.toMatch(/\bwave\b/i);
 });
