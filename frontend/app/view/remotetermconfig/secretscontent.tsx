@@ -1,7 +1,7 @@
 // Copyright 2025, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { SecretNameRegex, type WaveConfigViewModel } from "@/app/view/remotetermconfig/remotetermconfig-model";
+import { SecretNameRegex, type RemoteTermConfigViewModel } from "@/app/view/remotetermconfig/remotetermconfig-model";
 import { cn } from "@/util/util";
 import { useAtomValue, useSetAtom } from "jotai";
 import { memo, useMemo } from "react";
@@ -199,7 +199,7 @@ const AddSecretForm = memo(
 AddSecretForm.displayName = "AddSecretForm";
 
 interface SecretDetailViewProps {
-    model: WaveConfigViewModel;
+    model: RemoteTermConfigViewModel;
 }
 
 const SecretDetailView = memo(({ model }: SecretDetailViewProps) => {
@@ -308,7 +308,7 @@ const SecretDetailView = memo(({ model }: SecretDetailViewProps) => {
 SecretDetailView.displayName = "SecretDetailView";
 
 interface SecretsContentProps {
-    model: WaveConfigViewModel;
+    model: RemoteTermConfigViewModel;
 }
 
 export const SecretsContent = memo(({ model }: SecretsContentProps) => {

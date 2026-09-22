@@ -142,8 +142,8 @@ function makeFileMenu(
             },
         },
     ];
-    const featureWaveAppBuilder = fullConfig?.settings?.["feature:waveappbuilder"];
-    if (isDev || featureWaveAppBuilder) {
+    const featureRTAppBuilder = fullConfig?.settings?.["feature:rtappbuilder"];
+    if (isDev || featureRTAppBuilder) {
         fileMenu.splice(1, 0, {
             label: "New RTApp Builder Window",
             accelerator: unamePlatform === "darwin" ? "Command+Shift+B" : "Alt+Shift+B",

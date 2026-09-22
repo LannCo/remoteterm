@@ -143,7 +143,7 @@ function loadAllWorkspaceTabs(ws: Workspace) {
 }
 
 async function initWave(initOpts: RemoteTermInitOpts) {
-    getApi().sendLog("Init Wave " + JSON.stringify(initOpts));
+    getApi().sendLog("Init RemoteTerm " + JSON.stringify(initOpts));
     const globalInitOpts: GlobalInitOptions = {
         tabId: initOpts.tabId,
         clientId: initOpts.clientId,

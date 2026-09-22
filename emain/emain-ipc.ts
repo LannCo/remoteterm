@@ -18,7 +18,7 @@ import { createBuilderWindow, getAllBuilderWindows, getBuilderWindowByWebContent
 import { callWithOriginalXdgCurrentDesktopAsync, unamePlatform } from "./emain-platform";
 import { getRemoteTermTabViewByWebContentsId } from "./emain-tabview";
 import { handleCtrlShiftState } from "./emain-util";
-import { getRemoteTermVersion } from "./emain-wavesrv";
+import { getRemoteTermVersion } from "./emain-remotetermsrv";
 import { createNewRemoteTermWindow, getRemoteTermWindowByWebContentsId } from "./emain-window";
 import { ElectronWshClient } from "./emain-wsh";
 

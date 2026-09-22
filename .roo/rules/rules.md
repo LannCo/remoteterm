@@ -1,4 +1,4 @@
-Wave Terminal is a modern terminal which provides graphical blocks, dynamic layout, workspaces, and SSH connection management. It is cross platform and built on electron.
+RemoteTerm is a modern terminal which provides graphical blocks, dynamic layout, workspaces, and SSH connection management. It is cross platform and built on electron.
 
 ### Project Structure
 

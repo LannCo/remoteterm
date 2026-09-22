@@ -7,7 +7,7 @@ RemoteTerm is an open-source AI-native terminal built for seamless workflows. It
 ## Top-Level Directory Structure
 
 ```
-waveterm/
+remoteterm/
 ├── emain/              # Electron main process code
 ├── frontend/           # React application (renderer process)
 ├── cmd/                # Go command-line applications
@@ -31,13 +31,12 @@ The Electron main process handles the native desktop application layer:
 **Key Files:**
 
 - [`emain.ts`](emain/emain.ts) - Main entry point, application lifecycle management
-- [`emain-window.ts`](emain/emain-window.ts) - Window management (`WaveBrowserWindow` class)
-- [`emain-tabview.ts`](emain/emain-tabview.ts) - Tab view management (`WaveTabView` class)
-- [`emain-wavesrv.ts`](emain/emain-wavesrv.ts) - Go backend server integration
+- [`emain-window.ts`](emain/emain-window.ts) - Window management (`RemoteTermBrowserWindow` class)
+- [`emain-tabview.ts`](emain/emain-tabview.ts) - Tab view management (`RemoteTermTabView` class)
+- [`emain-remotetermsrv.ts`](emain/emain-remotetermsrv.ts) - Go backend server integration
 - [`emain-wsh.ts`](emain/emain-wsh.ts) - WSH (Wave Shell) client integration
 - [`emain-ipc.ts`](emain/emain-ipc.ts) - IPC handlers for frontend ↔ main process communication
 - [`emain-menu.ts`](emain/emain-menu.ts) - Application menu system
-- [`updater.ts`](emain/updater.ts) - Auto-update functionality
 - [`preload.ts`](emain/preload.ts) - Preload script for renderer security
 - [`preload-webview.ts`](emain/preload-webview.ts) - Webview preload script
 
@@ -51,7 +50,6 @@ The React application runs in the Electron renderer process:
 frontend/
 ├── app/                # Main application code
 │   ├── app.tsx         # Root App component
-│   ├── aipanel/        # AI panel UI
 │   ├── block/          # Block-based UI components
 │   ├── element/        # Reusable UI elements
 │   ├── hook/           # Custom React hooks
@@ -65,7 +63,6 @@ frontend/
 │   │   ├── term/       # Terminal view
 │   │   ├── tsunami/    # Tsunami builder view
 │   │   ├── vdom/       # Virtual DOM view
-│   │   ├── waveai/     # AI chat integration
 │   │   ├── remotetermconfig/ # Config editor view
 │   │   └── webview/    # Web view
 │   └── workspace/      # Workspace management
@@ -100,20 +97,18 @@ The Go codebase is organized into modular packages:
 
 **Key Packages:**
 
-- `wstore/` - Database and storage layer
-- `wconfig/` - Configuration management
-- `wcore/` - Core business logic
+- `rtstore/` - Database and storage layer
+- `rtconfig/` - Configuration management
+- `rtcore/` - Core business logic
 - `wshrpc/` - RPC communication system
 - `wshutil/` - WSH (Wave Shell) utilities
 - `blockcontroller/` - Block execution management
 - `remote/` - Remote connection handling
 - `filestore/` - File storage system
 - `web/` - Web server and WebSocket handling
-- `telemetry/` - Usage analytics and telemetry
-- `waveobj/` - Core data objects
+- `remotetermobj/` - Core data objects
 - `service/` - Service layer
 - `wps/` - Wave PubSub event system
-- `waveai/` - AI functionality
 - `shellexec/` - Shell execution
 - `util/` - Common utilities
 
@@ -140,15 +135,15 @@ The WSH RPC system is the backbone of RemoteTerm's communication architecture:
 - [`wshrpctypes.go`](pkg/wshrpc/wshrpctypes.go) - Core RPC interface and type definitions (source of truth for all RPC commands)
 - [`wshserver/`](pkg/wshrpc/wshserver/) - Server-side RPC implementation
 - [`wshremote/`](pkg/wshrpc/wshremote/) - Remote connection handling
-- [`wshclient.go`](pkg/wshrpc/wshclient.go) - Go client for making RPC calls
+- [`wshclient.go`](pkg/wshrpc/wshclient/wshclient.go) - Go client for making RPC calls
 - [`frontend/app/store/wshclientapi.ts`](frontend/app/store/wshclientapi.ts) - Generated TypeScript RPC client
 
-**Routing:** Callers address RPC calls using _routes_ (e.g. a block ID, connection name, or `"waveapp"`) rather than caring about the underlying transport. The RPC layer resolves the route to the correct transport (WebSocket, Unix socket, SSH tunnel, stdio) automatically. This means the same RPC interface works whether the target is local or a remote SSH connection.
+**Routing:** Callers address RPC calls using _routes_ (e.g. a block ID, connection name, or `"rtapp"`) rather than caring about the underlying transport. The RPC layer resolves the route to the correct transport (WebSocket, Unix socket, SSH tunnel, stdio) automatically. This means the same RPC interface works whether the target is local or a remote SSH connection.
 
 ## Development Notes
 
 - **Build commands** - Use `task` (Taskfile.yml) for all build, generate, and packaging commands
-- **Code generation** - Run `task generate` after modifying Go types in `pkg/wshrpc/wshrpctypes.go`, `pkg/wconfig/settingsconfig.go`, or `pkg/waveobj/wtypemeta.go`
+- **Code generation** - Run `task generate` after modifying Go types in `pkg/wshrpc/wshrpctypes.go`, `pkg/rtconfig/settingsconfig.go`, or `pkg/remotetermobj/wtypemeta.go`
 - **Testing** - Vitest for frontend unit tests; standard `go test` for Go packages
 - **Database migrations** - SQL migration files in `db/migrations-wstore/` and `db/migrations-filestore/`
 - **Documentation** - Docusaurus site in `docs/`

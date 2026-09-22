@@ -37,7 +37,7 @@ import {
     unamePlatform,
 } from "./emain-platform";
 import { ensureHotSpareTab, setMaxTabCacheSize } from "./emain-tabview";
-import { getIsRemoteTermSrvDead, getRemoteTermSrvProc, getRemoteTermSrvReady, runRemoteTermSrv } from "./emain-wavesrv";
+import { getIsRemoteTermSrvDead, getRemoteTermSrvProc, getRemoteTermSrvReady, runRemoteTermSrv } from "./emain-remotetermsrv";
 import {
     createBrowserWindow,
     createNewRemoteTermWindow,

@@ -3,7 +3,7 @@
 
 import type { MetaKeyAtomFnType, WaveEnv, WaveEnvSubset } from "@/app/remotetermenv/remotetermenv";
 
-export type WaveConfigEnv = WaveEnvSubset<{
+export type RemoteTermConfigEnv = WaveEnvSubset<{
     electron: {
         getConfigDir: WaveEnv["electron"]["getConfigDir"];
         getPlatform: WaveEnv["electron"]["getPlatform"];

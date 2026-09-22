@@ -263,7 +263,7 @@ export function checkIfRunningUnderARM64Translation(fullConfig: FullConfigType) 
             console.log("User chose to learn more");
             fireAndForget(() =>
                 shell.openExternal(
-                    "https://docs.waveterm.dev/faq#why-does-wave-warn-me-about-arm64-translation-when-it-launches"
+                    "https://docs.rterm.dev/faq#why-does-wave-warn-me-about-arm64-translation-when-it-launches"
                 )
             );
             throw new Error("User redirected to docsite to learn more about ARM64 translation, exiting");
@@ -274,7 +274,7 @@ export function checkIfRunningUnderARM64Translation(fullConfig: FullConfigType) 
 }
 
 /**
- * Gets the path to the combined Wave home directory (defaults to `~/.remoteterm`, falling back
+ * Gets the path to the combined RemoteTerm home directory (defaults to `~/.remoteterm`, falling back
  * to the frozen pre-v0.8 legacy path `~/.waveterm` if that's what has valid data).
  * @returns The path to the directory if it exists and contains valid data for the current app, otherwise null.
  */
@@ -319,8 +319,8 @@ function ensurePathExists(path: string): string {
 }
 
 /**
- * Gets the path to the directory where Wave configurations are stored. Creates the directory if it does not exist.
- * Handles backwards compatibility with the old Wave Home directory model, where configurations and data were stored together.
+ * Gets the path to the directory where RemoteTerm configurations are stored. Creates the directory if it does not exist.
+ * Handles backwards compatibility with the old combined-home directory model, where configurations and data were stored together.
  * @returns The path where configurations should be stored.
  */
 function getRemoteTermConfigDir(): string {
@@ -344,8 +344,8 @@ function getRemoteTermConfigDir(): string {
 }
 
 /**
- * Gets the path to the directory where Wave data is stored. Creates the directory if it does not exist.
- * Handles backwards compatibility with the old Wave Home directory model, where configurations and data were stored together.
+ * Gets the path to the directory where RemoteTerm data is stored. Creates the directory if it does not exist.
+ * Handles backwards compatibility with the old combined-home directory model, where configurations and data were stored together.
  * @returns The path where data should be stored.
  */
 function getRemoteTermDataDir(): string {

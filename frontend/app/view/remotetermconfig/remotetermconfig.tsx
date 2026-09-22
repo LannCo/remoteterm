@@ -5,8 +5,8 @@ import { Tooltip } from "@/app/element/tooltip";
 import { globalStore } from "@/app/store/jotaiStore";
 import { tryReinjectKey } from "@/app/store/keymodel";
 import { CodeEditor } from "@/app/view/codeeditor/codeeditor";
-import type { ConfigFile, WaveConfigViewModel } from "@/app/view/remotetermconfig/remotetermconfig-model";
-import type { WaveConfigEnv } from "@/app/view/remotetermconfig/remotetermconfigenv";
+import type { ConfigFile, RemoteTermConfigViewModel } from "@/app/view/remotetermconfig/remotetermconfig-model";
+import type { RemoteTermConfigEnv } from "@/app/view/remotetermconfig/remotetermconfigenv";
 import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { adaptFromReactOrNativeKeyEvent, checkKeyPressed, keydownWrapper } from "@/util/keyutil";
 import { cn } from "@/util/util";
@@ -15,7 +15,7 @@ import type * as MonacoTypes from "monaco-editor";
 import { memo, useCallback, useEffect } from "react";
 
 interface ConfigSidebarProps {
-    model: WaveConfigViewModel;
+    model: RemoteTermConfigViewModel;
 }
 
 const ConfigSidebar = memo(({ model }: ConfigSidebarProps) => {
@@ -99,8 +99,8 @@ const ConfigSidebar = memo(({ model }: ConfigSidebarProps) => {
 
 ConfigSidebar.displayName = "ConfigSidebar";
 
-const WaveConfigView = memo(({ blockId, model }: ViewComponentProps<WaveConfigViewModel>) => {
-    const env = useWaveEnv<WaveConfigEnv>();
+const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<RemoteTermConfigViewModel>) => {
+    const env = useWaveEnv<RemoteTermConfigEnv>();
     const selectedFile = useAtomValue(model.selectedFileAtom);
     const [fileContent, setFileContent] = useAtom(model.fileContentAtom);
     const isLoading = useAtomValue(model.isLoadingAtom);
@@ -324,6 +324,6 @@ const WaveConfigView = memo(({ blockId, model }: ViewComponentProps<WaveConfigVi
     );
 });
 
-WaveConfigView.displayName = "WaveConfigView";
+RemoteTermConfigView.displayName = "RemoteTermConfigView";
 
-export { WaveConfigView };
+export { RemoteTermConfigView };

@@ -7,8 +7,8 @@ import type { TabModel } from "@/app/store/tab-model";
 import { makeORef } from "@/app/store/wos";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { SecretsContent } from "@/app/view/remotetermconfig/secretscontent";
-import { WaveConfigView } from "@/app/view/remotetermconfig/remotetermconfig";
-import type { WaveConfigEnv } from "@/app/view/remotetermconfig/remotetermconfigenv";
+import { RemoteTermConfigView } from "@/app/view/remotetermconfig/remotetermconfig";
+import type { RemoteTermConfigEnv } from "@/app/view/remotetermconfig/remotetermconfigenv";
 import { base64ToString, stringToBase64 } from "@/util/util";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
 import type * as MonacoTypes from "monaco-editor";
@@ -27,7 +27,7 @@ export type ConfigFile = {
     validator?: ConfigValidator;
     isSecrets?: boolean;
     hasJsonView?: boolean;
-    visualComponent?: React.ComponentType<{ model: WaveConfigViewModel }>;
+    visualComponent?: React.ComponentType<{ model: RemoteTermConfigViewModel }>;
 };
 
 export const SecretNameRegex = /^[A-Za-z][A-Za-z0-9_]*$/;
@@ -38,14 +38,14 @@ function makeConfigFiles(isWindows: boolean): ConfigFile[] {
             name: "General",
             path: "settings.json",
             language: "json",
-            docsUrl: "https://docs.waveterm.dev/config",
+            docsUrl: "https://docs.rterm.dev/config",
             hasJsonView: true,
         },
         {
             name: "Connections",
             path: "connections.json",
             language: "json",
-            docsUrl: "https://docs.waveterm.dev/connections",
+            docsUrl: "https://docs.rterm.dev/connections",
             description: isWindows ? "SSH hosts and WSL distros" : "SSH hosts",
             hasJsonView: true,
         },
@@ -53,14 +53,14 @@ function makeConfigFiles(isWindows: boolean): ConfigFile[] {
             name: "Sidebar Widgets",
             path: "widgets.json",
             language: "json",
-            docsUrl: "https://docs.waveterm.dev/customwidgets",
+            docsUrl: "https://docs.rterm.dev/customwidgets",
             hasJsonView: true,
         },
         {
             name: "Tab Backgrounds",
             path: "backgrounds.json",
             language: "json",
-            docsUrl: "https://docs.waveterm.dev/tab-backgrounds",
+            docsUrl: "https://docs.rterm.dev/tab-backgrounds",
             hasJsonView: true,
         },
         {
@@ -83,16 +83,16 @@ const deprecatedConfigFiles: ConfigFile[] = [
     },
 ];
 
-export class WaveConfigViewModel implements ViewModel {
+export class RemoteTermConfigViewModel implements ViewModel {
     blockId: string;
     viewType = "remotetermconfig";
     viewIcon = atom("gear");
     viewName = atom("Wave Config");
-    viewComponent = WaveConfigView;
+    viewComponent = RemoteTermConfigView;
     noPadding = atom(true);
     nodeModel: BlockNodeModel;
     tabModel: TabModel;
-    env: WaveConfigEnv;
+    env: RemoteTermConfigEnv;
 
     selectedFileAtom: PrimitiveAtom<ConfigFile>;
     fileContentAtom: PrimitiveAtom<string>;
@@ -124,7 +124,7 @@ export class WaveConfigViewModel implements ViewModel {
         this.blockId = blockId;
         this.nodeModel = nodeModel;
         this.tabModel = tabModel;
-        this.env = waveEnv as WaveConfigEnv;
+        this.env = waveEnv as RemoteTermConfigEnv;
         this.configDir = this.env.electron.getConfigDir();
         const platform = this.env.electron.getPlatform();
         this.saveShortcut = platform === "darwin" ? "Cmd+S" : "Alt+S";

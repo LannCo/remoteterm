@@ -49,7 +49,7 @@ type SettingsType struct {
 	AppFocusFollowsCursor         string `json:"app:focusfollowscursor,omitempty" jsonschema:"enum=off,enum=on,enum=term"`
 	AppTabBar                     string `json:"app:tabbar,omitempty" jsonschema:"enum=top,enum=left"`
 
-	FeatureWaveAppBuilder bool `json:"feature:waveappbuilder,omitempty"`
+	FeatureRTAppBuilder bool `json:"feature:rtappbuilder,omitempty"`
 
 	TermClear                  bool     `json:"term:*,omitempty"`
 	TermFontSize               float64  `json:"term:fontsize,omitempty"`

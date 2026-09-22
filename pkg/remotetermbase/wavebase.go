@@ -80,7 +80,7 @@ const (
 	WavePublicKeyVarName       = "REMOTETERM_PUBLICKEY"
 	LegacyWavePublicKeyVarName = "WAVETERM_PUBLICKEY"
 
-	// bare flag var (no trailing underscore) signaling "this shell is Wave-managed"; also
+	// bare flag var (no trailing underscore) signaling "this shell is RemoteTerm-managed"; also
 	// carries the wsh executable path in WaveshellLocalEnvVars
 	WaveFlagVarName       = "REMOTETERM"
 	LegacyWaveFlagVarName = "WAVETERM"

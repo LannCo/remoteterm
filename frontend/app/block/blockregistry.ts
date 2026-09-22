@@ -13,7 +13,7 @@ import { VDomModel } from "@/app/view/vdom/vdom-model";
 import { WaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { atom } from "jotai";
 import { QuickTipsViewModel } from "../view/quicktipsview/quicktipsview";
-import { WaveConfigViewModel } from "../view/remotetermconfig/remotetermconfig-model";
+import { RemoteTermConfigViewModel } from "../view/remotetermconfig/remotetermconfig-model";
 import { blockViewToIcon, blockViewToName } from "./blockutil";
 import { HelpViewModel } from "@/view/helpview/helpview";
 import { TermViewModel } from "@/view/term/term-model";
@@ -30,7 +30,7 @@ BlockRegistry.set("tips", QuickTipsViewModel);
 BlockRegistry.set("help", HelpViewModel);
 BlockRegistry.set("launcher", LauncherViewModel);
 BlockRegistry.set("tsunami", TsunamiViewModel);
-BlockRegistry.set("remotetermconfig", WaveConfigViewModel);
+BlockRegistry.set("remotetermconfig", RemoteTermConfigViewModel);
 BlockRegistry.set("processviewer", ProcessViewerViewModel);
 BlockRegistry.set("sourcecontrol", SourceControlViewModel);
 

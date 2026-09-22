@@ -446,7 +446,7 @@ const Widgets = memo(() => {
     const containerRef = useRef<HTMLDivElement>(null);
     const measurementRef = useRef<HTMLDivElement>(null);
 
-    const featureWaveAppBuilder = fullConfig?.settings?.["feature:waveappbuilder"] ?? false;
+    const featureRTAppBuilder = fullConfig?.settings?.["feature:rtappbuilder"] ?? false;
     const widgetsMap = fullConfig?.widgets ?? {};
     const filteredWidgets = Object.fromEntries(
         Object.entries(widgetsMap).filter(([_key, widget]) => shouldIncludeWidgetForWorkspace(widget, workspaceId))
@@ -540,7 +540,7 @@ const Widgets = memo(() => {
                         </div>
                         <div className="flex-grow" />
                         <div className="grid grid-cols-2 gap-0 w-full">
-                            {env.isDev() || featureWaveAppBuilder ? (
+                            {env.isDev() || featureRTAppBuilder ? (
                                 <div
                                     ref={appsButtonRef}
                                     className="flex flex-col justify-center items-center w-full py-1.5 pr-0.5 text-secondary text-sm overflow-hidden rounded-sm hover:bg-hoverbg hover:text-white cursor-pointer"
@@ -579,7 +579,7 @@ const Widgets = memo(() => {
                             <Widget key={`widget-${idx}`} widget={data} mode={mode} env={env} />
                         ))}
                         <div className="flex-grow" />
-                        {env.isDev() || featureWaveAppBuilder ? (
+                        {env.isDev() || featureRTAppBuilder ? (
                             <div
                                 ref={appsButtonRef}
                                 className="flex flex-col justify-center items-center w-full py-1.5 pr-0.5 text-secondary text-lg overflow-hidden rounded-sm hover:bg-hoverbg hover:text-white cursor-pointer"
@@ -637,7 +637,7 @@ const Widgets = memo(() => {
                     </div>
                 ) : null}
             </div>
-            {(env.isDev() || featureWaveAppBuilder) && appsButtonRef.current && (
+            {(env.isDev() || featureRTAppBuilder) && appsButtonRef.current && (
                 <AppsFloatingWindow
                     isOpen={isAppsOpen}
                     onClose={() => setIsAppsOpen(false)}

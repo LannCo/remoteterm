@@ -51,3 +51,80 @@ files) are in scope for the `github.com/wavetermdev/waveterm` -> `github.com/Lan
 rewrite, including the `/tsunami` suffix case (tsunami renames with the root module per
 Prerequisites decision 4 — the same prefix substitution covers both correctly since the target is
 literally the old prefix with `/tsunami` appended).
+
+## Phase 6 residual-sweep classification (2026-09-22)
+
+Re-run of the `hits_loose.txt`/`hits_strict.txt` scan against the post-Phase-5 tree. Genuine
+misses found and fixed this phase: `emain-wavesrv.ts`->`emain-remotetermsrv.ts` (content was
+already clean, only the filename was stale); `WaveConfigViewModel`/`WaveConfigView`/`WaveConfigEnv`
+(hand-written TS identifiers in `frontend/app/view/remotetermconfig/`, not Go-generated, missed by
+Phase 4's sweep); the `feature:waveappbuilder` settings key (Go source + regenerated
+`schema/settings.json`/`gotypes.d.ts` via `task generate`, consistent with decision 7's "WaveApp
+Builder"->"RTApp Builder" rename); assorted bare-"Wave" prose in Go error/log strings, JSDoc
+comments, and CSS class names (`.wave-button`, `.wave-iconbutton`, `.wave-block-*`); `.roo/rules/`
+mirrors of `.kilocode/rules/` that had drifted out of sync (`rules.md`'s brand line only —
+tool-specific guidance differences preserved; `overview.md` fully resynced, including several
+stale structural references — `waveobj/`->`remotetermobj/`, `wconfig/`->`rtconfig/`,
+`wcore/`->`rtcore/`, `wstore/`->`rtstore/`, `wshclient.go`'s moved path, the `"waveapp"` route
+example ->`"rtapp"` — plus removal of three lines describing removed features (`aipanel/`,
+`waveai/`, `updater.ts`, `telemetry/`) that predate this rename and are unrelated to it). All
+in-app `docs.waveterm.dev` links (8 files) rewritten to `docs.rterm.dev` per the Phase 5 CNAME
+decision. Two dead, unreferenced legacy logo files removed (`assets/waveterm-logo-horizontal-{dark,light}.png`,
+`assets/waveterm-logo-with-bg.{ico,png,svg}` — confirmed zero references anywhere before deletion).
+
+**Expected residue, category (d), left unchanged** — Go-generated/cross-language-pinned type
+families per Prerequisites decision 2 (`WaveObj`, `WaveEvent`, `WaveWindow`, `WaveFile`, `WaveId`,
+`WaveJwt*`, `WaveNotificationOptions`, `WaveKeyboardEvent`, `WaveVersion`,
+`WaveSshConfigUserSettings`, etc. — confirmed present in `frontend/types/gotypes.d.ts` or mirrored
+1:1 against a real Go struct, e.g. `pkg/wps/wps.go`'s `WaveEvent`); `db_wave_file` (already
+allowlisted above) and the `'waveai'` view-name literal in `db/migrations-wstore/000008_aimeta.up.sql`
+(immutable historical migration content, must not be rewritten); `emain-platform.ts`'s "Frozen
+forever" legacy-directory-name comments and the `.waveterm`/`wave.lock` literal strings in the
+Phase 2 migration shim (deliberately preserved, see the shim's own comments); `wsh`/`wavesrv`
+identifiers held out of scope per Prerequisites decisions 2/6; third-party dependencies this repo
+doesn't control (`go.mod`/`go.sum`'s `wavetermdev/htmltoken` and `wavetermdev/ssh_config`,
+`package-lock.json`'s `@waveterm/docusaurus-og`, `docs/static/fontawesome/`,
+`public/fontawesome/`, `public/fonts/hacknerdmono-*`); `tsunami/demo/*/go.mod`'s dead `replace`
+directives pointing at an upstream developer's local machine path (already covered above);
+`.pi/specs/*.md` and `.pi/reviews/*.md` (historical planning documents describing already-completed
+past work under whatever name was current at the time — rewriting them would misrepresent history,
+not fix a miss).
+
+**Flagged, deliberately NOT actioned — needs an owner decision, not a guess:**
+- **`WaveEnv`/`WaveEnvSubset`/`WaveEnvMockFields`/`WaveEnvContext`/`useWaveEnv`** (48 files,
+  `frontend/app/remotetermenv/remotetermenv.ts` and its consumers): confirmed hand-written,
+  TS-only, zero Go counterpart — does NOT fall under decision 2's "these types are generated"
+  pinning rationale, yet was never renamed despite its containing module already being renamed
+  (`waveenv/`->`remotetermenv/` in Phase 4). This is Phase-4-scale in blast radius and risk, not a
+  residual-sweep-sized fix — recommend its own scoped pass with a `tsc --noEmit` verification loop
+  before/after, not a rushed sed inside Phase 6.
+- **`.github/FUNDING.yml`: `github: wavetermdev`** — points at the upstream org, not this fork's
+  own. Needs an owner decision on whether this fork wants a `FUNDING.yml` at all and, if so, which
+  GitHub org/user should receive it — not something to guess.
+- **`docs/docs/*.mdx` (16 files)**: real marketing/help prose still says "Wave"/"WaveTerm",
+  including install commands for `brew`/`winget`/`choco`/`snap`/AUR/Nix packages that don't exist
+  under the RemoteTerm name yet, and links to `waveterm.dev`/`wavetermdev/waveterm` GitHub issues.
+  This is editorial content work, not a mechanical rename — renaming an install command to a
+  package that doesn't exist would be actively worse than leaving it stale. Needs its own pass with
+  real editorial judgment on what's still true post-fork.
+- **`frontend/app/onboarding/onboarding.tsx:116`, "Join the Wave Discord Channel"**: the link
+  (`https://discord.gg/XfvZ334gwU`) is a real, fixed invite to (presumably) the upstream Wave
+  Terminal Discord, not one this fork controls. Renaming only the visible text would mislead users
+  about which community they're joining. Leave both until the owner decides whether to label it
+  honestly as Wave's or stand up a RemoteTerm-specific channel.
+- **Load-bearing old-brand image assets** (`assets/wave-{dark,light}.png`, `assets/wave-screenshot.webp`,
+  `public/logos/wave-*.png`, `tsunami/frontend/public/wave-logo-256.png`): per Prerequisites
+  decision 8, these need real new RemoteTerm artwork, not a rename — no design assets exist for
+  these specific paths yet (only `frontend/app/asset/logo.svg`/`logo-tile.svg` have shipped, for
+  different use sites). Already flagged as blocking by decision 8 itself; restated here since this
+  sweep is the gate that would otherwise miss it (image files carry no renameable text).
+- **`wsh`/`wps` acronym backronyms**: `.kilocode/rules/overview.md` (and other docs) describe
+  `wsh` as "Wave Shell" and `wps` as "Wave PubSub" — both tools stay named `wsh`/`wps` per
+  Prerequisites decisions 2/6, but their prose expansions still spell out "Wave". No replacement
+  backronym is implied anywhere in the plan or prior decisions — left as-is rather than inventing
+  one.
+- **`.gitignore`'s `restart_waveterm.png` entry**: nothing in the current tree generates a file by
+  this name (grep found zero producers) — likely dead from a removed test/debug script predating
+  this fork. Left alone since renaming an ignore pattern for a file nothing produces has no clear
+  target; flagged in case it turns out to be live via a script outside this scan's file-type
+  filters.
