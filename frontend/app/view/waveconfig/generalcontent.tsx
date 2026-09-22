@@ -931,7 +931,7 @@ const FieldControl = memo(({ schema, model, settings, isSet }: FieldControlProps
     }
 
     if (schema.control === "number") {
-        const value = (rawValue as number) || schema.zeroFallback || schema.min || 0;
+        const value = (rawValue as number) ?? schema.zeroFallback ?? schema.min ?? 0;
         return (
             <FieldRow
                 schema={schema}
@@ -988,7 +988,7 @@ const CategoryPanel = memo(({ category, model, settings, rawSettings }: Category
                         schema={schema}
                         model={model}
                         settings={settings}
-                        isSet={rawSettings[schema.key] !== undefined}
+                        isSet={rawSettings[schema.key] != null}
                     />
                 ))}
             </div>
