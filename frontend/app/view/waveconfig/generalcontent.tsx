@@ -3,7 +3,7 @@
 
 import type { WaveConfigViewModel } from "@/app/view/waveconfig/waveconfig-model";
 import { cn } from "@/util/util";
-import { useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { memo, useState } from "react";
 
 type ControlType = "toggle" | "segmented" | "select" | "text" | "number" | "slider";
@@ -18,6 +18,7 @@ interface FieldSchema {
     label: string;
     category: string;
     control: ControlType;
+    description: string;
     nullable?: boolean;
     options?: FieldOption[];
     unit?: string;
@@ -44,13 +45,14 @@ const Categories = ["Appearance", "Terminal", "Editor & Web", "Tabs & Widgets", 
 // derived from SettingsType in pkg/wconfig/settingsconfig.go. `feature:waveappbuilder` has no
 // category assignment in the plan's grouping list (only in its raw field dump) -- it's an
 // app-level feature toggle with no better home, so it's grouped into Appearance here.
-const FieldSchemas: FieldSchema[] = [
+export const FieldSchemas: FieldSchema[] = [
     // --- Appearance ---
     {
         key: "app:tabbar",
         label: "Tab bar position",
         category: "Appearance",
         control: "segmented",
+        description: "Shows the tab bar horizontally at the top of the window, or vertically on the left.",
         options: [
             { value: "top", label: "Top" },
             { value: "left", label: "Left" },
@@ -61,6 +63,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "Confirm before quitting",
         category: "Appearance",
         control: "toggle",
+        description: "Shows a confirmation dialog before quitting Wave Terminal. Requires an app restart.",
         nullable: true,
         defaultDisplay: "on",
     },
@@ -69,6 +72,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "Global hotkey",
         category: "Appearance",
         control: "text",
+        description: "A systemwide key combination (e.g. Ctrl:Option:e) that opens your most recent Wave window.",
         placeholder: "e.g. Cmd+Shift+Space",
     },
     {
@@ -76,6 +80,8 @@ const FieldSchemas: FieldSchema[] = [
         label: "Paste on Ctrl+V select",
         category: "Appearance",
         control: "toggle",
+        description:
+            "On Windows/Linux, forces Ctrl+V to paste in the terminal. macOS always uses Cmd+V regardless of this setting.",
         nullable: true,
     },
     {
@@ -83,18 +89,22 @@ const FieldSchemas: FieldSchema[] = [
         label: "Disable Ctrl+Shift+Arrow shortcuts",
         category: "Appearance",
         control: "toggle",
+        description: "Disables the Ctrl+Shift block-navigation keybindings (arrow keys and h/j/k/l).",
     },
     {
         key: "app:disablectrlshiftdisplay",
         label: "Disable Ctrl+Shift+Display shortcuts",
         category: "Appearance",
         control: "toggle",
+        description: "Disables the visual indicator shown while a Ctrl+Shift block-navigation shortcut is active.",
     },
     {
         key: "app:focusfollowscursor",
         label: "Focus follows cursor",
         category: "Appearance",
         control: "segmented",
+        description:
+            "Controls whether block focus follows cursor movement: off, all blocks (on), or terminal blocks only (term).",
         options: [
             { value: "off", label: "Off" },
             { value: "on", label: "On" },
@@ -106,12 +116,15 @@ const FieldSchemas: FieldSchema[] = [
         label: "Dismiss architecture warning",
         category: "Appearance",
         control: "toggle",
+        description:
+            "Suppresses the startup warning shown when Wave is running under architecture translation (e.g. ARM64 emulation).",
     },
     {
         key: "app:showoverlayblocknums",
         label: "Show overlay block numbers",
         category: "Appearance",
         control: "toggle",
+        description: "Shows the block-number overlay that appears while holding Ctrl+Shift.",
         nullable: true,
         defaultDisplay: "on",
     },
@@ -120,19 +133,42 @@ const FieldSchemas: FieldSchema[] = [
         label: "Default new block",
         category: "Appearance",
         control: "select",
+        description: "Sets which block type Cmd:n / Cmd:d creates by default: terminal or launcher.",
         options: [
             { value: "term", label: "Terminal" },
             { value: "launcher", label: "Launcher" },
         ],
     },
-    { key: "feature:waveappbuilder", label: "Wave app builder feature", category: "Appearance", control: "toggle" },
-    { key: "window:transparent", label: "Window transparency enabled", category: "Appearance", control: "toggle" },
-    { key: "window:blur", label: "Window background blur", category: "Appearance", control: "toggle" },
+    {
+        key: "feature:waveappbuilder",
+        label: "Wave app builder feature",
+        category: "Appearance",
+        control: "toggle",
+        description:
+            "Shows the Wave app builder entry points in the widget bar and app menu. Always shown in dev builds regardless of this setting.",
+    },
+    {
+        key: "window:transparent",
+        label: "Window transparency enabled",
+        category: "Appearance",
+        control: "toggle",
+        description:
+            "Enables window transparency. Cannot be combined with window background blur. macOS/Windows only, requires app restart.",
+    },
+    {
+        key: "window:blur",
+        label: "Window background blur",
+        category: "Appearance",
+        control: "toggle",
+        description:
+            "Enables window background blur. Cannot be combined with window transparency. macOS/Windows only, requires app restart.",
+    },
     {
         key: "window:opacity",
         label: "Window opacity",
         category: "Appearance",
         control: "slider",
+        description: "Sets window opacity when window transparency or window background blur is enabled.",
         nullable: true,
         defaultDisplay: "80%",
     },
@@ -141,16 +177,37 @@ const FieldSchemas: FieldSchema[] = [
         label: "Window background color",
         category: "Appearance",
         control: "text",
+        description: "Sets the window background color as a hex value.",
         placeholder: "e.g. #1e1e1e",
     },
-    { key: "window:reducedmotion", label: "Reduced motion", category: "Appearance", control: "toggle" },
-    { key: "window:nativetitlebar", label: "Use native title bar", category: "Appearance", control: "toggle" },
-    { key: "window:showmenubar", label: "Show menu bar", category: "Appearance", control: "toggle" },
+    {
+        key: "window:reducedmotion",
+        label: "Reduced motion",
+        category: "Appearance",
+        control: "toggle",
+        description: "Disables most UI animations.",
+    },
+    {
+        key: "window:nativetitlebar",
+        label: "Use native title bar",
+        category: "Appearance",
+        control: "toggle",
+        description:
+            "Uses the OS-native title bar instead of Wave's overlay. Windows and Linux only, requires app restart.",
+    },
+    {
+        key: "window:showmenubar",
+        label: "Show menu bar",
+        category: "Appearance",
+        control: "toggle",
+        description: "Uses the OS-native menu bar. Windows and Linux only, requires app restart.",
+    },
     {
         key: "window:zoom",
         label: "Window zoom",
         category: "Appearance",
         control: "number",
+        description: "Declared in settings but not currently read anywhere in the app -- has no effect yet.",
         nullable: true,
         unit: "×",
         min: 0.25,
@@ -162,15 +219,29 @@ const FieldSchemas: FieldSchema[] = [
         label: "Window dimensions on launch",
         category: "Appearance",
         control: "text",
+        description: "Sets the default WIDTHxHEIGHT dimensions applied to newly created windows, e.g. 1920x1080.",
         placeholder: "e.g. 1280x800",
     },
-    { key: "window:fullscreenonlaunch", label: "Fullscreen on launch", category: "Appearance", control: "toggle" },
-    { key: "window:savelastwindow", label: "Save last window position", category: "Appearance", control: "toggle" },
+    {
+        key: "window:fullscreenonlaunch",
+        label: "Fullscreen on launch",
+        category: "Appearance",
+        control: "toggle",
+        description: "Launches the foreground window in fullscreen mode.",
+    },
+    {
+        key: "window:savelastwindow",
+        label: "Save last window position",
+        category: "Appearance",
+        control: "toggle",
+        description: "Reopens the last-closed window automatically the next time the app launches.",
+    },
     {
         key: "window:tilegapsize",
         label: "Split-window gap size",
         category: "Appearance",
         control: "number",
+        description: "Sets the gap, in CSS pixels, between split blocks.",
         nullable: true,
         unit: "px",
         min: 0,
@@ -183,6 +254,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "Magnified block opacity",
         category: "Appearance",
         control: "slider",
+        description: "Sets the background opacity behind a magnified block.",
         nullable: true,
         defaultDisplay: "60%",
     },
@@ -191,6 +263,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "Magnified block size",
         category: "Appearance",
         control: "slider",
+        description: "Sets the size of a magnified block as a percentage of its parent layout's dimensions.",
         nullable: true,
         defaultDisplay: "95%",
     },
@@ -199,6 +272,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "Magnified block blur (primary)",
         category: "Appearance",
         control: "number",
+        description: "Sets the backdrop blur, in CSS pixels, applied directly behind a magnified block.",
         nullable: true,
         unit: "px",
         min: 0,
@@ -211,6 +285,8 @@ const FieldSchemas: FieldSchema[] = [
         label: "Magnified block blur (secondary)",
         category: "Appearance",
         control: "number",
+        description:
+            "Sets the backdrop blur, in CSS pixels, applied to the visible portions of non-magnified blocks while one block is magnified.",
         nullable: true,
         unit: "px",
         min: 0,
@@ -218,12 +294,20 @@ const FieldSchemas: FieldSchema[] = [
         step: 1,
         defaultDisplay: "2px",
     },
-    { key: "window:confirmclose", label: "Confirm before closing window", category: "Appearance", control: "toggle" },
+    {
+        key: "window:confirmclose",
+        label: "Confirm before closing window",
+        category: "Appearance",
+        control: "toggle",
+        description:
+            "Shows a confirmation prompt before closing a window that has an unsaved workspace with more than one tab.",
+    },
     {
         key: "window:maxtabcachesize",
         label: "Max tab cache size",
         category: "Appearance",
         control: "number",
+        description: "Sets the number of tabs kept cached in memory for fast switching between them.",
         unit: "tabs",
         min: 1,
         max: 50,
@@ -234,6 +318,8 @@ const FieldSchemas: FieldSchema[] = [
         label: "Disable hardware acceleration",
         category: "Appearance",
         control: "toggle",
+        description:
+            "Disables Chromium hardware acceleration, useful for resolving graphical bugs. Requires app restart.",
     },
 
     // --- Terminal ---
@@ -242,6 +328,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "Terminal font size",
         category: "Terminal",
         control: "number",
+        description: "Sets the terminal block font size.",
         unit: "px",
         min: 6,
         max: 48,
@@ -253,15 +340,30 @@ const FieldSchemas: FieldSchema[] = [
         label: "Terminal font family",
         category: "Terminal",
         control: "text",
+        description: "Sets the font family used in terminal blocks.",
         placeholder: "e.g. Hack",
     },
-    { key: "term:theme", label: "Terminal theme", category: "Terminal", control: "text", placeholder: "theme name" },
-    { key: "term:disablewebgl", label: "Disable WebGL renderer", category: "Terminal", control: "toggle" },
+    {
+        key: "term:theme",
+        label: "Terminal theme",
+        category: "Terminal",
+        control: "text",
+        description: "Sets the name of the preset terminal theme applied by default.",
+        placeholder: "theme name",
+    },
+    {
+        key: "term:disablewebgl",
+        label: "Disable WebGL renderer",
+        category: "Terminal",
+        control: "toggle",
+        description: "Disables the WebGL-accelerated terminal renderer.",
+    },
     {
         key: "term:localshellpath",
         label: "Local shell path",
         category: "Terminal",
         control: "text",
+        description: "Overrides the default shell path used for local terminals.",
         placeholder: "e.g. /bin/zsh",
     },
     {
@@ -269,6 +371,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "Git Bash path (Windows)",
         category: "Terminal",
         control: "text",
+        description: "Overrides the auto-detected Git Bash executable path used for local terminals on Windows.",
         placeholder: "e.g. C:\\Program Files\\Git\\bin\\bash.exe",
     },
     {
@@ -276,6 +379,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "Scrollback buffer size",
         category: "Terminal",
         control: "number",
+        description: "Sets the terminal scrollback buffer size, in lines.",
         nullable: true,
         unit: "lines",
         min: 0,
@@ -288,6 +392,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "Copy on select",
         category: "Terminal",
         control: "toggle",
+        description: "Copies selected terminal text to the clipboard automatically.",
         nullable: true,
         defaultDisplay: "on",
     },
@@ -296,6 +401,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "Terminal transparency",
         category: "Terminal",
         control: "slider",
+        description: "Sets the terminal background transparency (0 = opaque, 1 = fully transparent).",
         nullable: true,
         defaultDisplay: "50%",
     },
@@ -304,6 +410,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "Allow bracketed paste",
         category: "Terminal",
         control: "toggle",
+        description: "Enables bracketed paste mode in the terminal.",
         nullable: true,
         defaultDisplay: "on",
     },
@@ -312,6 +419,8 @@ const FieldSchemas: FieldSchema[] = [
         label: "Shift+Enter sends newline",
         category: "Terminal",
         control: "toggle",
+        description:
+            "Makes Shift+Enter send an escape-sequence newline instead of a carriage return, for AI coding tools like Claude Code.",
         nullable: true,
         defaultDisplay: "on",
     },
@@ -320,6 +429,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "macOS Option key as Meta",
         category: "Terminal",
         control: "toggle",
+        description: "On macOS, treats the Option key as Meta for terminal keybindings.",
         nullable: true,
         defaultDisplay: "off",
     },
@@ -328,6 +438,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "Cursor style",
         category: "Terminal",
         control: "select",
+        description: "Sets the terminal cursor style.",
         options: [
             { value: "block", label: "Block" },
             { value: "bar", label: "Bar" },
@@ -339,6 +450,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "Cursor blink",
         category: "Terminal",
         control: "toggle",
+        description: "Makes the terminal cursor blink.",
         nullable: true,
         defaultDisplay: "off",
     },
@@ -347,6 +459,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "Bell sound",
         category: "Terminal",
         control: "toggle",
+        description: "Plays the system beep sound when the terminal receives a bell (BEL) character.",
         nullable: true,
         defaultDisplay: "off",
     },
@@ -355,6 +468,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "Bell indicator",
         category: "Terminal",
         control: "toggle",
+        description: "Shows a visual indicator in the tab when the terminal bell is received.",
         nullable: true,
         defaultDisplay: "on",
     },
@@ -363,6 +477,8 @@ const FieldSchemas: FieldSchema[] = [
         label: "OSC52 clipboard access",
         category: "Terminal",
         control: "segmented",
+        description:
+            "Controls when OSC 52 clipboard writes from the terminal are allowed: always, or only when the window and block are focused.",
         options: [
             { value: "focus", label: "Focus" },
             { value: "always", label: "Always" },
@@ -373,41 +489,82 @@ const FieldSchemas: FieldSchema[] = [
         label: "Durable (persistent) sessions",
         category: "Terminal",
         control: "toggle",
+        description: "Keeps remote terminal sessions alive across network disconnects.",
         nullable: true,
         defaultDisplay: "off",
     },
-    { key: "term:showsplitbuttons", label: "Show split buttons", category: "Terminal", control: "toggle" },
+    {
+        key: "term:showsplitbuttons",
+        label: "Show split buttons",
+        category: "Terminal",
+        control: "toggle",
+        description: "Shows split-horizontal and split-vertical buttons in the terminal block header.",
+    },
     {
         key: "term:trimtrailingwhitespace",
         label: "Trim trailing whitespace on copy",
         category: "Terminal",
         control: "toggle",
+        description: "Trims trailing whitespace from each line when copying terminal text.",
         nullable: true,
         defaultDisplay: "on",
     },
 
     // --- Editor & Web ---
-    { key: "editor:minimapenabled", label: "Show minimap", category: "Editor & Web", control: "toggle" },
-    { key: "editor:stickyscrollenabled", label: "Sticky scroll", category: "Editor & Web", control: "toggle" },
-    { key: "editor:wordwrap", label: "Word wrap", category: "Editor & Web", control: "toggle" },
+    {
+        key: "editor:minimapenabled",
+        label: "Show minimap",
+        category: "Editor & Web",
+        control: "toggle",
+        description: "Shows the code minimap in the editor.",
+    },
+    {
+        key: "editor:stickyscrollenabled",
+        label: "Sticky scroll",
+        category: "Editor & Web",
+        control: "toggle",
+        description:
+            "Enables Monaco's sticky scroll, pinning the current context's header (e.g. class or method name) at the top.",
+    },
+    {
+        key: "editor:wordwrap",
+        label: "Word wrap",
+        category: "Editor & Web",
+        control: "toggle",
+        description: "Enables word wrapping in the editor.",
+    },
     {
         key: "editor:fontsize",
         label: "Editor font size",
         category: "Editor & Web",
         control: "number",
+        description: "Sets the editor font size.",
         unit: "px",
         min: 6,
         max: 48,
         step: 1,
         zeroFallback: 12,
     },
-    { key: "editor:inlinediff", label: "Inline diff view", category: "Editor & Web", control: "toggle" },
-    { key: "web:openlinksinternally", label: "Open links in-app", category: "Editor & Web", control: "toggle" },
+    {
+        key: "editor:inlinediff",
+        label: "Inline diff view",
+        category: "Editor & Web",
+        control: "toggle",
+        description: "Shows diffs inline instead of side-by-side.",
+    },
+    {
+        key: "web:openlinksinternally",
+        label: "Open links in-app",
+        category: "Editor & Web",
+        control: "toggle",
+        description: "Opens web links inside Wave's web widget instead of the external browser.",
+    },
     {
         key: "web:defaulturl",
         label: "Default web URL",
         category: "Editor & Web",
         control: "text",
+        description: "Sets the default homepage loaded in the web widget when no URL is given.",
         placeholder: "https://…",
     },
     {
@@ -415,6 +572,8 @@ const FieldSchemas: FieldSchema[] = [
         label: "Default search engine URL",
         category: "Editor & Web",
         control: "text",
+        description:
+            "Sets the search-engine URL template used for web widget searches; {query} is replaced with the search term.",
         placeholder: "https://…{query}…",
     },
     {
@@ -422,6 +581,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "Markdown font size",
         category: "Editor & Web",
         control: "number",
+        description: "Sets the body text font size when rendering markdown in preview.",
         unit: "px",
         min: 6,
         max: 48,
@@ -433,6 +593,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "Markdown monospace font size",
         category: "Editor & Web",
         control: "number",
+        description: "Sets the code-block font size when rendering markdown in preview.",
         unit: "px",
         min: 6,
         max: 48,
@@ -444,6 +605,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "Show hidden files",
         category: "Editor & Web",
         control: "toggle",
+        description: "Shows hidden files in the directory preview.",
         nullable: true,
         defaultDisplay: "on",
     },
@@ -452,6 +614,8 @@ const FieldSchemas: FieldSchema[] = [
         label: "Default file sort",
         category: "Editor & Web",
         control: "segmented",
+        description:
+            "Sets the default sort column for directory preview: name (alphabetical) or modtime (most recently modified first).",
         options: [
             { value: "name", label: "Name" },
             { value: "modtime", label: "Modified" },
@@ -464,14 +628,23 @@ const FieldSchemas: FieldSchema[] = [
         label: "Default tab preset",
         category: "Tabs & Widgets",
         control: "text",
+        description:
+            "Deprecated: a bg@ background preset applied automatically to new tabs. Superseded by tab:background.",
         placeholder: "preset name",
     },
-    { key: "tab:confirmclose", label: "Confirm before closing tab", category: "Tabs & Widgets", control: "toggle" },
+    {
+        key: "tab:confirmclose",
+        label: "Confirm before closing tab",
+        category: "Tabs & Widgets",
+        control: "toggle",
+        description: "Shows a confirmation dialog before closing a tab.",
+    },
     {
         key: "tab:background",
         label: "Default tab background",
         category: "Tabs & Widgets",
         control: "text",
+        description: "Sets the bg@ background preset applied automatically to new tabs.",
         placeholder: "background key",
     },
     {
@@ -479,6 +652,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "Show help widget",
         category: "Tabs & Widgets",
         control: "toggle",
+        description: "Declared in settings but not currently read by any UI code -- has no effect yet.",
         nullable: true,
     },
 
@@ -488,38 +662,62 @@ const FieldSchemas: FieldSchema[] = [
         label: "Ask before installing wsh",
         category: "Connections",
         control: "toggle",
+        description: "Shows a confirmation prompt before installing the wsh helper on a newly connected machine.",
         nullable: true,
         defaultDisplay: "on",
     },
-    { key: "conn:wshenabled", label: "wsh helper enabled", category: "Connections", control: "toggle" },
+    {
+        key: "conn:wshenabled",
+        label: "wsh helper enabled",
+        category: "Connections",
+        control: "toggle",
+        description:
+            "Controls whether the wsh helper is installed and used on a connection; per-connection overrides live in connections.json.",
+    },
     {
         key: "conn:localhostdisplayname",
         label: "Local host display name",
         category: "Connections",
         control: "text",
+        description: "Overrides the display name shown for localhost in the UI. Set to empty to hide the name.",
         nullable: true,
         defaultDisplay: "OS username@hostname",
         placeholder: "e.g. my-machine",
     },
 
     // --- Advanced (auto-update, debug, tsunami-dev) ---
-    { key: "autoupdate:enabled", label: "Auto-update enabled", category: "Advanced", control: "toggle" },
+    {
+        key: "autoupdate:enabled",
+        label: "Auto-update enabled",
+        category: "Advanced",
+        control: "toggle",
+        description: "Enables checking for app updates. Requires app restart.",
+    },
     {
         key: "autoupdate:intervalms",
         label: "Auto-update check interval",
         category: "Advanced",
         control: "number",
+        description: "Sets the time between update checks. Requires app restart.",
         unit: "ms",
         min: 60000,
         max: 86400000,
         step: 60000,
     },
-    { key: "autoupdate:installonquit", label: "Install update on quit", category: "Advanced", control: "toggle" },
+    {
+        key: "autoupdate:installonquit",
+        label: "Install update on quit",
+        category: "Advanced",
+        control: "toggle",
+        description: "Automatically installs a downloaded update when the app quits. Requires app restart.",
+    },
     {
         key: "autoupdate:channel",
         label: "Update channel",
         category: "Advanced",
         control: "text",
+        description:
+            'Sets the update channel: "latest" for stable builds, or "beta" for more frequent updates. Requires app restart.',
         placeholder: "e.g. latest",
     },
     {
@@ -527,6 +725,7 @@ const FieldSchemas: FieldSchema[] = [
         label: "pprof port",
         category: "Advanced",
         control: "number",
+        description: "Starts a Go pprof profiling server on this port when the app launches.",
         nullable: true,
         unit: "port",
         min: 0,
@@ -538,17 +737,25 @@ const FieldSchemas: FieldSchema[] = [
         label: "pprof mem profile rate",
         category: "Advanced",
         control: "number",
+        description: "Sets Go's runtime.MemProfileRate for memory profiling.",
         nullable: true,
         min: 0,
         max: 1000000,
         step: 1,
     },
-    { key: "debug:webglstatus", label: "Show WebGL status", category: "Advanced", control: "toggle" },
+    {
+        key: "debug:webglstatus",
+        label: "Show WebGL status",
+        category: "Advanced",
+        control: "toggle",
+        description: "Shows a WebGL status indicator button in the terminal block header.",
+    },
     {
         key: "tsunami:scaffoldpath",
         label: "Tsunami scaffold path",
         category: "Advanced",
         control: "text",
+        description: "Overrides the path to the local Tsunami app scaffold used when building Wave apps.",
         placeholder: "path",
     },
     {
@@ -556,6 +763,8 @@ const FieldSchemas: FieldSchema[] = [
         label: "Tsunami SDK replace path",
         category: "Advanced",
         control: "text",
+        description:
+            "Sets a local filesystem path used as a Go module replace directive for the Tsunami SDK when building Wave apps.",
         placeholder: "path",
     },
     {
@@ -563,9 +772,17 @@ const FieldSchemas: FieldSchema[] = [
         label: "Tsunami SDK version",
         category: "Advanced",
         control: "text",
+        description: "Overrides the Tsunami SDK version used when building Wave apps.",
         placeholder: "e.g. v0.1.0",
     },
-    { key: "tsunami:gopath", label: "Tsunami Go path", category: "Advanced", control: "text", placeholder: "path" },
+    {
+        key: "tsunami:gopath",
+        label: "Tsunami Go path",
+        category: "Advanced",
+        control: "text",
+        description: "Overrides the Go path used when building Tsunami-based Wave apps.",
+        placeholder: "path",
+    },
 ];
 
 const AdvancedCategoryHint =
@@ -573,6 +790,42 @@ const AdvancedCategoryHint =
 
 function fieldsByCategory(category: string): FieldSchema[] {
     return FieldSchemas.filter((f) => f.category === category);
+}
+
+export function matchesFieldSearch(schema: FieldSchema, query: string): boolean {
+    const q = query.trim().toLowerCase();
+    if (!q) {
+        return true;
+    }
+    return (
+        schema.label.toLowerCase().includes(q) ||
+        String(schema.key).toLowerCase().includes(q) ||
+        schema.description.toLowerCase().includes(q)
+    );
+}
+
+export function filterFieldSchemas(schemas: FieldSchema[], query: string): FieldSchema[] {
+    if (!query.trim()) {
+        return schemas;
+    }
+    return schemas.filter((schema) => matchesFieldSearch(schema, query));
+}
+
+// Groups filtered fields back under their category headings, in Categories order, so search
+// results still show which section each match belongs to.
+function groupFieldsByCategory(schemas: FieldSchema[]): [string, FieldSchema[]][] {
+    const byCategory = new Map<string, FieldSchema[]>();
+    for (const schema of schemas) {
+        const existing = byCategory.get(schema.category);
+        if (existing) {
+            existing.push(schema);
+        } else {
+            byCategory.set(schema.category, [schema]);
+        }
+    }
+    return Categories.filter((category) => byCategory.has(category)).map(
+        (category) => [category, byCategory.get(category)] as [string, FieldSchema[]]
+    );
 }
 
 // Two fields have a real but non-static default (platform-dependent or computed at runtime) --
@@ -625,6 +878,7 @@ const FieldRow = memo(({ schema, isSet, defaultDisplay, labelId, hintId, onReset
                     {schema.label}
                 </div>
                 <div className="text-caption text-muted font-mono">{schema.key}</div>
+                <div className="text-caption text-muted">{schema.description}</div>
                 {showHint && (
                     <div id={hintId} className="text-xxs text-muted mt-0.5">
                         {defaultDisplay ? `Not set — using default (${defaultDisplay})` : "Not set"}
@@ -1038,6 +1292,28 @@ const FieldControl = memo(({ schema, model, settings, isSet }: FieldControlProps
 });
 FieldControl.displayName = "FieldControl";
 
+interface FieldsListProps {
+    fields: FieldSchema[];
+    model: WaveConfigViewModel;
+    settings: SettingsType;
+    rawSettings: SettingsType;
+}
+
+const FieldsList = memo(({ fields, model, settings, rawSettings }: FieldsListProps) => (
+    <div className="max-w-[640px] flex flex-col gap-px bg-border/30 border border-border/30 rounded-lg overflow-hidden">
+        {fields.map((schema) => (
+            <FieldControl
+                key={schema.key}
+                schema={schema}
+                model={model}
+                settings={settings}
+                isSet={rawSettings[schema.key] != null}
+            />
+        ))}
+    </div>
+));
+FieldsList.displayName = "FieldsList";
+
 interface CategoryPanelProps {
     category: string;
     model: WaveConfigViewModel;
@@ -1053,21 +1329,44 @@ const CategoryPanel = memo(({ category, model, settings, rawSettings }: Category
             {category === "Advanced" && (
                 <div className="text-caption text-muted pb-3 max-w-[480px]">{AdvancedCategoryHint}</div>
             )}
-            <div className="max-w-[640px] flex flex-col gap-px bg-border/30 border border-border/30 rounded-lg overflow-hidden">
-                {fields.map((schema) => (
-                    <FieldControl
-                        key={schema.key}
-                        schema={schema}
-                        model={model}
-                        settings={settings}
-                        isSet={rawSettings[schema.key] != null}
-                    />
-                ))}
-            </div>
+            <FieldsList fields={fields} model={model} settings={settings} rawSettings={rawSettings} />
         </div>
     );
 });
 CategoryPanel.displayName = "CategoryPanel";
+
+interface SearchResultsPanelProps {
+    query: string;
+    model: WaveConfigViewModel;
+    settings: SettingsType;
+    rawSettings: SettingsType;
+}
+
+const SearchResultsPanel = memo(({ query, model, settings, rawSettings }: SearchResultsPanelProps) => {
+    const grouped = groupFieldsByCategory(filterFieldSchemas(FieldSchemas, query));
+
+    if (grouped.length === 0) {
+        return (
+            <div className="flex-1 min-w-0 overflow-y-auto p-4">
+                <div className="text-caption text-muted">No settings match &quot;{query}&quot;</div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex-1 min-w-0 overflow-y-auto p-4 flex flex-col gap-4">
+            {grouped.map(([category, fields]) => (
+                <div key={category}>
+                    <h2 className="text-caption font-semibold uppercase tracking-wide text-muted pb-2 px-0.5">
+                        {category}
+                    </h2>
+                    <FieldsList fields={fields} model={model} settings={settings} rawSettings={rawSettings} />
+                </div>
+            ))}
+        </div>
+    );
+});
+SearchResultsPanel.displayName = "SearchResultsPanel";
 
 interface CategoryRailProps {
     active: string;
@@ -1102,11 +1401,35 @@ export const GeneralContent = memo(({ model }: GeneralContentProps) => {
     const settings = useAtomValue(model.settingsAtom);
     const rawSettings = useAtomValue(model.generalRawSettingsAtom);
     const [activeCategory, setActiveCategory] = useState<string>(Categories[0]);
+    const search = useAtomValue(model.generalSearchAtom);
+    const setSearch = useSetAtom(model.generalSearchAtom);
+    const isSearching = search.trim() !== "";
 
     return (
-        <div className="flex w-full h-full min-h-0">
-            <CategoryRail active={activeCategory} onSelect={setActiveCategory} />
-            <CategoryPanel category={activeCategory} model={model} settings={settings} rawSettings={rawSettings} />
+        <div className="flex flex-col w-full h-full min-h-0">
+            <div className="p-3 border-b border-border/60 shrink-0">
+                <input
+                    type="search"
+                    aria-label="Search settings"
+                    className="w-full max-w-[300px] bg-black/20 border border-border rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:border-accent"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search settings..."
+                />
+            </div>
+            <div className="flex flex-1 min-h-0">
+                {!isSearching && <CategoryRail active={activeCategory} onSelect={setActiveCategory} />}
+                {isSearching ? (
+                    <SearchResultsPanel query={search} model={model} settings={settings} rawSettings={rawSettings} />
+                ) : (
+                    <CategoryPanel
+                        category={activeCategory}
+                        model={model}
+                        settings={settings}
+                        rawSettings={rawSettings}
+                    />
+                )}
+            </div>
         </div>
     );
 });

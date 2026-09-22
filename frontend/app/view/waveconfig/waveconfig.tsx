@@ -215,7 +215,7 @@ const WaveConfigView = memo(({ blockId, model }: ViewComponentProps<WaveConfigVi
                                     </div>
                                 </div>
                                 <div className="flex gap-2 items-baseline shrink-0">
-                                    {selectedFile.hasJsonView && (
+                                    {selectedFile.hasJsonView && (!selectedFile.visualComponent || activeTab === "json") && (
                                         <>
                                             {hasChanges && (
                                                 <span className="text-xs text-warning pb-0.5 @max-w450:hidden">
