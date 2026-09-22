@@ -6,8 +6,8 @@ package engine
 import (
 	"sync"
 
+	"github.com/LannCo/remoteterm/tsunami/vdom"
 	"github.com/outrigdev/goid"
-	"github.com/wavetermdev/waveterm/tsunami/vdom"
 )
 
 const (
@@ -140,20 +140,20 @@ func GetGlobalEffectContext() *EffectContextImpl {
 func inContextType() string {
 	globalCtxMutex.Lock()
 	defer globalCtxMutex.Unlock()
-	
+
 	gid := goid.Get()
-	
+
 	if globalRenderContext != nil && gid == globalRenderGoId {
 		return GlobalContextType_render
 	}
-	
+
 	if globalEventContext != nil && gid == globalEventGoId {
 		return GlobalContextType_event
 	}
-	
+
 	if globalEffectContext != nil && gid == globalEffectGoId {
 		return GlobalContextType_effect
 	}
-	
+
 	return GlobalContextType_async
 }

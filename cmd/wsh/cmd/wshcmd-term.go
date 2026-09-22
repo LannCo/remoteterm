@@ -8,11 +8,11 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
 var termMagnified bool
@@ -37,7 +37,7 @@ func termRun(cmd *cobra.Command, args []string) (rtnErr error) {
 	var cwd string
 	if len(args) > 0 {
 		cwd = args[0]
-		cwdExpanded, err := wavebase.ExpandHomeDir(cwd)
+		cwdExpanded, err := remotetermbase.ExpandHomeDir(cwd)
 		if err != nil {
 			return err
 		}
@@ -61,16 +61,16 @@ func termRun(cmd *cobra.Command, args []string) (rtnErr error) {
 	}
 
 	createMeta := map[string]any{
-		waveobj.MetaKey_View:       "term",
-		waveobj.MetaKey_CmdCwd:     cwd,
-		waveobj.MetaKey_Controller: "shell",
+		remotetermobj.MetaKey_View:       "term",
+		remotetermobj.MetaKey_CmdCwd:     cwd,
+		remotetermobj.MetaKey_Controller: "shell",
 	}
 	if RpcContext.Conn != "" {
-		createMeta[waveobj.MetaKey_Connection] = RpcContext.Conn
+		createMeta[remotetermobj.MetaKey_Connection] = RpcContext.Conn
 	}
 	createBlockData := wshrpc.CommandCreateBlockData{
 		TabId: tabId,
-		BlockDef: &waveobj.BlockDef{
+		BlockDef: &remotetermobj.BlockDef{
 			Meta: createMeta,
 		},
 		Magnified: termMagnified,

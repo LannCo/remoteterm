@@ -4,8 +4,8 @@
 package main
 
 import (
-	"github.com/wavetermdev/waveterm/cmd/wsh/cmd"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
+	"github.com/LannCo/remoteterm/cmd/wsh/cmd"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
 )
 
 // set by main-server.go
@@ -13,7 +13,7 @@ var WaveVersion = "0.0.0"
 var BuildTime = "0"
 
 func main() {
-	wavebase.WaveVersion = WaveVersion
-	wavebase.BuildTime = BuildTime
+	remotetermbase.WaveVersion = WaveVersion
+	remotetermbase.BuildTime = BuildTime
 	cmd.Execute()
 }

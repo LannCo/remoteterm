@@ -16,26 +16,26 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/wavetermdev/waveterm/pkg/blocklogger"
-	"github.com/wavetermdev/waveterm/pkg/filestore"
-	"github.com/wavetermdev/waveterm/pkg/panichandler"
-	"github.com/wavetermdev/waveterm/pkg/remote"
-	"github.com/wavetermdev/waveterm/pkg/remote/conncontroller"
-	"github.com/wavetermdev/waveterm/pkg/shellexec"
-	"github.com/wavetermdev/waveterm/pkg/util/envutil"
-	"github.com/wavetermdev/waveterm/pkg/util/fileutil"
-	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
-	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
-	"github.com/wavetermdev/waveterm/pkg/utilds"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
-	"github.com/wavetermdev/waveterm/pkg/wps"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
-	"github.com/wavetermdev/waveterm/pkg/wslconn"
-	"github.com/wavetermdev/waveterm/pkg/wstore"
+	"github.com/LannCo/remoteterm/pkg/blocklogger"
+	"github.com/LannCo/remoteterm/pkg/filestore"
+	"github.com/LannCo/remoteterm/pkg/panichandler"
+	"github.com/LannCo/remoteterm/pkg/remote"
+	"github.com/LannCo/remoteterm/pkg/remote/conncontroller"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtconfig"
+	"github.com/LannCo/remoteterm/pkg/rtstore"
+	"github.com/LannCo/remoteterm/pkg/shellexec"
+	"github.com/LannCo/remoteterm/pkg/util/envutil"
+	"github.com/LannCo/remoteterm/pkg/util/fileutil"
+	"github.com/LannCo/remoteterm/pkg/util/shellutil"
+	"github.com/LannCo/remoteterm/pkg/util/utilfn"
+	"github.com/LannCo/remoteterm/pkg/utilds"
+	"github.com/LannCo/remoteterm/pkg/wps"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
+	"github.com/LannCo/remoteterm/pkg/wslconn"
 )
 
 const (
@@ -56,7 +56,7 @@ type ShellController struct {
 	TabId          string
 	BlockId        string
 	ConnName       string
-	BlockDef       *waveobj.BlockDef
+	BlockDef       *remotetermobj.BlockDef
 	RunLock        *atomic.Bool
 	ProcStatus     string
 	ProcExitCode   int
@@ -82,9 +82,9 @@ func MakeShellController(tabId string, blockId string, controllerType string, co
 
 // Implement Controller interface methods
 
-func (sc *ShellController) Start(ctx context.Context, blockMeta waveobj.MetaMapType, rtOpts *waveobj.RuntimeOpts, force bool) error {
+func (sc *ShellController) Start(ctx context.Context, blockMeta remotetermobj.MetaMapType, rtOpts *remotetermobj.RuntimeOpts, force bool) error {
 	// Get the block data
-	blockData, err := wstore.DBMustGet[*waveobj.Block](ctx, sc.BlockId)
+	blockData, err := rtstore.DBMustGet[*remotetermobj.Block](ctx, sc.BlockId)
 	if err != nil {
 		return fmt.Errorf("error getting block: %w", err)
 	}
@@ -160,7 +160,7 @@ func (sc *ShellController) WithLock(f func()) {
 }
 
 type RunShellOpts struct {
-	TermSize waveobj.TermSize `json:"termsize,omitempty"`
+	TermSize remotetermobj.TermSize `json:"termsize,omitempty"`
 }
 
 // only call when holding the lock
@@ -170,8 +170,8 @@ func (sc *ShellController) sendUpdate_nolock() {
 	wps.Broker.Publish(wps.WaveEvent{
 		Event: wps.Event_ControllerStatus,
 		Scopes: []string{
-			waveobj.MakeORef(waveobj.OType_Tab, sc.TabId).String(),
-			waveobj.MakeORef(waveobj.OType_Block, sc.BlockId).String(),
+			remotetermobj.MakeORef(remotetermobj.OType_Tab, sc.TabId).String(),
+			remotetermobj.MakeORef(remotetermobj.OType_Block, sc.BlockId).String(),
 		},
 		Data: rtStatus,
 	})
@@ -188,8 +188,8 @@ func (sc *ShellController) UpdateControllerAndSendUpdate(updateFn func() bool) {
 		wps.Broker.Publish(wps.WaveEvent{
 			Event: wps.Event_ControllerStatus,
 			Scopes: []string{
-				waveobj.MakeORef(waveobj.OType_Tab, sc.TabId).String(),
-				waveobj.MakeORef(waveobj.OType_Block, sc.BlockId).String(),
+				remotetermobj.MakeORef(remotetermobj.OType_Tab, sc.TabId).String(),
+				remotetermobj.MakeORef(remotetermobj.OType_Block, sc.BlockId).String(),
 			},
 			Data: rtStatus,
 		})
@@ -199,7 +199,7 @@ func (sc *ShellController) UpdateControllerAndSendUpdate(updateFn func() bool) {
 func (sc *ShellController) resetTerminalState(logCtx context.Context) {
 	ctx, cancelFn := context.WithTimeout(context.Background(), DefaultTimeout)
 	defer cancelFn()
-	wfile, statErr := filestore.WFS.Stat(ctx, sc.BlockId, wavebase.BlockFile_Term)
+	wfile, statErr := filestore.WFS.Stat(ctx, sc.BlockId, remotetermbase.BlockFile_Term)
 	if statErr == fs.ErrNotExist {
 		return
 	}
@@ -213,7 +213,7 @@ func (sc *ShellController) resetTerminalState(logCtx context.Context) {
 	blocklogger.Debugf(logCtx, "[conndebug] resetTerminalState: resetting terminal state\n")
 	resetSeq := shellutil.GetTerminalResetSeq()
 	resetSeq += "\r\n"
-	err := HandleAppendBlockFile(sc.BlockId, wavebase.BlockFile_Term, []byte(resetSeq))
+	err := HandleAppendBlockFile(sc.BlockId, remotetermbase.BlockFile_Term, []byte(resetSeq))
 	if err != nil {
 		log.Printf("error appending to blockfile (terminal reset): %v\n", err)
 	}
@@ -224,7 +224,7 @@ func (sc *ShellController) writeMutedMessageToTerminal(msg string) {
 		return
 	}
 	fullMsg := "\x1b[90m" + msg + "\x1b[0m\r\n"
-	err := HandleAppendBlockFile(sc.BlockId, wavebase.BlockFile_Term, []byte(fullMsg))
+	err := HandleAppendBlockFile(sc.BlockId, remotetermbase.BlockFile_Term, []byte(fullMsg))
 	if err != nil {
 		log.Printf("error writing muted message to terminal (blockid=%s): %v", sc.BlockId, err)
 	}
@@ -232,7 +232,7 @@ func (sc *ShellController) writeMutedMessageToTerminal(msg string) {
 
 // [All the other existing private methods remain exactly the same - I'm not including them all here for brevity, but they would all be copied over with sc. replacing bc. throughout]
 
-func (sc *ShellController) DoRunShellCommand(logCtx context.Context, rc *RunShellOpts, blockMeta waveobj.MetaMapType) error {
+func (sc *ShellController) DoRunShellCommand(logCtx context.Context, rc *RunShellOpts, blockMeta remotetermobj.MetaMapType) error {
 	blocklogger.Debugf(logCtx, "[conndebug] DoRunShellCommand\n")
 	shellProc, err := sc.setupAndStartShellProcess(logCtx, rc, blockMeta)
 	if err != nil {
@@ -256,7 +256,7 @@ func (sc *ShellController) UnlockRunLock() {
 	log.Printf("block %q run() unlock\n", sc.BlockId)
 }
 
-func (sc *ShellController) run(logCtx context.Context, bdata *waveobj.Block, blockMeta map[string]any, rtOpts *waveobj.RuntimeOpts, force bool) {
+func (sc *ShellController) run(logCtx context.Context, bdata *remotetermobj.Block, blockMeta map[string]any, rtOpts *remotetermobj.RuntimeOpts, force bool) {
 	blocklogger.Debugf(logCtx, "[conndebug] ShellController.run() %q\n", sc.BlockId)
 	runningShellCommand := false
 	ok := sc.LockRunLock()
@@ -270,15 +270,15 @@ func (sc *ShellController) run(logCtx context.Context, bdata *waveobj.Block, blo
 		}
 	}()
 	curStatus := sc.GetRuntimeStatus()
-	controllerName := bdata.Meta.GetString(waveobj.MetaKey_Controller, "")
+	controllerName := bdata.Meta.GetString(remotetermobj.MetaKey_Controller, "")
 	if controllerName != BlockController_Shell && controllerName != BlockController_Cmd {
 		log.Printf("unknown controller %q\n", controllerName)
 		return
 	}
-	runOnce := getBoolFromMeta(blockMeta, waveobj.MetaKey_CmdRunOnce, false)
-	runOnStart := getBoolFromMeta(blockMeta, waveobj.MetaKey_CmdRunOnStart, true)
+	runOnce := getBoolFromMeta(blockMeta, remotetermobj.MetaKey_CmdRunOnce, false)
+	runOnStart := getBoolFromMeta(blockMeta, remotetermobj.MetaKey_CmdRunOnStart, true)
 	if ((runOnStart || runOnce) && curStatus.ShellProcStatus == Status_Init) || force {
-		if getBoolFromMeta(blockMeta, waveobj.MetaKey_CmdClearOnStart, false) {
+		if getBoolFromMeta(blockMeta, remotetermobj.MetaKey_CmdClearOnStart, false) {
 			err := HandleTruncateBlockFile(sc.BlockId)
 			if err != nil {
 				log.Printf("error truncating term blockfile: %v\n", err)
@@ -288,10 +288,10 @@ func (sc *ShellController) run(logCtx context.Context, bdata *waveobj.Block, blo
 			ctx, cancelFn := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancelFn()
 			metaUpdate := map[string]any{
-				waveobj.MetaKey_CmdRunOnce:    false,
-				waveobj.MetaKey_CmdRunOnStart: false,
+				remotetermobj.MetaKey_CmdRunOnce:    false,
+				remotetermobj.MetaKey_CmdRunOnStart: false,
 			}
-			err := wstore.UpdateObjectMeta(ctx, waveobj.MakeORef(waveobj.OType_Block, sc.BlockId), metaUpdate, false)
+			err := rtstore.UpdateObjectMeta(ctx, remotetermobj.MakeORef(remotetermobj.OType_Block, sc.BlockId), metaUpdate, false)
 			if err != nil {
 				log.Printf("error updating block meta (in blockcontroller.run): %v\n", err)
 				return
@@ -303,7 +303,7 @@ func (sc *ShellController) run(logCtx context.Context, bdata *waveobj.Block, blo
 				panichandler.PanicHandler("blockcontroller:run-shell-command", recover())
 			}()
 			defer sc.UnlockRunLock()
-			var termSize waveobj.TermSize
+			var termSize remotetermobj.TermSize
 			if rtOpts != nil {
 				termSize = rtOpts.TermSize
 			} else {
@@ -331,9 +331,9 @@ type ConnUnion struct {
 	HomeDir    string
 }
 
-func (bc *ShellController) getConnUnion(logCtx context.Context, remoteName string, blockMeta waveobj.MetaMapType) (ConnUnion, error) {
+func (bc *ShellController) getConnUnion(logCtx context.Context, remoteName string, blockMeta remotetermobj.MetaMapType) (ConnUnion, error) {
 	rtn := ConnUnion{ConnName: remoteName}
-	wshEnabled := !blockMeta.GetBool(waveobj.MetaKey_CmdNoWsh, false)
+	wshEnabled := !blockMeta.GetBool(remotetermobj.MetaKey_CmdNoWsh, false)
 	if strings.HasPrefix(remoteName, "wsl://") {
 		wslName := strings.TrimPrefix(remoteName, "wsl://")
 		wslConn := wslconn.GetWslConn(wslName)
@@ -374,11 +374,11 @@ func (bc *ShellController) getConnUnion(logCtx context.Context, remoteName strin
 	return rtn, nil
 }
 
-func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc *RunShellOpts, blockMeta waveobj.MetaMapType) (*shellexec.ShellProc, error) {
+func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc *RunShellOpts, blockMeta remotetermobj.MetaMapType) (*shellexec.ShellProc, error) {
 	// create a circular blockfile for the output
 	ctx, cancelFn := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancelFn()
-	fsErr := filestore.WFS.MakeFile(ctx, bc.BlockId, wavebase.BlockFile_Term, nil, wshrpc.FileOpts{MaxSize: DefaultTermMaxFileSize, Circular: true})
+	fsErr := filestore.WFS.MakeFile(ctx, bc.BlockId, remotetermbase.BlockFile_Term, nil, wshrpc.FileOpts{MaxSize: DefaultTermMaxFileSize, Circular: true})
 	if fsErr != nil && fsErr != fs.ErrExist {
 		return nil, fmt.Errorf("error creating blockfile: %w", fsErr)
 	}
@@ -391,7 +391,7 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 		return nil, nil
 	}
 	// TODO better sync here (don't let two starts happen at the same times)
-	remoteName := blockMeta.GetString(waveobj.MetaKey_Connection, "")
+	remoteName := blockMeta.GetString(remotetermobj.MetaKey_Connection, "")
 	connUnion, err := bc.getConnUnion(logCtx, remoteName, blockMeta)
 	if err != nil {
 		return nil, err
@@ -402,9 +402,9 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 	if bc.ControllerType == BlockController_Shell {
 		cmdOpts.Interactive = true
 		cmdOpts.Login = true
-		cmdOpts.Cwd = blockMeta.GetString(waveobj.MetaKey_CmdCwd, "")
+		cmdOpts.Cwd = blockMeta.GetString(remotetermobj.MetaKey_CmdCwd, "")
 		if cmdOpts.Cwd != "" {
-			cwdPath, err := wavebase.ExpandHomeDir(cmdOpts.Cwd)
+			cwdPath, err := remotetermbase.ExpandHomeDir(cmdOpts.Cwd)
 			if err != nil {
 				return nil, err
 			}
@@ -444,7 +444,7 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 				return nil, fmt.Errorf("error making jwt token: %w", err)
 			}
 			swapToken.RpcContext = &rpcContext
-			wavebase.SetDualEnv(swapToken.Env, wshutil.WaveJwtTokenVarName, wshutil.LegacyWaveJwtTokenVarName, jwtStr)
+			remotetermbase.SetDualEnv(swapToken.Env, wshutil.WaveJwtTokenVarName, wshutil.LegacyWaveJwtTokenVarName, jwtStr)
 			shellProc, err = shellexec.StartWslShellProc(ctx, rc.TermSize, cmdStr, cmdOpts, wslConn)
 			if err != nil {
 				wslConn.SetWshError(err)
@@ -477,7 +477,7 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 				return nil, fmt.Errorf("error making jwt token: %w", err)
 			}
 			swapToken.RpcContext = &rpcContext
-			wavebase.SetDualEnv(swapToken.Env, wshutil.WaveJwtTokenVarName, wshutil.LegacyWaveJwtTokenVarName, jwtStr)
+			remotetermbase.SetDualEnv(swapToken.Env, wshutil.WaveJwtTokenVarName, wshutil.LegacyWaveJwtTokenVarName, jwtStr)
 			shellProc, err = shellexec.StartRemoteShellProc(ctx, logCtx, rc.TermSize, cmdStr, cmdOpts, conn)
 			if err != nil {
 				conn.SetWshError(err)
@@ -492,7 +492,7 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 		}
 	} else if connUnion.ConnType == ConnType_Local {
 		if connUnion.WshEnabled {
-			sockName := wavebase.GetDomainSocketName()
+			sockName := remotetermbase.GetDomainSocketName()
 			rpcContext := wshrpc.RpcContext{
 				ProcRoute: true,
 				SockName:  sockName,
@@ -503,7 +503,7 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 				return nil, fmt.Errorf("error making jwt token: %w", err)
 			}
 			swapToken.RpcContext = &rpcContext
-			wavebase.SetDualEnv(swapToken.Env, wshutil.WaveJwtTokenVarName, wshutil.LegacyWaveJwtTokenVarName, jwtStr)
+			remotetermbase.SetDualEnv(swapToken.Env, wshutil.WaveJwtTokenVarName, wshutil.LegacyWaveJwtTokenVarName, jwtStr)
 		}
 		cmdOpts.ShellPath = connUnion.ShellPath
 		cmdOpts.ShellOpts = getLocalShellOpts(blockMeta)
@@ -522,7 +522,7 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 	return shellProc, nil
 }
 
-func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellProc, rc *RunShellOpts, blockMeta waveobj.MetaMapType) error {
+func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellProc, rc *RunShellOpts, blockMeta remotetermobj.MetaMapType) error {
 	shellInputCh := make(chan *BlockInputUnion, 32)
 	bc.ShellInputCh = shellInputCh
 
@@ -541,9 +541,9 @@ func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellP
 			shellProc.Cmd.Wait()
 			exitCode := shellProc.Cmd.ExitCode()
 			blockData := bc.getBlockData_noErr()
-			if blockData != nil && blockData.Meta.GetString(waveobj.MetaKey_Controller, "") == BlockController_Cmd {
+			if blockData != nil && blockData.Meta.GetString(remotetermobj.MetaKey_Controller, "") == BlockController_Cmd {
 				termMsg := fmt.Sprintf("\r\nprocess finished with exit code = %d\r\n\r\n", exitCode)
-				HandleAppendBlockFile(bc.BlockId, wavebase.BlockFile_Term, []byte(termMsg))
+				HandleAppendBlockFile(bc.BlockId, remotetermbase.BlockFile_Term, []byte(termMsg))
 			}
 			// to stop the inputCh loop
 			time.Sleep(100 * time.Millisecond)
@@ -553,7 +553,7 @@ func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellP
 		for {
 			nr, err := shellProc.Cmd.Read(buf)
 			if nr > 0 {
-				err := HandleAppendBlockFile(bc.BlockId, wavebase.BlockFile_Term, buf[:nr])
+				err := HandleAppendBlockFile(bc.BlockId, remotetermbase.BlockFile_Term, buf[:nr])
 				if err != nil {
 					log.Printf("error appending to blockfile: %v\n", err)
 				}
@@ -621,7 +621,7 @@ func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellP
 	return nil
 }
 
-func (union *ConnUnion) getRemoteInfoAndShellType(blockMeta waveobj.MetaMapType) error {
+func (union *ConnUnion) getRemoteInfoAndShellType(blockMeta remotetermobj.MetaMapType) error {
 	if !union.WshEnabled {
 		return nil
 	}
@@ -641,7 +641,7 @@ func (union *ConnUnion) getRemoteInfoAndShellType(blockMeta waveobj.MetaMapType)
 			return err
 		}
 		union.ShellPath = shellPath
-		union.HomeDir = wavebase.GetHomeDir()
+		union.HomeDir = remotetermbase.GetHomeDir()
 	}
 	union.ShellType = shellutil.GetShellTypeFromShellPath(union.ShellPath)
 	return nil
@@ -650,17 +650,17 @@ func (union *ConnUnion) getRemoteInfoAndShellType(blockMeta waveobj.MetaMapType)
 func checkCloseOnExit(blockId string, exitCode int) {
 	ctx, cancelFn := context.WithTimeout(context.Background(), DefaultTimeout)
 	defer cancelFn()
-	blockData, err := wstore.DBMustGet[*waveobj.Block](ctx, blockId)
+	blockData, err := rtstore.DBMustGet[*remotetermobj.Block](ctx, blockId)
 	if err != nil {
 		log.Printf("error getting block data: %v\n", err)
 		return
 	}
-	closeOnExit := blockData.Meta.GetBool(waveobj.MetaKey_CmdCloseOnExit, false)
-	closeOnExitForce := blockData.Meta.GetBool(waveobj.MetaKey_CmdCloseOnExitForce, false)
+	closeOnExit := blockData.Meta.GetBool(remotetermobj.MetaKey_CmdCloseOnExit, false)
+	closeOnExitForce := blockData.Meta.GetBool(remotetermobj.MetaKey_CmdCloseOnExitForce, false)
 	if !closeOnExitForce && !(closeOnExit && exitCode == 0) {
 		return
 	}
-	delayMs := blockData.Meta.GetFloat(waveobj.MetaKey_CmdCloseOnExitDelay, 2000)
+	delayMs := blockData.Meta.GetFloat(remotetermobj.MetaKey_CmdCloseOnExitDelay, 2000)
 	if delayMs < 0 {
 		delayMs = 0
 	}
@@ -672,20 +672,20 @@ func checkCloseOnExit(blockId string, exitCode int) {
 	}
 }
 
-func getLocalShellPath(blockMeta waveobj.MetaMapType) (string, error) {
-	shellPath := blockMeta.GetString(waveobj.MetaKey_TermLocalShellPath, "")
+func getLocalShellPath(blockMeta remotetermobj.MetaMapType) (string, error) {
+	shellPath := blockMeta.GetString(remotetermobj.MetaKey_TermLocalShellPath, "")
 	if shellPath != "" {
 		return shellPath, nil
 	}
 
-	connName := blockMeta.GetString(waveobj.MetaKey_Connection, "")
+	connName := blockMeta.GetString(remotetermobj.MetaKey_Connection, "")
 	if strings.HasPrefix(connName, "local:") {
 		variant := strings.TrimPrefix(connName, "local:")
 		if variant == LocalConnVariant_GitBash {
 			if runtime.GOOS != "windows" {
 				return "", fmt.Errorf("connection \"local:gitbash\" is only supported on Windows")
 			}
-			fullConfig := wconfig.GetWatcher().GetFullConfig()
+			fullConfig := rtconfig.GetWatcher().GetFullConfig()
 			gitBashPath := shellutil.FindGitBash(&fullConfig, false)
 			if gitBashPath == "" {
 				return "", fmt.Errorf("connection \"local:gitbash\": git bash not found on this system, please install Git for Windows or set term:localshellpath to specify the git bash location")
@@ -695,19 +695,19 @@ func getLocalShellPath(blockMeta waveobj.MetaMapType) (string, error) {
 		return "", fmt.Errorf("unsupported local connection type: %q", connName)
 	}
 
-	settings := wconfig.GetWatcher().GetFullConfig().Settings
+	settings := rtconfig.GetWatcher().GetFullConfig().Settings
 	if settings.TermLocalShellPath != "" {
 		return settings.TermLocalShellPath, nil
 	}
 	return shellutil.DetectLocalShellPath(), nil
 }
 
-func getLocalShellOpts(blockMeta waveobj.MetaMapType) []string {
-	if blockMeta.HasKey(waveobj.MetaKey_TermLocalShellOpts) {
-		opts := blockMeta.GetStringList(waveobj.MetaKey_TermLocalShellOpts)
+func getLocalShellOpts(blockMeta remotetermobj.MetaMapType) []string {
+	if blockMeta.HasKey(remotetermobj.MetaKey_TermLocalShellOpts) {
+		opts := blockMeta.GetStringList(remotetermobj.MetaKey_TermLocalShellOpts)
 		return append([]string{}, opts...)
 	}
-	settings := wconfig.GetWatcher().GetFullConfig().Settings
+	settings := rtconfig.GetWatcher().GetFullConfig().Settings
 	if len(settings.TermLocalShellOpts) > 0 {
 		return append([]string{}, settings.TermLocalShellOpts...)
 	}
@@ -715,40 +715,40 @@ func getLocalShellOpts(blockMeta waveobj.MetaMapType) []string {
 }
 
 // for "cmd" type blocks
-func createCmdStrAndOpts(blockId string, blockMeta waveobj.MetaMapType, connName string) (string, *shellexec.CommandOptsType, error) {
+func createCmdStrAndOpts(blockId string, blockMeta remotetermobj.MetaMapType, connName string) (string, *shellexec.CommandOptsType, error) {
 	var cmdStr string
 	var cmdOpts shellexec.CommandOptsType
-	cmdStr = blockMeta.GetString(waveobj.MetaKey_Cmd, "")
+	cmdStr = blockMeta.GetString(remotetermobj.MetaKey_Cmd, "")
 	if cmdStr == "" {
 		return "", nil, fmt.Errorf("missing cmd in block meta")
 	}
-	cmdOpts.Cwd = blockMeta.GetString(waveobj.MetaKey_CmdCwd, "")
+	cmdOpts.Cwd = blockMeta.GetString(remotetermobj.MetaKey_CmdCwd, "")
 	if cmdOpts.Cwd != "" {
-		cwdPath, err := wavebase.ExpandHomeDir(cmdOpts.Cwd)
+		cwdPath, err := remotetermbase.ExpandHomeDir(cmdOpts.Cwd)
 		if err != nil {
 			return "", nil, err
 		}
 		cmdOpts.Cwd = cwdPath
 	}
-	useShell := blockMeta.GetBool(waveobj.MetaKey_CmdShell, true)
+	useShell := blockMeta.GetBool(remotetermobj.MetaKey_CmdShell, true)
 	if !useShell {
 		if strings.Contains(cmdStr, " ") {
 			return "", nil, fmt.Errorf("cmd should not have spaces if cmd:shell is false (use cmd:args)")
 		}
-		cmdArgs := blockMeta.GetStringList(waveobj.MetaKey_CmdArgs)
+		cmdArgs := blockMeta.GetStringList(remotetermobj.MetaKey_CmdArgs)
 		// shell escape the args
 		for _, arg := range cmdArgs {
 			cmdStr = cmdStr + " " + utilfn.ShellQuote(arg, false, -1)
 		}
 	}
-	cmdOpts.ForceJwt = blockMeta.GetBool(waveobj.MetaKey_CmdJwt, false)
+	cmdOpts.ForceJwt = blockMeta.GetBool(remotetermobj.MetaKey_CmdJwt, false)
 	return cmdStr, &cmdOpts, nil
 }
 
-func (bc *ShellController) getBlockData_noErr() *waveobj.Block {
+func (bc *ShellController) getBlockData_noErr() *remotetermobj.Block {
 	ctx, cancelFn := context.WithTimeout(context.Background(), DefaultTimeout)
 	defer cancelFn()
-	blockData, err := wstore.DBGet[*waveobj.Block](ctx, bc.BlockId)
+	blockData, err := rtstore.DBGet[*remotetermobj.Block](ctx, bc.BlockId)
 	if err != nil {
 		log.Printf("error getting block data (getBlockData_noErr): %v\n", err)
 		return nil
@@ -756,9 +756,9 @@ func (bc *ShellController) getBlockData_noErr() *waveobj.Block {
 	return blockData
 }
 
-func resolveEnvMap(blockId string, blockMeta waveobj.MetaMapType, connName string) (map[string]string, error) {
+func resolveEnvMap(blockId string, blockMeta remotetermobj.MetaMapType, connName string) (map[string]string, error) {
 	rtn := make(map[string]string)
-	config := wconfig.GetWatcher().GetFullConfig()
+	config := rtconfig.GetWatcher().GetFullConfig()
 	connKeywords := config.Connections[connName]
 	ckEnv := connKeywords.CmdEnv
 	for k, v := range ckEnv {
@@ -766,7 +766,7 @@ func resolveEnvMap(blockId string, blockMeta waveobj.MetaMapType, connName strin
 	}
 	ctx, cancelFn := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancelFn()
-	_, envFileData, err := filestore.WFS.ReadFile(ctx, blockId, wavebase.BlockFile_Env)
+	_, envFileData, err := filestore.WFS.ReadFile(ctx, blockId, remotetermbase.BlockFile_Env)
 	if err == fs.ErrNotExist {
 		err = nil
 	}
@@ -779,17 +779,17 @@ func resolveEnvMap(blockId string, blockMeta waveobj.MetaMapType, connName strin
 			rtn[k] = v
 		}
 	}
-	cmdEnv := blockMeta.GetStringMap(waveobj.MetaKey_CmdEnv, true)
+	cmdEnv := blockMeta.GetStringMap(remotetermobj.MetaKey_CmdEnv, true)
 	for k, v := range cmdEnv {
-		if v == waveobj.MetaMap_DeleteSentinel {
+		if v == remotetermobj.MetaMap_DeleteSentinel {
 			delete(rtn, k)
 			continue
 		}
 		rtn[k] = v
 	}
-	connEnv := blockMeta.GetConnectionOverride(connName).GetStringMap(waveobj.MetaKey_CmdEnv, true)
+	connEnv := blockMeta.GetConnectionOverride(connName).GetStringMap(remotetermobj.MetaKey_CmdEnv, true)
 	for k, v := range connEnv {
-		if v == waveobj.MetaMap_DeleteSentinel {
+		if v == remotetermobj.MetaMap_DeleteSentinel {
 			delete(rtn, k)
 			continue
 		}
@@ -800,21 +800,21 @@ func resolveEnvMap(blockId string, blockMeta waveobj.MetaMapType, connName strin
 
 func getCustomInitScriptKeyCascade(shellType string) []string {
 	if shellType == "bash" {
-		return []string{waveobj.MetaKey_CmdInitScriptBash, waveobj.MetaKey_CmdInitScriptSh, waveobj.MetaKey_CmdInitScript}
+		return []string{remotetermobj.MetaKey_CmdInitScriptBash, remotetermobj.MetaKey_CmdInitScriptSh, remotetermobj.MetaKey_CmdInitScript}
 	}
 	if shellType == "zsh" {
-		return []string{waveobj.MetaKey_CmdInitScriptZsh, waveobj.MetaKey_CmdInitScriptSh, waveobj.MetaKey_CmdInitScript}
+		return []string{remotetermobj.MetaKey_CmdInitScriptZsh, remotetermobj.MetaKey_CmdInitScriptSh, remotetermobj.MetaKey_CmdInitScript}
 	}
 	if shellType == "pwsh" {
-		return []string{waveobj.MetaKey_CmdInitScriptPwsh, waveobj.MetaKey_CmdInitScript}
+		return []string{remotetermobj.MetaKey_CmdInitScriptPwsh, remotetermobj.MetaKey_CmdInitScript}
 	}
 	if shellType == "fish" {
-		return []string{waveobj.MetaKey_CmdInitScriptFish, waveobj.MetaKey_CmdInitScript}
+		return []string{remotetermobj.MetaKey_CmdInitScriptFish, remotetermobj.MetaKey_CmdInitScript}
 	}
-	return []string{waveobj.MetaKey_CmdInitScript}
+	return []string{remotetermobj.MetaKey_CmdInitScript}
 }
 
-func getCustomInitScript(logCtx context.Context, meta waveobj.MetaMapType, connName string, shellType string) string {
+func getCustomInitScript(logCtx context.Context, meta remotetermobj.MetaMapType, connName string, shellType string) string {
 	initScriptVal, metaKeyName := getCustomInitScriptValue(meta, connName, shellType)
 	if initScriptVal == "" {
 		return ""
@@ -824,7 +824,7 @@ func getCustomInitScript(logCtx context.Context, meta waveobj.MetaMapType, connN
 		return initScriptVal
 	}
 	blocklogger.Infof(logCtx, "[conndebug] initScript detected as a file %q from meta key: %s\n", initScriptVal, metaKeyName)
-	initScriptVal, err := wavebase.ExpandHomeDir(initScriptVal)
+	initScriptVal, err := remotetermbase.ExpandHomeDir(initScriptVal)
 	if err != nil {
 		blocklogger.Infof(logCtx, "[conndebug] cannot expand home dir in Wave initscript file: %v\n", err)
 		return fmt.Sprintf("echo \"cannot expand home dir in Wave initscript file, from key %s\";\n", metaKeyName)
@@ -847,7 +847,7 @@ func getCustomInitScript(logCtx context.Context, meta waveobj.MetaMapType, connN
 }
 
 // returns (value, metakey)
-func getCustomInitScriptValue(meta waveobj.MetaMapType, connName string, shellType string) (string, string) {
+func getCustomInitScriptValue(meta remotetermobj.MetaMapType, connName string, shellType string) (string, string) {
 	keys := getCustomInitScriptKeyCascade(shellType)
 	connMeta := meta.GetConnectionOverride(connName)
 	if connMeta != nil {
@@ -862,7 +862,7 @@ func getCustomInitScriptValue(meta waveobj.MetaMapType, connName string, shellTy
 			return meta.GetString(key, ""), "blockmeta/" + key
 		}
 	}
-	fullConfig := wconfig.GetWatcher().GetFullConfig()
+	fullConfig := rtconfig.GetWatcher().GetFullConfig()
 	connKeywords := fullConfig.Connections[connName]
 	connKeywordsMap := make(map[string]any)
 	err := utilfn.ReUnmarshal(&connKeywordsMap, connKeywords)
@@ -870,7 +870,7 @@ func getCustomInitScriptValue(meta waveobj.MetaMapType, connName string, shellTy
 		log.Printf("error re-unmarshalling connKeywords: %v\n", err)
 		return "", ""
 	}
-	ckMeta := waveobj.MetaMapType(connKeywordsMap)
+	ckMeta := remotetermobj.MetaMapType(connKeywordsMap)
 	for _, key := range keys {
 		if ckMeta.HasKey(key) {
 			return ckMeta.GetString(key, ""), "connections.json/" + connName + "/" + key
@@ -879,7 +879,7 @@ func getCustomInitScriptValue(meta waveobj.MetaMapType, connName string, shellTy
 	return "", ""
 }
 
-func updateTermSize(shellProc *shellexec.ShellProc, blockId string, termSize waveobj.TermSize) {
+func updateTermSize(shellProc *shellexec.ShellProc, blockId string, termSize remotetermobj.TermSize) {
 	err := setTermSizeInDB(blockId, termSize)
 	if err != nil {
 		log.Printf("error setting pty size: %v\n", err)
@@ -890,23 +890,23 @@ func updateTermSize(shellProc *shellexec.ShellProc, blockId string, termSize wav
 	}
 }
 
-func setTermSizeInDB(blockId string, termSize waveobj.TermSize) error {
+func setTermSizeInDB(blockId string, termSize remotetermobj.TermSize) error {
 	ctx, cancelFn := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancelFn()
-	ctx = waveobj.ContextWithUpdates(ctx)
-	bdata, err := wstore.DBMustGet[*waveobj.Block](ctx, blockId)
+	ctx = remotetermobj.ContextWithUpdates(ctx)
+	bdata, err := rtstore.DBMustGet[*remotetermobj.Block](ctx, blockId)
 	if err != nil {
 		return fmt.Errorf("error getting block data: %v", err)
 	}
 	if bdata.RuntimeOpts == nil {
-		bdata.RuntimeOpts = &waveobj.RuntimeOpts{}
+		bdata.RuntimeOpts = &remotetermobj.RuntimeOpts{}
 	}
 	bdata.RuntimeOpts.TermSize = termSize
-	err = wstore.DBUpdate(ctx, bdata)
+	err = rtstore.DBUpdate(ctx, bdata)
 	if err != nil {
 		return fmt.Errorf("error updating block data: %v", err)
 	}
-	updates := waveobj.ContextGetUpdatesRtn(ctx)
+	updates := remotetermobj.ContextGetUpdatesRtn(ctx)
 	wps.Broker.SendUpdateEvents(updates)
 	return nil
 }

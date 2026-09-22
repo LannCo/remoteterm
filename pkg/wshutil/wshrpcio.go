@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/wavetermdev/waveterm/pkg/baseds"
-	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
+	"github.com/LannCo/remoteterm/pkg/baseds"
+	"github.com/LannCo/remoteterm/pkg/util/utilfn"
 )
 
 // special I/O wrappers for wshrpc

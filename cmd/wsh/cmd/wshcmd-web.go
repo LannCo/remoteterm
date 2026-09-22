@@ -7,11 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
 )
 
 var webCmd = &cobra.Command{
@@ -61,7 +61,7 @@ func webGetRun(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("getting block info: %w", err)
 	}
-	if blockInfo.Block.Meta.GetString(waveobj.MetaKey_View, "") != "web" {
+	if blockInfo.Block.Meta.GetString(remotetermobj.MetaKey_View, "") != "web" {
 		return fmt.Errorf("block %s is not a web block", fullORef.OID)
 	}
 	data := wshrpc.CommandWebSelectorData{
@@ -99,7 +99,7 @@ func webOpenRun(cmd *cobra.Command, args []string) (rtnErr error) {
 	defer func() {
 	}()
 
-	var replaceBlockORef *waveobj.ORef
+	var replaceBlockORef *remotetermobj.ORef
 	if webOpenReplaceBlock != "" {
 		var err error
 		replaceBlockORef, err = resolveSimpleId(webOpenReplaceBlock)
@@ -118,10 +118,10 @@ func webOpenRun(cmd *cobra.Command, args []string) (rtnErr error) {
 
 	wshCmd := wshrpc.CommandCreateBlockData{
 		TabId: tabId,
-		BlockDef: &waveobj.BlockDef{
+		BlockDef: &remotetermobj.BlockDef{
 			Meta: map[string]any{
-				waveobj.MetaKey_View: "web",
-				waveobj.MetaKey_Url:  args[0],
+				remotetermobj.MetaKey_View: "web",
+				remotetermobj.MetaKey_Url:  args[0],
 			},
 		},
 		Magnified: webOpenMagnified,

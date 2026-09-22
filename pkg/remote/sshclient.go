@@ -23,19 +23,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/blocklogger"
+	"github.com/LannCo/remoteterm/pkg/genconn"
+	"github.com/LannCo/remoteterm/pkg/panichandler"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/rtconfig"
+	"github.com/LannCo/remoteterm/pkg/secretstore"
+	"github.com/LannCo/remoteterm/pkg/trimquotes"
+	"github.com/LannCo/remoteterm/pkg/userinput"
+	"github.com/LannCo/remoteterm/pkg/util/shellutil"
+	"github.com/LannCo/remoteterm/pkg/util/utilfn"
+	"github.com/LannCo/remoteterm/pkg/utilds"
 	"github.com/kevinburke/ssh_config"
 	"github.com/skeema/knownhosts"
-	"github.com/wavetermdev/waveterm/pkg/blocklogger"
-	"github.com/wavetermdev/waveterm/pkg/genconn"
-	"github.com/wavetermdev/waveterm/pkg/panichandler"
-	"github.com/wavetermdev/waveterm/pkg/secretstore"
-	"github.com/wavetermdev/waveterm/pkg/trimquotes"
-	"github.com/wavetermdev/waveterm/pkg/userinput"
-	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
-	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
-	"github.com/wavetermdev/waveterm/pkg/utilds"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 	xknownhosts "golang.org/x/crypto/ssh/knownhosts"
@@ -380,14 +380,14 @@ func createDummySigner() ([]ssh.Signer, error) {
 // they were successes. An error in this function prevents any other
 // keys from being attempted. But if there's an error because of a dummy
 // file, the library can still try again with a new key.
-func createPublicKeyCallback(connCtx context.Context, sshKeywords *wconfig.ConnKeywords, authSockSignersExt []ssh.Signer, agentClient agent.ExtendedAgent, debugInfo *ConnectionDebugInfo, authTracker *AuthTracker) func() ([]ssh.Signer, error) {
+func createPublicKeyCallback(connCtx context.Context, sshKeywords *rtconfig.ConnKeywords, authSockSignersExt []ssh.Signer, agentClient agent.ExtendedAgent, debugInfo *ConnectionDebugInfo, authTracker *AuthTracker) func() ([]ssh.Signer, error) {
 	var identityFiles []string
 	existingKeys := make(map[string][]byte)
 
 	// checking the file early prevents us from needing to send a
 	// dummy signer if there's a problem with the signer
 	for _, identityFile := range sshKeywords.SshIdentityFile {
-		filePath, err := wavebase.ExpandHomeDir(identityFile)
+		filePath, err := remotetermbase.ExpandHomeDir(identityFile)
 		if err != nil {
 			continue
 		}
@@ -745,7 +745,7 @@ func lineContainsMatch(line []byte, matches [][]byte) bool {
 	return false
 }
 
-func createHostKeyCallback(ctx context.Context, sshKeywords *wconfig.ConnKeywords) (ssh.HostKeyCallback, HostKeyAlgorithms, error) {
+func createHostKeyCallback(ctx context.Context, sshKeywords *rtconfig.ConnKeywords) (ssh.HostKeyCallback, HostKeyAlgorithms, error) {
 	globalKnownHostsFiles := sshKeywords.SshGlobalKnownHostsFile
 	userKnownHostsFiles := sshKeywords.SshUserKnownHostsFile
 
@@ -762,7 +762,7 @@ func createHostKeyCallback(ctx context.Context, sshKeywords *wconfig.ConnKeyword
 
 	var knownHostsFiles []string
 	for _, filename := range unexpandedKnownHostsFiles {
-		filePath, err := wavebase.ExpandHomeDir(filename)
+		filePath, err := remotetermbase.ExpandHomeDir(filename)
 		if err != nil {
 			continue
 		}
@@ -915,7 +915,7 @@ func createHostKeyCallback(ctx context.Context, sshKeywords *wconfig.ConnKeyword
 	return waveHostKeyCallback, hostKeyAlgorithms, nil
 }
 
-func createClientConfig(connCtx context.Context, sshKeywords *wconfig.ConnKeywords, debugInfo *ConnectionDebugInfo, authTracker *AuthTracker) (*ssh.ClientConfig, error) {
+func createClientConfig(connCtx context.Context, sshKeywords *rtconfig.ConnKeywords, debugInfo *ConnectionDebugInfo, authTracker *AuthTracker) (*ssh.ClientConfig, error) {
 	chosenUser := utilfn.SafeDeref(sshKeywords.SshUser)
 	chosenHostName := utilfn.SafeDeref(sshKeywords.SshHostName)
 	chosenPort := utilfn.SafeDeref(sshKeywords.SshPort)
@@ -1144,7 +1144,7 @@ func connectInternal(ctx context.Context, networkAddr string, clientConfig *ssh.
 	return sshClient, nil
 }
 
-func ConnectToClient(connCtx context.Context, opts *SSHOpts, currentClient *ssh.Client, jumpNum int32, connFlags *wconfig.ConnKeywords) (*ssh.Client, int32, *wconfig.ConnKeywords, *AuthTracker, error) {
+func ConnectToClient(connCtx context.Context, opts *SSHOpts, currentClient *ssh.Client, jumpNum int32, connFlags *rtconfig.ConnKeywords) (*ssh.Client, int32, *rtconfig.ConnKeywords, *AuthTracker, error) {
 	blocklogger.Infof(connCtx, "[conndebug] ConnectToClient %s (jump:%d)...\n", opts.String(), jumpNum)
 	debugInfo := &ConnectionDebugInfo{
 		CurrentClient: currentClient,
@@ -1157,13 +1157,13 @@ func ConnectToClient(connCtx context.Context, opts *SSHOpts, currentClient *ssh.
 	}
 
 	rawName := opts.String()
-	fullConfig := wconfig.GetWatcher().GetFullConfig()
+	fullConfig := rtconfig.GetWatcher().GetFullConfig()
 	internalSshConfigKeywords, ok := fullConfig.Connections[rawName]
 	if !ok {
-		internalSshConfigKeywords = wconfig.ConnKeywords{}
+		internalSshConfigKeywords = rtconfig.ConnKeywords{}
 	}
 
-	var sshConfigKeywords *wconfig.ConnKeywords
+	var sshConfigKeywords *rtconfig.ConnKeywords
 	if utilfn.SafeDeref(internalSshConfigKeywords.ConnIgnoreSshConfig) {
 		var err error
 		sshConfigKeywords, err = findSshDefaults(opts.SSHHost)
@@ -1180,7 +1180,7 @@ func ConnectToClient(connCtx context.Context, opts *SSHOpts, currentClient *ssh.
 		}
 	}
 
-	parsedKeywords := &wconfig.ConnKeywords{}
+	parsedKeywords := &rtconfig.ConnKeywords{}
 	if opts.SSHUser != "" {
 		parsedKeywords.SshUser = &opts.SSHUser
 	}
@@ -1216,7 +1216,7 @@ func ConnectToClient(connCtx context.Context, opts *SSHOpts, currentClient *ssh.
 		}
 
 		// do not apply supplied keywords to proxies - ssh config must be used for that
-		debugInfo.CurrentClient, jumpNum, _, _, err = ConnectToClient(connCtx, proxyOpts, debugInfo.CurrentClient, jumpNum, &wconfig.ConnKeywords{})
+		debugInfo.CurrentClient, jumpNum, _, _, err = ConnectToClient(connCtx, proxyOpts, debugInfo.CurrentClient, jumpNum, &rtconfig.ConnKeywords{})
 		if err != nil {
 			// do not add a context on a recursive call
 			// (this can cause a recursive nested context that's arbitrarily deep)
@@ -1238,7 +1238,7 @@ func ConnectToClient(connCtx context.Context, opts *SSHOpts, currentClient *ssh.
 // note that a `var == "yes"` will default to false
 // but `var != "no"` will default to true
 // when given unexpected strings
-func findSshConfigKeywords(hostPattern string) (connKeywords *wconfig.ConnKeywords, outErr error) {
+func findSshConfigKeywords(hostPattern string) (connKeywords *rtconfig.ConnKeywords, outErr error) {
 	defer func() {
 		panicErr := panichandler.PanicHandler("sshclient:find-ssh-config-keywords", recover())
 		if panicErr != nil {
@@ -1248,7 +1248,7 @@ func findSshConfigKeywords(hostPattern string) (connKeywords *wconfig.ConnKeywor
 	sshConfigMu.Lock()
 	defer sshConfigMu.Unlock()
 	WaveSshConfigUserSettings().ReloadConfigs()
-	sshKeywords := &wconfig.ConnKeywords{}
+	sshKeywords := &rtconfig.ConnKeywords{}
 	var err error
 
 	userRaw, err := WaveSshConfigUserSettings().GetStrict(hostPattern, "User")
@@ -1349,7 +1349,7 @@ func findSshConfigKeywords(hostPattern string) (connKeywords *wconfig.ConnKeywor
 				if trimmedSock == "" {
 					log.Printf("SSH_AUTH_SOCK is empty in shell environment")
 				} else {
-					agentPath, err := wavebase.ExpandHomeDir(trimquotes.TryTrimQuotes(trimmedSock))
+					agentPath, err := remotetermbase.ExpandHomeDir(trimquotes.TryTrimQuotes(trimmedSock))
 					if err != nil {
 						return nil, err
 					}
@@ -1360,7 +1360,7 @@ func findSshConfigKeywords(hostPattern string) (connKeywords *wconfig.ConnKeywor
 			}
 		}
 	} else {
-		agentPath, err := wavebase.ExpandHomeDir(trimquotes.TryTrimQuotes(identityAgentRaw))
+		agentPath, err := remotetermbase.ExpandHomeDir(trimquotes.TryTrimQuotes(identityAgentRaw))
 		if err != nil {
 			return nil, err
 		}
@@ -1441,7 +1441,7 @@ func HasPublicKeyAuth(hostPattern string) bool {
 	// exists — ssh's default IdentityFile (~/.ssh/identity) is returned even
 	// when no key is configured, so a non-existent default must not count.
 	for _, identityFile := range keywords.SshIdentityFile {
-		expanded, err := wavebase.ExpandHomeDir(identityFile)
+		expanded, err := remotetermbase.ExpandHomeDir(identityFile)
 		if err != nil {
 			continue
 		}
@@ -1452,8 +1452,8 @@ func HasPublicKeyAuth(hostPattern string) bool {
 	return false
 }
 
-func findSshDefaults(hostPattern string) (connKeywords *wconfig.ConnKeywords, outErr error) {
-	sshKeywords := &wconfig.ConnKeywords{}
+func findSshDefaults(hostPattern string) (connKeywords *rtconfig.ConnKeywords, outErr error) {
+	sshKeywords := &rtconfig.ConnKeywords{}
 
 	userDetails, err := user.Current()
 	if err != nil {
@@ -1497,9 +1497,9 @@ func (opts SSHOpts) String() string {
 	return stringRepr
 }
 
-func mergeKeywords(oldKeywords *wconfig.ConnKeywords, newKeywords *wconfig.ConnKeywords) *wconfig.ConnKeywords {
+func mergeKeywords(oldKeywords *rtconfig.ConnKeywords, newKeywords *rtconfig.ConnKeywords) *rtconfig.ConnKeywords {
 	if oldKeywords == nil {
-		oldKeywords = &wconfig.ConnKeywords{}
+		oldKeywords = &rtconfig.ConnKeywords{}
 	}
 	if newKeywords == nil {
 		return oldKeywords

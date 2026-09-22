@@ -9,12 +9,12 @@ import (
 	"os"
 	"runtime/debug"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/util/shellutil"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
 )
 
 var (
@@ -103,7 +103,7 @@ func getIsTty() bool {
 
 type RunEFnType = func(*cobra.Command, []string) error
 
-func resolveBlockArg() (*waveobj.ORef, error) {
+func resolveBlockArg() (*remotetermobj.ORef, error) {
 	oref := blockArg
 	if oref == "" {
 		oref = "this"
@@ -170,13 +170,13 @@ func setupRpcClient(serverImpl wshutil.ServerImpl, jwtToken string) error {
 }
 
 func isFullORef(orefStr string) bool {
-	_, err := waveobj.ParseORef(orefStr)
+	_, err := remotetermobj.ParseORef(orefStr)
 	return err == nil
 }
 
-func resolveSimpleId(id string) (*waveobj.ORef, error) {
+func resolveSimpleId(id string) (*remotetermobj.ORef, error) {
 	if isFullORef(id) {
-		orefObj, err := waveobj.ParseORef(id)
+		orefObj, err := remotetermobj.ParseORef(id)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing full ORef: %v", err)
 		}

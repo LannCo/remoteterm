@@ -15,19 +15,19 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/baseds"
+	"github.com/LannCo/remoteterm/pkg/panichandler"
+	"github.com/LannCo/remoteterm/pkg/remote/fileshare/wshfs"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/remotetermjwt"
+	"github.com/LannCo/remoteterm/pkg/util/envutil"
+	"github.com/LannCo/remoteterm/pkg/util/packetparser"
+	"github.com/LannCo/remoteterm/pkg/util/sigutil"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshremote"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/baseds"
-	"github.com/wavetermdev/waveterm/pkg/panichandler"
-	"github.com/wavetermdev/waveterm/pkg/remote/fileshare/wshfs"
-	"github.com/wavetermdev/waveterm/pkg/util/envutil"
-	"github.com/wavetermdev/waveterm/pkg/util/packetparser"
-	"github.com/wavetermdev/waveterm/pkg/util/sigutil"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/wavejwt"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshremote"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
 )
 
 var serverCmd = &cobra.Command{
@@ -60,7 +60,7 @@ func init() {
 }
 
 func cleanupOldJobLogs() {
-	jobDir := wavebase.GetRemoteJobLogDir()
+	jobDir := remotetermbase.GetRemoteJobLogDir()
 	entries, err := os.ReadDir(jobDir)
 	if err != nil {
 		return
@@ -115,8 +115,8 @@ func startJobLogCleanup() {
 }
 
 func getRemoteDomainSocketName() string {
-	homeDir := wavebase.GetHomeDir()
-	return filepath.Join(homeDir, wavebase.RemoteWaveHomeDirName, wavebase.RemoteDomainSocketBaseName)
+	homeDir := remotetermbase.GetHomeDir()
+	return filepath.Join(homeDir, remotetermbase.RemoteWaveHomeDirName, remotetermbase.RemoteDomainSocketBaseName)
 }
 
 func MakeRemoteUnixListener() (net.Listener, error) {
@@ -254,7 +254,7 @@ func serverRunRouter() error {
 	if err != nil {
 		return fmt.Errorf("error decoding jwt public key: %v", err)
 	}
-	err = wavejwt.SetPublicKey(jwtPublicKeyBytes)
+	err = remotetermjwt.SetPublicKey(jwtPublicKeyBytes)
 	if err != nil {
 		return fmt.Errorf("error setting jwt public key: %v", err)
 	}
@@ -295,7 +295,7 @@ func serverRunRouterDomainSocket(jwtToken string) error {
 	}
 
 	// connect to the forwarded domain socket
-	sockName = wavebase.ExpandHomeDirSafe(sockName)
+	sockName = remotetermbase.ExpandHomeDirSafe(sockName)
 	conn, err := net.Dial("unix", sockName)
 	if err != nil {
 		return fmt.Errorf("error connecting to domain socket %s: %v", sockName, err)
@@ -354,7 +354,7 @@ func serverRunRouterDomainSocket(jwtToken string) error {
 	if err != nil {
 		return fmt.Errorf("error decoding jwt public key: %v", err)
 	}
-	err = wavejwt.SetPublicKey(jwtPublicKeyBytes)
+	err = remotetermjwt.SetPublicKey(jwtPublicKeyBytes)
 	if err != nil {
 		return fmt.Errorf("error setting jwt public key: %v", err)
 	}
@@ -418,14 +418,14 @@ func serverRunNormal(jwtToken string) error {
 
 func askForJwtToken() (string, error) {
 	// if it already exists in the environment, great, use it
-	jwtToken := wavebase.GetEnvNewOrLegacy(wavebase.WaveJwtTokenVarName, wavebase.LegacyWaveJwtTokenVarName)
+	jwtToken := remotetermbase.GetEnvNewOrLegacy(remotetermbase.WaveJwtTokenVarName, remotetermbase.LegacyWaveJwtTokenVarName)
 	if jwtToken != "" {
 		fmt.Printf("HAVE-JWT\n")
 		return jwtToken, nil
 	}
 
 	// otherwise, ask for it
-	fmt.Printf("%s\n", wavebase.NeedJwtConst)
+	fmt.Printf("%s\n", remotetermbase.NeedJwtConst)
 
 	// read a single line from stdin
 	var line string

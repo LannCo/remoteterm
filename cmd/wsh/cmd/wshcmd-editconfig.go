@@ -6,10 +6,10 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
 var editConfigMagnified bool
@@ -44,10 +44,10 @@ func editConfigRun(cmd *cobra.Command, args []string) (rtnErr error) {
 
 	wshCmd := &wshrpc.CommandCreateBlockData{
 		TabId: tabId,
-		BlockDef: &waveobj.BlockDef{
+		BlockDef: &remotetermobj.BlockDef{
 			Meta: map[string]interface{}{
-				waveobj.MetaKey_View: "waveconfig",
-				waveobj.MetaKey_File: configFile,
+				remotetermobj.MetaKey_View: "waveconfig",
+				remotetermobj.MetaKey_File: configFile,
 			},
 		},
 		Magnified: editConfigMagnified,

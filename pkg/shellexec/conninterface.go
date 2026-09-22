@@ -12,10 +12,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/panichandler"
+	"github.com/LannCo/remoteterm/pkg/util/unixutil"
+	"github.com/LannCo/remoteterm/pkg/wsl"
 	"github.com/creack/pty"
-	"github.com/wavetermdev/waveterm/pkg/panichandler"
-	"github.com/wavetermdev/waveterm/pkg/util/unixutil"
-	"github.com/wavetermdev/waveterm/pkg/wsl"
 	"golang.org/x/crypto/ssh"
 )
 

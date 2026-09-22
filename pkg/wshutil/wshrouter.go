@@ -14,18 +14,22 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/baseds"
+	"github.com/LannCo/remoteterm/pkg/panichandler"
+	"github.com/LannCo/remoteterm/pkg/wps"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
 	"github.com/google/uuid"
-	"github.com/wavetermdev/waveterm/pkg/baseds"
-	"github.com/wavetermdev/waveterm/pkg/panichandler"
-	"github.com/wavetermdev/waveterm/pkg/wps"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
 const (
-	DefaultRoute     = "wavesrv"
-	ElectronRoute    = "electron"
-	ControlRoute     = "$control"      // control plane route
-	ControlRootRoute = "$control:root" // control plane route to root router
+	DefaultRoute = "remotetermsrv"
+	// LegacyDefaultRoute is the pre-rename server route name. A leaked pre-rename wsh/electron
+	// client (or a message with no explicit route) may still address the server by this name for
+	// one release; getLinkForRoute normalizes it to DefaultRoute at lookup time.
+	LegacyDefaultRoute = "wavesrv"
+	ElectronRoute      = "electron"
+	ControlRoute       = "$control"      // control plane route
+	ControlRootRoute   = "$control:root" // control plane route to root router
 
 	ControlPrefix = "$"
 
@@ -609,6 +613,9 @@ func (router *WshRouter) getLinkMeta(linkId baseds.LinkId) *linkMeta {
 func (router *WshRouter) getLinkForRoute(routeId string) *linkMeta {
 	if routeId == "" {
 		return nil
+	}
+	if routeId == LegacyDefaultRoute {
+		routeId = DefaultRoute
 	}
 	router.lock.Lock()
 	defer router.lock.Unlock()

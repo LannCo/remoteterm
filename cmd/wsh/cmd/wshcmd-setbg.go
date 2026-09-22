@@ -11,11 +11,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/util/fileutil"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/util/fileutil"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
 var setBgCmd = &cobra.Command{
@@ -149,7 +149,7 @@ func setBgRun(cmd *cobra.Command, args []string) (rtnErr error) {
 			bgStyle = strings.ToLower(input)
 		} else {
 			// Handle image input
-			absPath, err := filepath.Abs(wavebase.ExpandHomeDirSafe(input))
+			absPath, err := filepath.Abs(remotetermbase.ExpandHomeDirSafe(input))
 			if err != nil {
 				return fmt.Errorf("resolving image path: %v", err)
 			}

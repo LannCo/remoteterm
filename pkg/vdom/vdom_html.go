@@ -10,8 +10,8 @@ import (
 	"io"
 	"strings"
 
+	"github.com/LannCo/remoteterm/pkg/vdom/cssparser"
 	"github.com/wavetermdev/htmltoken"
-	"github.com/wavetermdev/waveterm/pkg/vdom/cssparser"
 )
 
 // can tokenize and bind HTML to Elems

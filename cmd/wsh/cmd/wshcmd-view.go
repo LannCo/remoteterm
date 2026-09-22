@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
 var viewMagnified bool
@@ -62,10 +62,10 @@ func viewRun(cmd *cobra.Command, args []string) (rtnErr error) {
 	if strings.HasPrefix(fileArg, "http://") || strings.HasPrefix(fileArg, "https://") {
 		wshCmd = &wshrpc.CommandCreateBlockData{
 			TabId: tabId,
-			BlockDef: &waveobj.BlockDef{
+			BlockDef: &remotetermobj.BlockDef{
 				Meta: map[string]any{
-					waveobj.MetaKey_View: "web",
-					waveobj.MetaKey_Url:  fileArg,
+					remotetermobj.MetaKey_View: "web",
+					remotetermobj.MetaKey_Url:  fileArg,
 				},
 			},
 			Magnified: viewMagnified,
@@ -89,20 +89,20 @@ func viewRun(cmd *cobra.Command, args []string) (rtnErr error) {
 		}
 		wshCmd = &wshrpc.CommandCreateBlockData{
 			TabId: tabId,
-			BlockDef: &waveobj.BlockDef{
+			BlockDef: &remotetermobj.BlockDef{
 				Meta: map[string]interface{}{
-					waveobj.MetaKey_View: "preview",
-					waveobj.MetaKey_File: absFile,
+					remotetermobj.MetaKey_View: "preview",
+					remotetermobj.MetaKey_File: absFile,
 				},
 			},
 			Magnified: viewMagnified,
 			Focused:   true,
 		}
 		if cmdName == "edit" {
-			wshCmd.BlockDef.Meta[waveobj.MetaKey_Edit] = true
+			wshCmd.BlockDef.Meta[remotetermobj.MetaKey_Edit] = true
 		}
 		if conn != "" {
-			wshCmd.BlockDef.Meta[waveobj.MetaKey_Connection] = conn
+			wshCmd.BlockDef.Meta[remotetermobj.MetaKey_Connection] = conn
 		}
 	}
 	_, err := wshclient.CreateBlockCommand(RpcClient, *wshCmd, &wshrpc.RpcOpts{Timeout: 2000})

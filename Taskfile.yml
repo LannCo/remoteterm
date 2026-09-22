@@ -142,13 +142,13 @@ tasks:
             - npm:install
 
     build:backend:
-        desc: Build the wavesrv and wsh components.
+        desc: Build the remotetermsrv and wsh components.
         cmds:
             - task: build:server
             - task: build:wsh
 
     build:backend:quickdev:
-        desc: Build only the wavesrv component for quickdev (arm64 macOS only, no generate, no wsh).
+        desc: Build only the remotetermsrv component for quickdev (arm64 macOS only, no generate, no wsh).
         cmds:
             - task: build:server:quickdev
         sources:
@@ -166,7 +166,7 @@ tasks:
         desc: Build the schema for configuration.
         sources:
             - "cmd/generateschema/*.go"
-            - "pkg/wconfig/*.go"
+            - "pkg/rtconfig/*.go"
         generates:
             - "dist/schema/**/*"
         cmds:
@@ -176,7 +176,7 @@ tasks:
             - task: copyfiles:'schema':'dist/schema'
 
     build:server:
-        desc: Build the wavesrv component.
+        desc: Build the remotetermsrv component.
         cmds:
             - task: build:server:linux
             - task: build:server:macos
@@ -192,20 +192,20 @@ tasks:
             - tsunami/**/*.go
             - package.json
         generates:
-            - dist/bin/wavesrv.*
+            - dist/bin/remotetermsrv.*
 
     build:server:macos:
-        desc: Build the wavesrv component for macOS (Darwin) platforms (generates artifacts for both arm64 and amd64).
+        desc: Build the remotetermsrv component for macOS (Darwin) platforms (generates artifacts for both arm64 and amd64).
         platforms: [darwin]
         cmds:
-            - cmd: rm -f dist/bin/wavesrv*
+            - cmd: rm -f dist/bin/remotetermsrv*
               ignore_error: true
             - task: build:server:internal
               vars:
                   ARCHS: arm64,amd64
 
     build:server:quickdev:
-        desc: Build the wavesrv component for quickdev (arm64 macOS only, no generate).
+        desc: Build the remotetermsrv component for quickdev (arm64 macOS only, no generate).
         platforms: [darwin]
         cmds:
             - task: build:server:internal
@@ -220,10 +220,10 @@ tasks:
             - "pkg/**/*.sh"
             - "tsunami/**/*.go"
         generates:
-            - dist/bin/wavesrv.*
+            - dist/bin/remotetermsrv.*
 
     build:backend:quickdev:windows:
-        desc: Build only the wavesrv component for quickdev (Windows amd64 only, no generate, no wsh).
+        desc: Build only the remotetermsrv component for quickdev (Windows amd64 only, no generate, no wsh).
         platforms: [windows]
         cmds:
             - task: build:server:internal
@@ -239,13 +239,13 @@ tasks:
             - "pkg/**/*.sh"
             - "tsunami/**/*.go"
         generates:
-            - dist/bin/wavesrv.x64.exe
+            - dist/bin/remotetermsrv.x64.exe
 
     build:server:windows:
-        desc: Build the wavesrv component for Windows platforms (only generates artifacts for the current architecture).
+        desc: Build the remotetermsrv component for Windows platforms (only generates artifacts for the current architecture).
         platforms: [windows]
         cmds:
-            - cmd: powershell -NoProfile -NonInteractive -Command "Remove-Item -Force -ErrorAction SilentlyContinue -Path dist/bin/wavesrv*"
+            - cmd: powershell -NoProfile -NonInteractive -Command "Remove-Item -Force -ErrorAction SilentlyContinue -Path dist/bin/remotetermsrv*"
               ignore_error: true
             - task: build:server:internal
               vars:
@@ -255,10 +255,10 @@ tasks:
                       sh: echo "{{if eq "amd64" ARCH}}CC=\"{{.ZIG}} cc -target x86_64-windows-gnu\"{{else}}CC=\"{{.ZIG}} cc -target aarch64-windows-gnu\"{{end}}"
 
     build:server:linux:
-        desc: Build the wavesrv component for Linux platforms (only generates artifacts for the current architecture).
+        desc: Build the remotetermsrv component for Linux platforms (only generates artifacts for the current architecture).
         platforms: [linux]
         cmds:
-            - cmd: rm -f dist/bin/wavesrv*
+            - cmd: rm -f dist/bin/remotetermsrv*
               ignore_error: true
             - task: build:server:internal
               vars:
@@ -272,7 +272,7 @@ tasks:
             vars:
                 - ARCHS
         cmd:
-            cmd: CGO_ENABLED=1 GOARCH={{.GOARCH}} {{.GO_ENV_VARS}} {{.GO}} build -tags "osusergo,sqlite_omit_load_extension" -ldflags "{{.GO_LDFLAGS}} -X main.BuildTime=$({{.DATE}} +'%Y%m%d%H%M') -X main.WaveVersion={{.VERSION}}" -o dist/bin/wavesrv.{{if eq .GOARCH "amd64"}}x64{{else}}{{.GOARCH}}{{end}}{{exeExt}} cmd/server/main-server.go
+            cmd: CGO_ENABLED=1 GOARCH={{.GOARCH}} {{.GO_ENV_VARS}} {{.GO}} build -tags "osusergo,sqlite_omit_load_extension" -ldflags "{{.GO_LDFLAGS}} -X main.BuildTime=$({{.DATE}} +'%Y%m%d%H%M') -X main.WaveVersion={{.VERSION}}" -o dist/bin/remotetermsrv.{{if eq .GOARCH "amd64"}}x64{{else}}{{.GOARCH}}{{end}}{{exeExt}} cmd/server/main-server.go
             for:
                 var: ARCHS
                 split: ","

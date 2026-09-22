@@ -18,18 +18,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/authkey"
+	"github.com/LannCo/remoteterm/pkg/filestore"
+	"github.com/LannCo/remoteterm/pkg/panichandler"
+	"github.com/LannCo/remoteterm/pkg/remote/fileshare/wshfs"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/schema"
+	"github.com/LannCo/remoteterm/pkg/service"
+	"github.com/LannCo/remoteterm/pkg/util/fileutil"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
-	"github.com/wavetermdev/waveterm/pkg/authkey"
-	"github.com/wavetermdev/waveterm/pkg/filestore"
-	"github.com/wavetermdev/waveterm/pkg/panichandler"
-	"github.com/wavetermdev/waveterm/pkg/remote/fileshare/wshfs"
-	"github.com/wavetermdev/waveterm/pkg/schema"
-	"github.com/wavetermdev/waveterm/pkg/service"
-	"github.com/wavetermdev/waveterm/pkg/util/fileutil"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
 type WebFnType = func(http.ResponseWriter, *http.Request)
@@ -223,7 +223,7 @@ func handleLocalStreamFile(w http.ResponseWriter, r *http.Request, path string, 
 		rw := &notFoundBlockingResponseWriter{w: w, headers: http.Header{}}
 
 		// Serve the file using http.ServeFile
-		path, err := wavebase.ExpandHomeDir(path)
+		path, err := remotetermbase.ExpandHomeDir(path)
 		if err == nil {
 			http.ServeFile(rw, r, filepath.Clean(path))
 			// if the file was not found, serve the transparent GIF
@@ -235,7 +235,7 @@ func handleLocalStreamFile(w http.ResponseWriter, r *http.Request, path string, 
 			serveTransparentGIF(w)
 		}
 	} else {
-		path, err := wavebase.ExpandHomeDir(path)
+		path, err := remotetermbase.ExpandHomeDir(path)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 		}
@@ -428,7 +428,7 @@ func MakeTCPListener(serviceName string) (net.Listener, error) {
 }
 
 func MakeUnixListener() (net.Listener, error) {
-	serverAddr := wavebase.GetDomainSocketName()
+	serverAddr := remotetermbase.GetDomainSocketName()
 	os.Remove(serverAddr) // ignore error
 	rtn, err := net.Listen("unix", serverAddr)
 	if err != nil {
@@ -464,7 +464,7 @@ func RunWebServer(listener net.Listener) {
 	gr.PathPrefix(schemaPrefix).Handler(http.StripPrefix(schemaPrefix, schema.GetSchemaHandler()))
 
 	handler := http.Handler(gr)
-	if wavebase.IsDevMode() {
+	if remotetermbase.IsDevMode() {
 		originalHandler := handler
 		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")

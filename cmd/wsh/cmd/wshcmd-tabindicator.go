@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/LannCo/remoteterm/pkg/baseds"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/wps"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/baseds"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wps"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
 var tabIndicatorCmd = &cobra.Command{
@@ -55,7 +55,7 @@ func tabIndicatorRun(cmd *cobra.Command, args []string) (rtnErr error) {
 		return fmt.Errorf("no tab id specified (use --tabid or set REMOTETERM_TABID)")
 	}
 
-	oref := waveobj.MakeORef(waveobj.OType_Tab, tabId)
+	oref := remotetermobj.MakeORef(remotetermobj.OType_Tab, tabId)
 
 	var eventData baseds.BadgeEvent
 	eventData.ORef = oref.String()

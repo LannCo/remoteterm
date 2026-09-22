@@ -385,7 +385,7 @@ function getElectronAppResourcesPath(): string {
     return process.resourcesPath;
 }
 
-const wavesrvBinName = `wavesrv.${unameArch}`;
+const wavesrvBinName = `remotetermsrv.${unameArch}`;
 
 function getWaveSrvPath(): string {
     if (process.platform === "win32") {

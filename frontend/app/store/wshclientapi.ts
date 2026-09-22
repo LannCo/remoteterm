@@ -102,12 +102,6 @@ export class RpcApiType {
         return client.wshRpcCall("conndisconnect", data, opts);
     }
 
-    // command "connstopautoretry" [call]
-    ConnStopAutoRetryCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<void> {
-        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "connstopautoretry", data, opts);
-        return client.wshRpcCall("connstopautoretry", data, opts);
-    }
-
     // command "connensure" [call]
     ConnEnsureCommand(client: WshClient, data: ConnExtData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "connensure", data, opts);
@@ -136,6 +130,12 @@ export class RpcApiType {
     ConnStatusCommand(client: WshClient, opts?: RpcOpts): Promise<ConnStatus[]> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "connstatus", null, opts);
         return client.wshRpcCall("connstatus", null, opts);
+    }
+
+    // command "connstopautoretry" [call]
+    ConnStopAutoRetryCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "connstopautoretry", data, opts);
+        return client.wshRpcCall("connstopautoretry", data, opts);
     }
 
     // command "connupdatewsh" [call]
@@ -492,28 +492,28 @@ export class RpcApiType {
         return client.wshRpcCall("gitdiff", data, opts);
     }
 
-    // command "gitpush" [call]
-    GitPushCommand(client: WshClient, data: CommandGitPushData, opts?: RpcOpts): Promise<GitPushResponse> {
-        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitpush", data, opts);
-        return client.wshRpcCall("gitpush", data, opts);
-    }
-
     // command "gitlookupcredentials" [call]
     GitLookupCredentialsCommand(client: WshClient, data: CommandGitLookupCredentialsData, opts?: RpcOpts): Promise<GitCredentials> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitlookupcredentials", data, opts);
         return client.wshRpcCall("gitlookupcredentials", data, opts);
     }
 
-    // command "gitsavecredentials" [call]
-    GitSaveCredentialsCommand(client: WshClient, data: CommandGitSaveCredentialsData, opts?: RpcOpts): Promise<void> {
-        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitsavecredentials", data, opts);
-        return client.wshRpcCall("gitsavecredentials", data, opts);
+    // command "gitpush" [call]
+    GitPushCommand(client: WshClient, data: CommandGitPushData, opts?: RpcOpts): Promise<GitPushResponse> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitpush", data, opts);
+        return client.wshRpcCall("gitpush", data, opts);
     }
 
     // command "gitreverthunk" [call]
     GitRevertHunkCommand(client: WshClient, data: CommandGitRevertHunkData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitreverthunk", data, opts);
         return client.wshRpcCall("gitreverthunk", data, opts);
+    }
+
+    // command "gitsavecredentials" [call]
+    GitSaveCredentialsCommand(client: WshClient, data: CommandGitSaveCredentialsData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitsavecredentials", data, opts);
+        return client.wshRpcCall("gitsavecredentials", data, opts);
     }
 
     // command "gitstage" [call]

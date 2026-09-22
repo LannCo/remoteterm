@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/wavetermdev/waveterm/tsunami/app"
-	"github.com/wavetermdev/waveterm/tsunami/vdom"
+	"github.com/LannCo/remoteterm/tsunami/app"
+	"github.com/LannCo/remoteterm/tsunami/vdom"
 )
 
 var AppMeta = app.AppMeta{
@@ -35,8 +35,8 @@ var App = app.DefineComponent("App", func(_ struct{}) any {
 
 	handleShowAlertSimple := func() {
 		triggerAlert(app.ModalConfig{
-			Title: "Simple Alert",
-			Text:  "This alert has no icon and custom OK text.",
+			Title:  "Simple Alert",
+			Text:   "This alert has no icon and custom OK text.",
 			OkText: "Got it!",
 			OnClose: func() {
 				alertResult.Set("Simple alert dismissed")

@@ -10,10 +10,10 @@ import (
 	"os"
 	"reflect"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtconfig"
+	"github.com/LannCo/remoteterm/pkg/util/utilfn"
 	"github.com/invopop/jsonschema"
-	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
 )
 
 const WaveSchemaSettingsFileName = "schema/settings.json"
@@ -139,7 +139,7 @@ func generateSchema(template any, dir string, allowNull bool) error {
 }
 
 func generateWidgetsSchema(dir string) error {
-	metaT := reflect.TypeOf(waveobj.MetaMapType(nil))
+	metaT := reflect.TypeOf(remotetermobj.MetaMapType(nil))
 
 	// Build the hints schema once using an expanded reflector
 	hr := &jsonschema.Reflector{
@@ -161,7 +161,7 @@ func generateWidgetsSchema(dir string) error {
 		return nil
 	}
 
-	widgetsTemplate := make(map[string]wconfig.WidgetConfigType)
+	widgetsTemplate := make(map[string]rtconfig.WidgetConfigType)
 	widgetsSchema := r.Reflect(&widgetsTemplate)
 	allowNullValues(widgetsSchema)
 
@@ -180,12 +180,12 @@ func generateWidgetsSchema(dir string) error {
 }
 
 func main() {
-	err := generateSchema(&wconfig.SettingsType{}, WaveSchemaSettingsFileName, false)
+	err := generateSchema(&rtconfig.SettingsType{}, WaveSchemaSettingsFileName, false)
 	if err != nil {
 		log.Fatalf("settings schema error: %v", err)
 	}
 
-	connectionTemplate := make(map[string]wconfig.ConnKeywords)
+	connectionTemplate := make(map[string]rtconfig.ConnKeywords)
 	err = generateSchema(&connectionTemplate, WaveSchemaConnectionsFileName, false)
 	if err != nil {
 		log.Fatalf("connections schema error: %v", err)
@@ -196,11 +196,10 @@ func main() {
 		log.Fatalf("widgets schema error: %v", err)
 	}
 
-	backgroundsTemplate := make(map[string]wconfig.BackgroundConfigType)
+	backgroundsTemplate := make(map[string]rtconfig.BackgroundConfigType)
 	err = generateSchema(&backgroundsTemplate, WaveSchemaBackgroundsFileName, true)
 	if err != nil {
 		log.Fatalf("backgrounds schema error: %v", err)
 	}
-
 
 }

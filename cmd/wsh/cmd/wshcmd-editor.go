@@ -9,11 +9,11 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/wps"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wps"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
 var editMagnified bool
@@ -61,18 +61,18 @@ func editorRun(cmd *cobra.Command, args []string) (rtnErr error) {
 
 	wshCmd := wshrpc.CommandCreateBlockData{
 		TabId: tabId,
-		BlockDef: &waveobj.BlockDef{
+		BlockDef: &remotetermobj.BlockDef{
 			Meta: map[string]any{
-				waveobj.MetaKey_View: "preview",
-				waveobj.MetaKey_File: absFile,
-				waveobj.MetaKey_Edit: true,
+				remotetermobj.MetaKey_View: "preview",
+				remotetermobj.MetaKey_File: absFile,
+				remotetermobj.MetaKey_Edit: true,
 			},
 		},
 		Magnified: editMagnified,
 		Focused:   true,
 	}
 	if RpcContext.Conn != "" {
-		wshCmd.BlockDef.Meta[waveobj.MetaKey_Connection] = RpcContext.Conn
+		wshCmd.BlockDef.Meta[remotetermobj.MetaKey_Connection] = RpcContext.Conn
 	}
 	blockRef, err := wshclient.CreateBlockCommand(RpcClient, wshCmd, &wshrpc.RpcOpts{Timeout: 2000})
 	if err != nil {

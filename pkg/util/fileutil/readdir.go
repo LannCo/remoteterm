@@ -11,8 +11,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/util/utilfn"
 )
 
 type DirEntryOut struct {
@@ -36,7 +36,7 @@ type ReadDirResult struct {
 }
 
 func ReadDir(path string, maxEntries int) (*ReadDirResult, error) {
-	expandedPath, err := wavebase.ExpandHomeDir(path)
+	expandedPath, err := remotetermbase.ExpandHomeDir(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to expand path: %w", err)
 	}
@@ -137,7 +137,7 @@ func ReadDir(path string, maxEntries int) (*ReadDirResult, error) {
 }
 
 func ReadDirRecursive(path string, maxEntries int) (*ReadDirResult, error) {
-	expandedPath, err := wavebase.ExpandHomeDir(path)
+	expandedPath, err := remotetermbase.ExpandHomeDir(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to expand path: %w", err)
 	}

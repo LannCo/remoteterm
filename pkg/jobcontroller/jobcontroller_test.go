@@ -13,15 +13,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wavetermdev/waveterm/pkg/panichandler"
-	"github.com/wavetermdev/waveterm/pkg/remote"
-	"github.com/wavetermdev/waveterm/pkg/remote/conncontroller"
-	"github.com/wavetermdev/waveterm/pkg/streamclient"
-	"github.com/wavetermdev/waveterm/pkg/util/ds"
-	"github.com/wavetermdev/waveterm/pkg/utilds"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wps"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/panichandler"
+	"github.com/LannCo/remoteterm/pkg/remote"
+	"github.com/LannCo/remoteterm/pkg/remote/conncontroller"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/streamclient"
+	"github.com/LannCo/remoteterm/pkg/util/ds"
+	"github.com/LannCo/remoteterm/pkg/utilds"
+	"github.com/LannCo/remoteterm/pkg/wps"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
 )
 
 func TestShouldAttemptAutoReconnect(t *testing.T) {
@@ -471,7 +471,7 @@ func TestAttemptAutoReconnectSetsCooldownWhenUp(t *testing.T) {
 	}
 	defer func() { isConnectedTestHook = nil }()
 
-	// Stub out ReconnectJobRoute so we don't need wstore / rpc infrastructure
+	// Stub out ReconnectJobRoute so we don't need rtstore / rpc infrastructure
 	var reconnectCalled int32
 	reconnectRouteGroup.Do("job-f", func() (any, error) {
 		atomic.AddInt32(&reconnectCalled, 1)
@@ -599,13 +599,13 @@ func TestOnConnectionUpPerJobCtxNoStarvation(t *testing.T) {
 	}()
 
 	connName := "conn:starvation"
-	jobs := []*waveobj.Job{
+	jobs := []*remotetermobj.Job{
 		{OID: "job-1", Connection: connName, JobManagerStatus: JobManagerStatus_Running},
 		{OID: "job-2", Connection: connName, JobManagerStatus: JobManagerStatus_Running},
 		{OID: "job-3", Connection: connName, JobManagerStatus: JobManagerStatus_Running},
 	}
 
-	getAllJobsForConnTestHook = func(connName string) ([]*waveobj.Job, error) {
+	getAllJobsForConnTestHook = func(connName string) ([]*remotetermobj.Job, error) {
 		return jobs, nil
 	}
 
@@ -676,12 +676,12 @@ func TestOnConnectionUpRetryRecoversFailedJobs(t *testing.T) {
 	retryBackoffs = []time.Duration{10 * time.Millisecond, 20 * time.Millisecond, 40 * time.Millisecond}
 
 	connName := "conn:retry"
-	jobs := []*waveobj.Job{
+	jobs := []*remotetermobj.Job{
 		{OID: "job-1", Connection: connName, JobManagerStatus: JobManagerStatus_Running},
 		{OID: "job-2", Connection: connName, JobManagerStatus: JobManagerStatus_Running},
 	}
 
-	getAllJobsForConnTestHook = func(connName string) ([]*waveobj.Job, error) {
+	getAllJobsForConnTestHook = func(connName string) ([]*remotetermobj.Job, error) {
 		return jobs, nil
 	}
 
@@ -707,8 +707,8 @@ func TestOnConnectionUpRetryRecoversFailedJobs(t *testing.T) {
 	}
 
 	// getJobTestHook returns Running so the retry doesn't skip as Done.
-	getJobTestHook = func(jobId string) (*waveobj.Job, error) {
-		return &waveobj.Job{OID: jobId, JobManagerStatus: JobManagerStatus_Running}, nil
+	getJobTestHook = func(jobId string) (*remotetermobj.Job, error) {
+		return &remotetermobj.Job{OID: jobId, JobManagerStatus: JobManagerStatus_Running}, nil
 	}
 
 	onConnectionUp(connName)
@@ -750,11 +750,11 @@ func TestOnConnectionUpRetryAbortsOnConnDown(t *testing.T) {
 	retryBackoffs = []time.Duration{10 * time.Millisecond, 20 * time.Millisecond, 40 * time.Millisecond}
 
 	connName := "conn:abort"
-	jobs := []*waveobj.Job{
+	jobs := []*remotetermobj.Job{
 		{OID: "job-1", Connection: connName, JobManagerStatus: JobManagerStatus_Running},
 	}
 
-	getAllJobsForConnTestHook = func(connName string) ([]*waveobj.Job, error) {
+	getAllJobsForConnTestHook = func(connName string) ([]*remotetermobj.Job, error) {
 		return jobs, nil
 	}
 
@@ -805,11 +805,11 @@ func TestOnConnectionUpRetrySkipsDoneJobs(t *testing.T) {
 	retryBackoffs = []time.Duration{10 * time.Millisecond, 20 * time.Millisecond, 40 * time.Millisecond}
 
 	connName := "conn:skipdone"
-	jobs := []*waveobj.Job{
+	jobs := []*remotetermobj.Job{
 		{OID: "job-1", Connection: connName, JobManagerStatus: JobManagerStatus_Running},
 	}
 
-	getAllJobsForConnTestHook = func(connName string) ([]*waveobj.Job, error) {
+	getAllJobsForConnTestHook = func(connName string) ([]*remotetermobj.Job, error) {
 		return jobs, nil
 	}
 
@@ -826,8 +826,8 @@ func TestOnConnectionUpRetrySkipsDoneJobs(t *testing.T) {
 	}
 
 	// getJobTestHook returns Done so the retry skips it.
-	getJobTestHook = func(jobId string) (*waveobj.Job, error) {
-		return &waveobj.Job{OID: jobId, JobManagerStatus: JobManagerStatus_Done}, nil
+	getJobTestHook = func(jobId string) (*remotetermobj.Job, error) {
+		return &remotetermobj.Job{OID: jobId, JobManagerStatus: JobManagerStatus_Done}, nil
 	}
 
 	onConnectionUp(connName)
@@ -1127,7 +1127,7 @@ func TestRunOutputLoopExitsOnReaderCloseWithSupersession(t *testing.T) {
 	}
 
 	// Verify the loop exited via supersession (health.active == false, streamId matches old).
-	// If it had hit the error path, it would have called wstore.DBUpdateFn / tryTerminateJobManager
+	// If it had hit the error path, it would have called rtstore.DBUpdateFn / tryTerminateJobManager
 	// (which would panic or log without a DB — the test would fail there).
 	health, ok := jobStreamHealth.GetEx(jobId)
 	if !ok {
@@ -1169,8 +1169,8 @@ func TestRestartStreamingClosesPrevReader(t *testing.T) {
 		t.Fatalf("expected to retrieve reader1 from jobReaders")
 	}
 	jobStreamIds.Set(jobId, "stream-2") // update BEFORE closing (supersession check)
-	prevReader.Close()                   // safe — unblocks old runOutputLoop
-	jobReaders.Set(jobId, reader2)       // store new reader
+	prevReader.Close()                  // safe — unblocks old runOutputLoop
+	jobReaders.Set(jobId, reader2)      // store new reader
 
 	// Verify jobReaders now holds reader2.
 	currentReader, ok := jobReaders.GetEx(jobId)
