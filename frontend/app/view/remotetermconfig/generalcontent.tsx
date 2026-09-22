@@ -1063,6 +1063,13 @@ export function parseNumberInput(raw: string, min?: number, max?: number): numbe
     return next;
 }
 
+// A spin-button click blurs the input first, committing the typed draft, but `value` only
+// catches up after the settings round-trip, so stepping from `value` would overwrite the draft.
+export function bumpNumberInput(draft: string, value: number, delta: number, min?: number, max?: number): number {
+    const base = parseNumberInput(draft, min, max) ?? value;
+    return parseNumberInput(String(base + delta), min, max);
+}
+
 const NumberControl = memo(
     ({ value, unit, min, max, step = 1, onChange, fieldLabel, labelledBy, describedBy }: NumberControlProps) => {
         const [local, setLocal] = useState(String(value));
@@ -1085,7 +1092,9 @@ const NumberControl = memo(
 
         const bump = (delta: number) => {
             setDirty(false);
-            onChange(parseNumberInput(String(value + delta), min, max));
+            const next = bumpNumberInput(local, value, delta, min, max);
+            setLocal(String(next));
+            onChange(next);
         };
 
         return (

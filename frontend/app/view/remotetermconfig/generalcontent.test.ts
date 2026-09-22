@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { assert, test } from "vitest";
-import { FieldSchemas, filterFieldSchemas, matchesFieldSearch, parseNumberInput } from "./generalcontent";
+import {
+    bumpNumberInput,
+    FieldSchemas,
+    filterFieldSchemas,
+    matchesFieldSearch,
+    parseNumberInput,
+} from "./generalcontent";
 
 test("every FieldSchema has a non-empty description", () => {
     for (const schema of FieldSchemas) {
@@ -76,4 +82,19 @@ test("no FieldSchema label or description uses the upstream Wave product name", 
         const text = `${schema.label} ${schema.description}`;
         assert(!/\bWave\b/.test(text), `${String(schema.key)} still says "Wave": ${text}`);
     }
+});
+
+test("bumpNumberInput steps from the typed draft, not the stale committed value", () => {
+    assert.strictEqual(bumpNumberInput("50", 10, 1), 51);
+    assert.strictEqual(bumpNumberInput("50", 10, -1), 49);
+});
+
+test("bumpNumberInput falls back to the committed value for an empty or invalid draft", () => {
+    assert.strictEqual(bumpNumberInput("", 10, 1), 11);
+    assert.strictEqual(bumpNumberInput("abc", 10, -1), 9);
+});
+
+test("bumpNumberInput clamps the stepped value", () => {
+    assert.strictEqual(bumpNumberInput("20", 10, 1, 0, 20), 20);
+    assert.strictEqual(bumpNumberInput("0", 10, -1, 0, 20), 0);
 });
