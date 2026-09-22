@@ -152,7 +152,7 @@ const AddSecretForm = memo(
                         placeholder="MY_SECRET_NAME"
                         disabled={isLoading}
                     />
-                    <div id={nameHintId} className={cn("text-caption", isNameInvalid ? "text-error" : "text-muted")}>
+                    <div id={nameHintId} className={`text-caption ${isNameInvalid ? "text-primary" : "text-muted"}`}>
                         {isNameInvalid && "Invalid name. "}
                         Must start with a letter and contain only letters, numbers, and underscores
                     </div>
