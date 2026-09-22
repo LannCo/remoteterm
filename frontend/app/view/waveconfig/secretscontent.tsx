@@ -62,8 +62,8 @@ interface SecretListPanelProps {
 
 const SecretListPanel = memo(({ secretNames, selectedSecret, onSelectSecret, onAddSecret }: SecretListPanelProps) => {
     return (
-        <div className="w-[220px] shrink-0 flex flex-col gap-1.5 overflow-y-auto">
-            <div className="text-[10.5px] font-semibold uppercase tracking-wide text-muted px-1 pb-0.5">
+        <div className="w-[220px] @max-w450:w-[170px] shrink-0 flex flex-col gap-1.5 overflow-y-auto">
+            <div className="text-caption font-semibold uppercase tracking-wide text-muted px-1 pb-0.5">
                 Stored secrets
             </div>
             {secretNames.map((name) => (
@@ -79,7 +79,7 @@ const SecretListPanel = memo(({ secretNames, selectedSecret, onSelectSecret, onA
                     onClick={() => onSelectSecret(name)}
                 >
                     <span className="truncate">{name}</span>
-                    <i className="fa-sharp fa-solid fa-chevron-right text-[10px] text-muted shrink-0" />
+                    <i className="fa-sharp fa-solid fa-chevron-right text-xxs text-muted shrink-0" />
                 </button>
             ))}
             <button
@@ -131,7 +131,7 @@ const AddSecretForm = memo(
             <div className="flex flex-col gap-3.5 h-full min-h-0">
                 <h3 className="text-sm font-semibold">Add New Secret</h3>
                 <div className="flex flex-col gap-1.5">
-                    <label className="text-[11px] text-muted">Name</label>
+                    <label className="text-caption text-muted">Name</label>
                     <input
                         type="text"
                         className={cn(
@@ -143,14 +143,14 @@ const AddSecretForm = memo(
                         placeholder="MY_SECRET_NAME"
                         disabled={isLoading}
                     />
-                    <div className="text-[11px] text-muted">
+                    <div className="text-caption text-muted">
                         Must start with a letter and contain only letters, numbers, and underscores
                     </div>
                 </div>
                 <div className="flex flex-col gap-1.5">
-                    <label className="text-[11px] text-muted">Value</label>
+                    <label className="text-caption text-muted">Value</label>
                     <textarea
-                        className="px-2.5 py-1.5 bg-black/20 border border-border rounded-md focus:outline-none focus:border-accent font-mono text-xs"
+                        className="w-full px-2.5 py-1.5 bg-black/20 border border-border rounded-md focus:outline-none focus:border-accent font-mono text-xs"
                         value={newSecretValue}
                         onChange={(e) => onValueChange(e.target.value)}
                         placeholder="Enter secret value..."
@@ -206,11 +206,11 @@ const SecretDetailView = memo(({ model }: SecretDetailViewProps) => {
     return (
         <div className="flex flex-col gap-3.5 h-full min-h-0">
             <div>
-                <label className="text-[11px] text-muted block mb-1">Name</label>
+                <label className="text-caption text-muted block mb-1">Name</label>
                 <div className="font-mono text-sm font-semibold">{secretName}</div>
             </div>
             <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] text-muted">Value</label>
+                <label className="text-caption text-muted">Value</label>
                 <textarea
                     ref={(ref) => {
                         model.secretValueRef = ref;
@@ -218,7 +218,7 @@ const SecretDetailView = memo(({ model }: SecretDetailViewProps) => {
                             ref.focus();
                         }
                     }}
-                    className="px-2.5 py-1.5 bg-black/20 border border-border rounded-md focus:outline-none focus:border-accent font-mono text-xs"
+                    className="w-full px-2.5 py-1.5 bg-black/20 border border-border rounded-md focus:outline-none focus:border-accent font-mono text-xs"
                     value={secretValue}
                     onChange={(e) => setSecretValue(e.target.value)}
                     onKeyDown={(e) => {
@@ -232,7 +232,7 @@ const SecretDetailView = memo(({ model }: SecretDetailViewProps) => {
                 />
                 {!secretShown &&
                     (isLoading ? (
-                        <div className="text-[11px] text-muted">
+                        <div className="text-caption text-muted">
                             <i className="fa-sharp fa-solid fa-spinner fa-spin" /> Loading...
                         </div>
                     ) : (
@@ -248,7 +248,7 @@ const SecretDetailView = memo(({ model }: SecretDetailViewProps) => {
             </div>
             <div className="flex items-center gap-2 px-3 py-2 bg-accent/5 border border-accent/25 rounded-md max-w-[420px]">
                 <i className="fa-sharp fa-solid fa-lock text-accent" />
-                <span className="text-[11px] text-secondary">
+                <span className="text-caption text-secondary">
                     Stored in your OS keychain — CLI access via{" "}
                     <code className="font-mono text-primary">wsh secret get {secretName}</code>
                 </span>
@@ -341,7 +341,7 @@ export const SecretsContent = memo(({ model }: SecretsContentProps) => {
 
     if (secretNames.length === 0 && !isAddingNew) {
         return (
-            <div className="w-full h-full p-4 flex flex-col gap-3">
+            <div className="w-full h-full p-4 flex flex-col gap-4">
                 {errorMessage && <ErrorDisplay message={errorMessage} />}
                 <div className="flex-1">
                     <EmptyState onAddSecret={() => model.startAddingSecret()} />
@@ -373,7 +373,7 @@ export const SecretsContent = memo(({ model }: SecretsContentProps) => {
     };
 
     return (
-        <div className="flex flex-col gap-3 w-full h-full p-4 min-h-0">
+        <div className="flex flex-col gap-4 w-full h-full p-4 min-h-0">
             {errorMessage && <ErrorDisplay message={errorMessage} />}
             <div className="flex-1 flex gap-4 min-h-0">
                 <SecretListPanel

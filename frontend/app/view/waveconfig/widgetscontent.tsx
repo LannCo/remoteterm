@@ -106,7 +106,7 @@ const WidgetOrderRow = memo(
                     isDragging && "opacity-40"
                 )}
             >
-                <i className="fa-sharp fa-solid fa-grip-dots-vertical text-[10px] text-muted shrink-0" />
+                <i className="fa-sharp fa-solid fa-grip-dots-vertical text-xxs text-muted shrink-0" />
                 <div
                     className="w-[26px] h-[26px] rounded-md flex items-center justify-center shrink-0"
                     style={widgetIconBoxStyle(widget.color)}
@@ -175,8 +175,8 @@ const WidgetOrderPanel = memo(({ model }: WidgetOrderPanelProps) => {
     );
 
     return (
-        <div className="w-[340px] shrink-0 flex flex-col gap-1.5 overflow-y-auto">
-            <div className="text-[10.5px] font-semibold uppercase tracking-wide text-muted px-1 pb-0.5">
+        <div className="w-[340px] @max-w600:w-[260px] @max-w450:w-[200px] shrink-0 flex flex-col gap-1.5 overflow-y-auto">
+            <div className="text-caption font-semibold uppercase tracking-wide text-muted px-1 pb-0.5">
                 Widget order &middot; drag to reorder
             </div>
             {localKeys.map((key, idx) => {
@@ -218,29 +218,31 @@ const LivePreviewRail = memo(({ model }: LivePreviewRailProps) => {
     const previewWidgets = useAtomValue(model.widgetsPreviewAtom);
 
     return (
-        <div className="flex-1 flex flex-col gap-2.5 min-w-0">
-            <div className="text-[10.5px] font-semibold uppercase tracking-wide text-muted">Live preview</div>
-            <div className="w-16 bg-panel border border-border rounded-lg py-2.5 flex flex-col items-center gap-3.5">
-                {previewWidgets.map((widget, idx) => (
-                    <div
-                        key={idx}
-                        className={cn(
-                            "w-[30px] h-[30px] rounded-lg flex items-center justify-center text-[15px]",
-                            widget["display:hidden"] && "hidden"
-                        )}
-                        style={widgetIconBoxStyle(widget.color)}
-                        title={isBlank(widget.label) ? undefined : widget.label}
-                    >
-                        <i
-                            className={makeIconClass(widget.icon, true, { defaultIcon: "browser" })}
-                            style={isBlank(widget.color) ? undefined : { color: widget.color }}
-                        />
-                    </div>
-                ))}
-            </div>
-            <div className="text-[11px] text-muted max-w-[220px] leading-relaxed">
-                Reflects the toggle at left instantly &mdash; this is the same order/filter logic that renders the real
-                sidebar rail for the current workspace, not a redrawn approximation.
+        <div className="flex-1 min-w-0 flex flex-col items-center">
+            <div className="w-full max-w-[220px] flex flex-col gap-2.5">
+                <div className="text-caption font-semibold uppercase tracking-wide text-muted">Live preview</div>
+                <div className="w-16 bg-panel border border-border rounded-lg py-2.5 flex flex-col items-center gap-3.5 self-center">
+                    {previewWidgets.map((widget, idx) => (
+                        <div
+                            key={idx}
+                            className={cn(
+                                "w-[30px] h-[30px] rounded-lg flex items-center justify-center text-[15px]",
+                                widget["display:hidden"] && "hidden"
+                            )}
+                            style={widgetIconBoxStyle(widget.color)}
+                            title={isBlank(widget.label) ? undefined : widget.label}
+                        >
+                            <i
+                                className={makeIconClass(widget.icon, true, { defaultIcon: "browser" })}
+                                style={isBlank(widget.color) ? undefined : { color: widget.color }}
+                            />
+                        </div>
+                    ))}
+                </div>
+                <div className="text-caption text-muted leading-relaxed">
+                    Reflects the toggle at left instantly &mdash; this is the same order/filter logic that renders the
+                    real sidebar rail for the current workspace, not a redrawn approximation.
+                </div>
             </div>
         </div>
     );
@@ -253,7 +255,7 @@ interface WidgetsContentProps {
 
 export const WidgetsContent = memo(({ model }: WidgetsContentProps) => {
     return (
-        <div className="flex gap-5 w-full h-full p-4 min-h-0 overflow-hidden">
+        <div className="flex gap-4 w-full h-full p-4 min-h-0 overflow-hidden">
             <WidgetOrderPanel model={model} />
             <LivePreviewRail model={model} />
         </div>

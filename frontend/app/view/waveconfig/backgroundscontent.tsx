@@ -48,9 +48,9 @@ const BackgroundTile = memo(({ label, bg, active, onClick }: BackgroundTileProps
                 className="h-16 bg-panel"
                 style={isBlank(bg) ? undefined : { background: bg, opacity: SwatchPreviewOpacity }}
             />
-            <div className="px-2 py-1.5 bg-modalbg text-[11px] truncate">{label}</div>
+            <div className="px-2 py-1.5 bg-modalbg text-caption truncate">{label}</div>
             {active && (
-                <i className="fa-sharp fa-solid fa-check absolute top-1 right-1 text-[10px] bg-accent text-background rounded-full p-1" />
+                <i className="fa-sharp fa-solid fa-check absolute top-1 right-1 text-xxs bg-accent text-background rounded-full p-1" />
             )}
         </button>
     );
@@ -134,9 +134,11 @@ const BackgroundDetailPanel = memo(({ model, activeKey, background }: Background
                 style={{ background: background.bg, opacity: SwatchPreviewOpacity }}
             />
             <div className="flex-1 min-w-0">
-                <div className="text-xs font-semibold truncate">{background["display:name"]} &mdash; editing preset</div>
+                <div className="text-xs font-semibold truncate">
+                    {background["display:name"]} &mdash; editing preset
+                </div>
                 <div className="flex gap-5 mt-2">
-                    <label className="flex flex-col gap-1 text-[11px] text-muted">
+                    <label className="flex flex-col gap-1 text-caption text-muted">
                         Opacity
                         <input
                             type="range"
@@ -150,12 +152,12 @@ const BackgroundDetailPanel = memo(({ model, activeKey, background }: Background
                             className="w-36 accent-accent cursor-pointer"
                         />
                     </label>
-                    <label className="flex flex-col gap-1 text-[11px] text-muted">
+                    <label className="flex flex-col gap-1 text-caption text-muted">
                         Blend mode
                         <select
                             value={background["bg:blendmode"] ?? "normal"}
                             onChange={(e) => model.updateBackgroundBlendMode(activeKey, e.target.value)}
-                            className="rounded border border-border bg-background px-1.5 py-1 text-foreground text-[11px] cursor-pointer"
+                            className="rounded border border-border bg-background px-1.5 py-1 text-foreground text-caption cursor-pointer"
                         >
                             {BlendModes.map((mode) => (
                                 <option key={mode} value={mode}>
@@ -185,12 +187,8 @@ export const BackgroundsContent = memo(({ model }: BackgroundsContentProps) => {
 
     return (
         <div className="flex flex-col gap-4 w-full h-full p-4 overflow-y-auto">
-            <div className="grid grid-cols-3 @w450:grid-cols-4 @w600:grid-cols-5 gap-3">
-                <BackgroundTile
-                    label="Default"
-                    active={!activeKey}
-                    onClick={() => model.applyBackgroundToTab(null)}
-                />
+            <div className="grid grid-cols-3 @w450:grid-cols-4 @w600:grid-cols-5 @w900:grid-cols-6 gap-3">
+                <BackgroundTile label="Default" active={!activeKey} onClick={() => model.applyBackgroundToTab(null)} />
                 {backgroundsOrdered.map(([key, background]) => (
                     <BackgroundTile
                         key={key}
@@ -203,7 +201,7 @@ export const BackgroundsContent = memo(({ model }: BackgroundsContentProps) => {
                 <button
                     type="button"
                     onClick={() => model.openBackgroundAdd()}
-                    className="flex flex-col items-center justify-center gap-1 h-[94px] rounded-md border border-dashed border-border text-muted text-[11px] cursor-pointer hover:border-accent/60 hover:text-secondary transition-colors"
+                    className="flex flex-col items-center justify-center gap-1 h-[94px] rounded-md border border-dashed border-border text-muted text-caption cursor-pointer hover:border-accent/60 hover:text-secondary transition-colors"
                 >
                     <i className="fa-sharp fa-solid fa-plus" />
                     New background

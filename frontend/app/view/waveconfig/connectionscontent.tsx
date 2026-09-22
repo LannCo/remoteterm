@@ -33,7 +33,7 @@ const ViewToggle = memo(({ view, onChange }: ViewToggleProps) => {
                 onClick={() => onChange("keychain")}
             >
                 Keychain
-                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-warning/15 text-warning">concept</span>
+                <span className="text-xxs px-1.5 py-0.5 rounded-full bg-warning/15 text-warning">concept</span>
             </button>
         </div>
     );
@@ -157,8 +157,8 @@ const HostsList = memo(({ names, connStatusMap }: HostsListProps) => {
     }
 
     return (
-        <div className="flex flex-col gap-1.5 overflow-y-auto">
-            <div className="grid grid-cols-[14px_20px_1fr_90px] gap-2.5 px-2 text-[10px] font-semibold uppercase tracking-wide text-muted">
+        <div className="flex-1 min-h-0 flex flex-col gap-1.5 overflow-y-auto">
+            <div className="grid grid-cols-[14px_20px_1fr_90px] gap-2.5 px-2 text-xxs font-semibold uppercase tracking-wide text-muted">
                 <span />
                 <span />
                 <span>Connection</span>
@@ -174,7 +174,7 @@ const HostsList = memo(({ names, connStatusMap }: HostsListProps) => {
                     >
                         <span className={cn("w-1.5 h-1.5 rounded-full justify-self-center", statusDotClass(status))} />
                         <span className="w-5 h-5 rounded flex items-center justify-center bg-surface text-secondary">
-                            <i className="fa-sharp fa-solid fa-server text-[10px]" />
+                            <i className="fa-sharp fa-solid fa-server text-xxs" />
                         </span>
                         <span className="font-mono text-xs truncate">{name}</span>
                         <span className="text-xs text-muted-foreground">
@@ -216,10 +216,10 @@ const KeychainRow = memo(({ icon, name, subtitle, type, fingerprint, usedBy }: K
             <i className={cn("fa-sharp fa-solid text-secondary text-sm", icon)} />
             <span>
                 <div className="text-sm">{name}</div>
-                <div className="text-[10px] text-muted">{subtitle}</div>
+                <div className="text-xxs text-muted">{subtitle}</div>
             </span>
-            <span className="text-[10px] text-secondary bg-surface rounded-full px-1.5 py-0.5 w-fit">{type}</span>
-            <span className="font-mono text-[10px] text-muted">{fingerprint}</span>
+            <span className="text-xxs text-secondary bg-surface rounded-full px-1.5 py-0.5 w-fit">{type}</span>
+            <span className="font-mono text-xxs text-muted">{fingerprint}</span>
             <span className="text-xs text-secondary">{usedBy}</span>
             <i className="fa-sharp fa-solid fa-ellipsis text-muted justify-self-end" />
         </div>
@@ -231,7 +231,7 @@ const KeychainView = memo(() => {
     return (
         <div className="flex flex-col gap-2.5">
             <KeychainBanner />
-            <div className="grid grid-cols-[22px_1.4fr_80px_1fr_80px_16px] gap-2.5 px-2.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
+            <div className="grid grid-cols-[22px_1.4fr_80px_1fr_80px_16px] gap-2.5 px-2.5 text-xxs font-semibold uppercase tracking-wide text-muted">
                 <span />
                 <span>Key</span>
                 <span>Type</span>
@@ -289,7 +289,7 @@ export const ConnectionsContent = memo(({ model }: ConnectionsContentProps) => {
 
     if (view === "keychain") {
         return (
-            <div className="flex flex-col gap-2.5 w-full h-full p-4">
+            <div className="flex flex-col gap-4 w-full h-full p-4">
                 <div className="flex items-center gap-2.5">
                     <ViewToggle view={view} onChange={setView} />
                 </div>
@@ -299,7 +299,7 @@ export const ConnectionsContent = memo(({ model }: ConnectionsContentProps) => {
     }
 
     return (
-        <div className="flex flex-col gap-2.5 w-full h-full p-4 min-h-0">
+        <div className="flex flex-col gap-4 w-full h-full p-4 min-h-0">
             <HostsHeader model={model} view={view} quickAddOpen={quickAddOpen} />
             <HostsList names={filteredNames} connStatusMap={connStatusMap} />
         </div>

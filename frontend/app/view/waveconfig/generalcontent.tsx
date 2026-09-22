@@ -601,7 +601,7 @@ const ResetButton = memo(({ onClick, label }: ResetButtonProps) => (
         title={label}
         className="w-[22px] h-[22px] rounded-md border-none bg-transparent text-muted hover:text-secondary flex items-center justify-center cursor-pointer shrink-0"
     >
-        <i className="fa-sharp fa-solid fa-arrow-rotate-left text-[11px]" />
+        <i className="fa-sharp fa-solid fa-arrow-rotate-left text-caption" />
     </button>
 ));
 ResetButton.displayName = "ResetButton";
@@ -620,9 +620,9 @@ const FieldRow = memo(({ schema, isSet, defaultDisplay, onReset, children }: Fie
         <div className="flex items-center gap-3 bg-modalbg px-3 py-2.5">
             <div className="flex-1 min-w-0">
                 <div className="text-xs">{schema.label}</div>
-                <div className="text-[10.5px] text-muted font-mono">{schema.key}</div>
+                <div className="text-caption text-muted font-mono">{schema.key}</div>
                 {showHint && (
-                    <div className="text-[10px] text-muted mt-0.5">
+                    <div className="text-xxs text-muted mt-0.5">
                         {defaultDisplay ? `Not set — using default (${defaultDisplay})` : "Not set"}
                     </div>
                 )}
@@ -681,7 +681,7 @@ const SegmentedControl = memo(({ value, options, onChange }: SegmentedControlPro
                 type="button"
                 onClick={() => onChange(opt.value)}
                 className={cn(
-                    "px-3 py-1 text-[11.5px] rounded cursor-pointer transition-colors",
+                    "px-3 py-1 text-caption rounded cursor-pointer transition-colors",
                     value === opt.value ? "bg-activebg text-primary" : "text-secondary hover:text-primary"
                 )}
             >
@@ -702,7 +702,7 @@ const SelectControl = memo(({ value, options, onChange }: SelectControlProps) =>
     <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="shrink-0 bg-black/25 border border-border rounded-md px-2.5 py-1.5 text-[12px] text-primary cursor-pointer"
+        className="shrink-0 bg-black/25 border border-border rounded-md px-2.5 py-1.5 text-xs text-primary cursor-pointer"
     >
         {options.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -749,7 +749,7 @@ const TextControl = memo(({ value, placeholder, onCommit }: TextControlProps) =>
                     (e.target as HTMLInputElement).blur();
                 }
             }}
-            className="w-[170px] shrink-0 bg-black/25 border border-border rounded-md px-2.5 py-1.5 text-[12px] font-mono text-right text-primary focus:outline-none focus:border-accent"
+            className="w-[170px] shrink-0 bg-black/25 border border-border rounded-md px-2.5 py-1.5 text-xs font-mono text-right text-primary focus:outline-none focus:border-accent"
         />
     );
 });
@@ -784,9 +784,9 @@ const NumberControl = memo(({ value, unit, min, max, step = 1, onChange }: Numbe
                     const next = Number(e.target.value);
                     if (Number.isFinite(next)) onChange(next);
                 }}
-                className="w-14 bg-transparent text-[12px] font-mono text-primary focus:outline-none"
+                className="w-14 bg-transparent text-xs font-mono text-primary focus:outline-none"
             />
-            {unit && <span className="text-[10.5px] text-muted mr-1">{unit}</span>}
+            {unit && <span className="text-caption text-muted mr-1">{unit}</span>}
             <div className="flex flex-col">
                 <button
                     type="button"
@@ -794,7 +794,7 @@ const NumberControl = memo(({ value, unit, min, max, step = 1, onChange }: Numbe
                     onClick={() => bump(step)}
                     className="w-4 h-[11px] flex items-center justify-center bg-hover rounded-t-sm text-secondary cursor-pointer"
                 >
-                    <i className="fa-sharp fa-solid fa-caret-up text-[9px]" />
+                    <i className="fa-sharp fa-solid fa-caret-up text-xxs" />
                 </button>
                 <button
                     type="button"
@@ -802,7 +802,7 @@ const NumberControl = memo(({ value, unit, min, max, step = 1, onChange }: Numbe
                     onClick={() => bump(-step)}
                     className="w-4 h-[11px] flex items-center justify-center bg-hover rounded-b-sm text-secondary cursor-pointer mt-px"
                 >
-                    <i className="fa-sharp fa-solid fa-caret-down text-[9px]" />
+                    <i className="fa-sharp fa-solid fa-caret-down text-xxs" />
                 </button>
             </div>
         </div>
@@ -844,7 +844,7 @@ const SliderControl = memo(({ value, onCommit }: SliderControlProps) => {
                 onKeyUp={commit}
                 className="w-28 accent-accent cursor-pointer"
             />
-            <span className="text-[11px] font-mono text-secondary w-9 text-right">{percentString(local / 100)}</span>
+            <span className="text-caption font-mono text-secondary w-9 text-right">{percentString(local / 100)}</span>
         </div>
     );
 });
@@ -976,12 +976,12 @@ interface CategoryPanelProps {
 const CategoryPanel = memo(({ category, model, settings, rawSettings }: CategoryPanelProps) => {
     const fields = fieldsByCategory(category);
     return (
-        <div className="flex-1 min-w-0 overflow-y-auto px-5 py-4">
-            <div className="text-[10.5px] font-semibold uppercase tracking-wide text-muted pb-2 px-0.5">{category}</div>
+        <div className="flex-1 min-w-0 overflow-y-auto p-4">
+            <div className="text-caption font-semibold uppercase tracking-wide text-muted pb-2 px-0.5">{category}</div>
             {category === "Advanced" && (
-                <div className="text-[11px] text-muted pb-3 max-w-[480px]">{AdvancedCategoryHint}</div>
+                <div className="text-caption text-muted pb-3 max-w-[480px]">{AdvancedCategoryHint}</div>
             )}
-            <div className="flex flex-col gap-px bg-border/30 border border-border/30 rounded-lg overflow-hidden">
+            <div className="max-w-[640px] flex flex-col gap-px bg-border/30 border border-border/30 rounded-lg overflow-hidden">
                 {fields.map((schema) => (
                     <FieldControl
                         key={schema.key}
@@ -1003,14 +1003,14 @@ interface CategoryRailProps {
 }
 
 const CategoryRail = memo(({ active, onSelect }: CategoryRailProps) => (
-    <div className="w-[168px] shrink-0 border-r border-border/60 p-2 flex flex-col gap-px">
+    <div className="w-[168px] @max-w450:w-[130px] shrink-0 border-r border-border/60 p-2 flex flex-col gap-px">
         {Categories.map((category) => (
             <button
                 key={category}
                 type="button"
                 onClick={() => onSelect(category)}
                 className={cn(
-                    "text-left text-[12.5px] px-2.5 py-1.5 rounded-md cursor-pointer transition-colors",
+                    "text-left text-xs px-2.5 py-1.5 rounded-md cursor-pointer transition-colors",
                     active === category ? "bg-activebg text-primary" : "text-secondary hover:bg-hover"
                 )}
             >
