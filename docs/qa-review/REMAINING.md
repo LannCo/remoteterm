@@ -2,12 +2,17 @@
 
 Branch `qa/fleet-2026-09-22`. The loop terminated STALLED at the 5-round iteration cap. Code, security and coverage passed round 5; a11y and conformance did not. Evidence for every item is in the `round5-*.md` report named.
 
+## Fixed this pass
+
+| ID | Sev | Fix commit |
+|---|---|---|
+| R5-A11Y-1 | High | `e1c82356` — focus anchor moved off the panel wrapper onto a small header element (branch-name group / file-title) with a `focus-visible:` ring and `aria-label`. |
+| R5-CONF-3 | High | `b1c34bd4` — "Wave" → "RemoteTerm" in the wsh install-prompt title/body; same bug also found and fixed in `pkg/remote/conncontroller/conncontroller.go` (not in the original finding). |
+
 ## Open
 
 | ID | Sev | Where | What | Suggested fix |
 |---|---|---|---|---|
-| R5-A11Y-1 | High | `frontend/app/view/sourcecontrol/sourcecontrol.tsx:711`, `frontend/app/view/remotetermconfig/remotetermconfig.tsx:193` | The round-4 focus fix puts `tabIndex={-1}` + `outline-none` on the whole view container: no visible focus, and any blank-area click moves focus there. | Move `tabIndex={-1}` to a small anchor (panel heading) with a `focus-visible:` style; give it an accessible name (R5-A11Y-2). |
-| R5-CONF-3 | High | `pkg/wslconn/wslconn.go` | The wsh install prompt says "Install Wave Shell Extensions". | Rebrand the title and body. |
 | R5-CONF-1 | Medium | `frontend/app/onboarding/onboarding-upgrade-v0144.tsx:67,70` | "WaveConfig" left in place. | Rename to the current view name. |
 | R5-CONF-2/4/5/6 | Low | `onboarding-layout-term.tsx:80`, `workspace/widgets.tsx:620,664`, `blockcontroller/shellcontroller.go:830,835`, `remote/sshclient.go:1156` | `wavesrv` / "Wave" in rare strings. | Rebrand. |
 | R5-CA-1 | Low | `frontend/app/view/remotetermconfig/generalcontent.tsx:1100` | An external write of a value this control wrote earlier is taken as its own echo; the field shows a stale value. | Match echoes by write sequence, not value. |
