@@ -628,6 +628,7 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
     }, [model]);
 
     const containerRef = useRef<HTMLDivElement>(null);
+    const panelFocusAnchorRef = useRef<HTMLDivElement>(null);
     const handleReviewAllRef = useRef(handleReviewAll);
     handleReviewAllRef.current = handleReviewAll;
 
@@ -708,10 +709,15 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
     }
 
     return (
-        <div ref={containerRef} tabIndex={-1} className="flex flex-col h-full w-full overflow-hidden outline-none">
+        <div ref={containerRef} className="flex flex-col h-full w-full overflow-hidden">
             {/* Header */}
             <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-                <div className="flex items-center gap-2 text-xs">
+                <div
+                    ref={panelFocusAnchorRef}
+                    tabIndex={-1}
+                    aria-label={`Source Control: ${status?.branch || "detached"}`}
+                    className="flex items-center gap-2 text-xs rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+                >
                     <i className="fa-solid fa-code-branch text-muted" />
                     <span className="font-medium">{status?.branch || "detached"}</span>
                     <span className="text-muted text-[10px]">({totalChanges} changes)</span>
@@ -772,7 +778,7 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
             <ActionErrorBanner
                 errorAtom={model.actionErrorAtom}
                 onDismiss={() => model.dismissActionError()}
-                focusAnchorRef={containerRef}
+                focusAnchorRef={panelFocusAnchorRef}
             />
 
             {reviewMode ? (

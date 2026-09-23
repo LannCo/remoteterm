@@ -120,11 +120,13 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
     const fullConfig = useAtomValue(env.atoms.fullConfigAtom);
     const configErrors = fullConfig?.configerrors;
     const contentRef = useRef<HTMLDivElement>(null);
+    const titleFocusAnchorRef = useRef<HTMLDivElement>(null);
 
-    // Dismissing a banner unmounts its focused button; move focus into the content pane first
-    // so it does not fall to <body>.
+    // Dismissing a banner unmounts its focused button; move focus to the file title first
+    // so it does not fall to <body>. Both banners only render inside the selectedFile branch,
+    // so the anchor is always mounted whenever dismissBanner can be called.
     const dismissBanner = (clear: () => void) => {
-        contentRef.current?.focus();
+        titleFocusAnchorRef.current?.focus();
         clear();
     };
 
@@ -190,7 +192,7 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
                 <div className={`h-full ${isMenuOpen ? "" : "@max-w600:hidden"}`}>
                     <ConfigSidebar model={model} />
                 </div>
-                <div ref={contentRef} tabIndex={-1} className="flex flex-col flex-1 min-w-0 outline-none">
+                <div ref={contentRef} className="flex flex-col flex-1 min-w-0">
                     {selectedFile && (
                         <>
                             <div className="flex flex-row items-center justify-between px-4 py-2 border-b border-border">
@@ -202,7 +204,12 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
                                     >
                                         <i aria-hidden="true" className="fa fa-bars" />
                                     </button>
-                                    <div className="text-lg font-semibold whitespace-nowrap shrink-0">
+                                    <div
+                                        ref={titleFocusAnchorRef}
+                                        tabIndex={-1}
+                                        aria-label={`RemoteTerm Config: ${selectedFile.name}`}
+                                        className="text-lg font-semibold whitespace-nowrap shrink-0 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+                                    >
                                         {selectedFile.name}
                                     </div>
                                     {selectedFile.docsUrl && (
