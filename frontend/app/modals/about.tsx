@@ -29,9 +29,9 @@ const AboutModalV = ({ versionString, onClose }: AboutModalVProps) => {
                     <Logo />
                     <div className="text-[25px]">RemoteTerm</div>
                     <div className="leading-5">
-                        Open-Source AI-Integrated Terminal
+                        Open-Source Remote-First Terminal
                         <br />
-                        Built for Seamless Workflows
+                        Built for Remote Development
                     </div>
                 </div>
                 <div className="items-center gap-4 self-stretch w-full text-center">

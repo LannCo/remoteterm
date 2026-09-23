@@ -92,7 +92,7 @@ function DurableDetachedContent() {
                 Durable Session (Detached)
             </div>
             <div className="text-xs text-secondary leading-relaxed">
-                Connection lost, but your session is still running on the remote server. Wave will automatically
+                Connection lost, but your session is still running on the remote server. RemoteTerm will automatically
                 reconnect when the connection is restored.
             </div>
             <LearnMoreButton />
