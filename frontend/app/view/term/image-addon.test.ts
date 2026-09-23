@@ -51,7 +51,10 @@ vi.mock("@/store/global", () => ({
     getSettingsKeyAtom: vi.fn(() => vi.fn()),
     isDev: false,
     openLink: vi.fn(),
-    WOS: {},
+    WOS: {
+        makeORef: vi.fn((otype: string, oid: string) => `${otype}:${oid}`),
+        getWaveObjectAtom: vi.fn(),
+    },
     fetchWaveFile: vi.fn(),
 }));
 

@@ -253,7 +253,7 @@ async function initBuilder(initOpts: BuilderInitOpts) {
         console.log("Could not load saved builder appId from rtinfo:", e);
     }
 
-    document.title = appIdToUse ? `WaveApp Builder (${appIdToUse})` : "WaveApp Builder";
+    document.title = appIdToUse ? `RTApp Builder (${appIdToUse})` : "RTApp Builder";
 
     globalStore.set(atoms.builderAppId, appIdToUse);
 

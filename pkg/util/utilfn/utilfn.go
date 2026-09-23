@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/sha1"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -17,7 +16,6 @@ import (
 	"io"
 	"log"
 	"math"
-	mathrand "math/rand"
 	"os"
 	"os/exec"
 	"reflect"
@@ -256,13 +254,6 @@ func (sp StrWithPos) Prepend(str string) StrWithPos {
 
 func (sp StrWithPos) Append(str string) StrWithPos {
 	return StrWithPos{Str: sp.Str + str, Pos: sp.Pos}
-}
-
-// returns base64 hash of data
-func Sha1Hash(data []byte) string {
-	hvalRaw := sha1.Sum(data)
-	hval := base64.StdEncoding.EncodeToString(hvalRaw[:])
-	return hval
 }
 
 func ChunkSlice[T any](s []T, chunkSize int) [][]T {
@@ -620,21 +611,6 @@ func StrArrayToMap(sarr []string) map[string]bool {
 		m[s] = true
 	}
 	return m
-}
-
-func AppendNonZeroRandomBytes(b []byte, randLen int) []byte {
-	if randLen <= 0 {
-		return b
-	}
-	numAdded := 0
-	for numAdded < randLen {
-		rn := mathrand.Intn(256)
-		if rn > 0 && rn < 256 { // exclude 0, also helps to suppress security warning to have a guard here
-			b = append(b, byte(rn))
-			numAdded++
-		}
-	}
-	return b
 }
 
 // returns (isEOF, error)

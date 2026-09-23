@@ -1,10 +1,10 @@
-# Creating a New View in Wave Terminal
+# Creating a New View in RemoteTerm
 
-This guide explains how to implement a new view type in Wave Terminal. Views are the core content components displayed within blocks in the terminal interface.
+This guide explains how to implement a new view type in RemoteTerm. Views are the core content components displayed within blocks in the terminal interface.
 
 ## Architecture Overview
 
-Wave Terminal uses a **Model-View architecture** where:
+RemoteTerm uses a **Model-View architecture** where:
 - **ViewModel** - Contains all state, logic, and UI configuration as Jotai atoms
 - **ViewComponent** - Pure React component that renders the UI using the model
 - **BlockFrame** - Wraps views with a header, connection management, and standard controls
@@ -468,7 +468,7 @@ const flag = useAtomValue(model.someFlag);
 
 ### Configuration Overrides
 
-Wave has a hierarchical config system (global → connection → block):
+RemoteTerm has a hierarchical config system (global → connection → block):
 
 ```typescript
 import { getOverrideConfigAtom } from "@/store/global";

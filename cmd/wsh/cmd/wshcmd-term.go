@@ -30,10 +30,7 @@ func init() {
 	rootCmd.AddCommand(termCmd)
 }
 
-func termRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func termRun(cmd *cobra.Command, args []string) error {
 	var cwd string
 	if len(args) > 0 {
 		cwd = args[0]

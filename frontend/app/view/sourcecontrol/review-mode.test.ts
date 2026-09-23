@@ -260,7 +260,7 @@ describe("SourceControlViewModel — review mode", () => {
                 makeReviewFile({ path: "b.ts" }),
             ]);
             model.jumpToFile(1);
-            expect(mockScroll).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+            expect(mockScroll).toHaveBeenCalledWith({ behavior: "smooth", block: "nearest" });
         });
     });
 

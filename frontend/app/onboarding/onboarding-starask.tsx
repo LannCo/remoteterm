@@ -19,7 +19,7 @@ export function StarAskPage({ onClose, page = "upgrade" }: StarAskPageProps) {
             oref: WOS.makeORef("client", clientId),
             meta: { "onboarding:githubstar": true },
         });
-        window.open(`https://github.com/wavetermdev/waveterm?ref=${page}`, "_blank");
+        window.open(`https://github.com/LannCo/remoteterm?ref=${page}`, "_blank");
         onClose();
     };
 
@@ -31,7 +31,7 @@ export function StarAskPage({ onClose, page = "upgrade" }: StarAskPageProps) {
         onClose();
     };
 
-    const handleRepoLinkClick = () => {        window.open("https://github.com/wavetermdev/waveterm", "_blank");
+    const handleRepoLinkClick = () => {        window.open("https://github.com/LannCo/remoteterm", "_blank");
     };
 
     const handleMaybeLater = async () => {        const clientId = ClientModel.getInstance().clientId;
@@ -48,12 +48,12 @@ export function StarAskPage({ onClose, page = "upgrade" }: StarAskPageProps) {
                 <div className="flex justify-center">
                     <Logo />
                 </div>
-                <div className="text-center text-[25px] font-normal text-foreground">Support open-source. Star Wave. ⭐</div>
+                <div className="text-center text-[25px] font-normal text-foreground">Support open-source. Star RemoteTerm. ⭐</div>
             </header>
             <div className="flex-1 flex flex-col items-center justify-center gap-5 unselectable">
                 <div className="flex flex-col items-center gap-4 max-w-[460px] text-center">
                     <div className="text-secondary text-sm leading-relaxed">
-                        Wave is free, open-source, and open-model. Stars help us stay visible against closed
+                        RemoteTerm is free, open-source, and open-model. Stars help us stay visible against closed
                         alternatives. One click makes a difference.
                     </div>
                     <div
@@ -62,7 +62,7 @@ export function StarAskPage({ onClose, page = "upgrade" }: StarAskPageProps) {
                     >
                         <i className="fa-brands fa-github text-foreground text-lg group-hover:text-accent transition-colors" />
                         <span className="text-foreground font-mono text-sm group-hover:text-accent group-hover:underline transition-colors">
-                            wavetermdev/waveterm
+                            LannCo/remoteterm
                         </span>
                     </div>
                 </div>

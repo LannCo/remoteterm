@@ -65,7 +65,7 @@ const InitPage = ({
                         <div>
                             <a
                                 target="_blank"
-                                href="https://github.com/wavetermdev/waveterm?ref=install"
+                                href="https://github.com/LannCo/remoteterm?ref=install"
                                 rel="noopener"
                                 className="text-accent"
                                 onClick={handleStarClick}
@@ -80,12 +80,12 @@ const InitPage = ({
                                 for individual users. Please show your support by giving us a star on{" "}
                                 <a
                                     target="_blank"
-                                    href="https://github.com/wavetermdev/waveterm?ref=install"
+                                    href="https://github.com/LannCo/remoteterm?ref=install"
                                     rel="noopener"
                                     className="text-accent"
                                     onClick={handleStarClick}
                                 >
-                                    Github&nbsp;(wavetermdev/waveterm)
+                                    Github&nbsp;(LannCo/remoteterm)
                                 </a>
                             </div>
                         </div>

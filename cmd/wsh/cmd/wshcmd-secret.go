@@ -22,7 +22,7 @@ var secretUiMagnified bool
 var secretCmd = &cobra.Command{
 	Use:   "secret",
 	Short: "manage secrets",
-	Long:  "Manage secrets for Wave Terminal",
+	Long:  "Manage secrets for RemoteTerm",
 }
 
 var secretGetCmd = &cobra.Command{
@@ -75,10 +75,7 @@ func init() {
 	secretCmd.AddCommand(secretUiCmd)
 }
 
-func secretGetRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func secretGetRun(cmd *cobra.Command, args []string) error {
 	name := args[0]
 	if !secretNameRegex.MatchString(name) {
 		return fmt.Errorf("invalid secret name: must start with a letter and contain only letters, numbers, and underscores")
@@ -98,10 +95,7 @@ func secretGetRun(cmd *cobra.Command, args []string) (rtnErr error) {
 	return nil
 }
 
-func secretSetRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func secretSetRun(cmd *cobra.Command, args []string) error {
 	parts := strings.SplitN(args[0], "=", 2)
 	if len(parts) != 2 {
 		return fmt.Errorf("invalid format: expected [name]=[value]")
@@ -133,10 +127,7 @@ func secretSetRun(cmd *cobra.Command, args []string) (rtnErr error) {
 	return nil
 }
 
-func secretListRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func secretListRun(cmd *cobra.Command, args []string) error {
 	names, err := wshclient.GetSecretsNamesCommand(RpcClient, &wshrpc.RpcOpts{Timeout: 2000})
 	if err != nil {
 		return fmt.Errorf("listing secrets: %w", err)
@@ -148,10 +139,7 @@ func secretListRun(cmd *cobra.Command, args []string) (rtnErr error) {
 	return nil
 }
 
-func secretDeleteRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func secretDeleteRun(cmd *cobra.Command, args []string) error {
 	name := args[0]
 	if !secretNameRegex.MatchString(name) {
 		return fmt.Errorf("invalid secret name: must start with a letter and contain only letters, numbers, and underscores")
@@ -167,10 +155,7 @@ func secretDeleteRun(cmd *cobra.Command, args []string) (rtnErr error) {
 	return nil
 }
 
-func secretUiRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func secretUiRun(cmd *cobra.Command, args []string) error {
 	tabId := getTabIdFromEnv()
 	if tabId == "" {
 		return fmt.Errorf("no WAVETERM_TABID env var set")

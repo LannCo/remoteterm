@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://www.waveterm.dev">
+  <a href="https://remoteterm.dev">
 	<picture>
 		<source media="(prefers-color-scheme: dark)" srcset="./assets/wave-dark.png">
 		<source media="(prefers-color-scheme: light)" srcset="./assets/wave-light.png">
@@ -37,11 +37,11 @@ This fork is tuned for developers who work on remote machines, with the local ap
 
 **Private by default.** Zero telemetry, analytics, and cloud data collection. Always.
 
-![WaveTerm Screenshot](./assets/wave-screenshot.webp)
+![RemoteTerm Screenshot](./assets/wave-screenshot.webp)
 
 ## Key Features
 
-- Durable SSH Sessions - Remote terminal sessions survive connection interruptions, network changes, and Wave restarts with automatic reconnection
+- Durable SSH Sessions - Remote terminal sessions survive connection interruptions, network changes, and RemoteTerm restarts with automatic reconnection
 - Flexible drag & drop interface to organize terminal blocks, editors, web browsers, and previews
 - Built-in editor for editing remote files with syntax highlighting and modern editor features
 - Rich file preview system for remote files (markdown, images, video, PDFs, CSVs, directories)
@@ -56,11 +56,11 @@ This fork is tuned for developers who work on remote machines, with the local ap
 
 ## Installation
 
-Wave Terminal works on macOS, Linux, and Windows.
+RemoteTerm works on macOS, Linux, and Windows.
 
 ### Minimum requirements
 
-Wave Terminal runs on the following platforms:
+RemoteTerm runs on the following platforms:
 
 - macOS 11 or later (arm64, x64)
 - Windows 10 1809 or later (x64)
@@ -74,17 +74,17 @@ The WSH helper runs on the following platforms:
 
 ## Building from Source
 
-See [Building Wave Terminal](BUILD.md).
+See [Building RemoteTerm](BUILD.md).
 
 ## Contributing
 
-Wave uses GitHub Issues for issue tracking.
+RemoteTerm uses GitHub Issues for issue tracking.
 
 Find more information in our [Contributions Guide](CONTRIBUTING.md), which includes:
 
-- [Ways to contribute](CONTRIBUTING.md#contributing-to-wave-terminal)
+- [Ways to contribute](CONTRIBUTING.md#contributing-to-remoteterm)
 - [Contribution guidelines](CONTRIBUTING.md#before-you-start)
 
 ## License
 
-Wave Terminal is licensed under the Apache-2.0 License. For more information on our dependencies, see [here](./ACKNOWLEDGEMENTS.md).
+RemoteTerm is licensed under the Apache-2.0 License. For more information on our dependencies, see [here](./ACKNOWLEDGEMENTS.md).

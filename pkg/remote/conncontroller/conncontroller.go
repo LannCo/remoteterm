@@ -60,9 +60,8 @@ const (
 )
 
 const (
-	ConnHealthStatus_Good     = "good"
-	ConnHealthStatus_Degraded = "degraded"
-	ConnHealthStatus_Stalled  = "stalled"
+	ConnHealthStatus_Good    = "good"
+	ConnHealthStatus_Stalled = "stalled"
 )
 
 // authPromptState values for SSHConn.authPromptState. Records whether the last

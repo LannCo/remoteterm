@@ -43,10 +43,7 @@ func init() {
 	termScrollbackCmd.Flags().StringVarP(&termScrollbackOutputFile, "output", "o", "", "write output to file instead of stdout")
 }
 
-func termScrollbackRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func termScrollbackRun(cmd *cobra.Command, args []string) error {
 	// Resolve the block argument
 	fullORef, err := resolveBlockArg()
 	if err != nil {

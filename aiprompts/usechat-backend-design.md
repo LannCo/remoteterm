@@ -1,4 +1,4 @@
-# useChat Compatible Backend Design for Wave Terminal
+# useChat Compatible Backend Design for RemoteTerm
 
 ## Overview
 

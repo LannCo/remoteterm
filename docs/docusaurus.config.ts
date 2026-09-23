@@ -5,7 +5,7 @@ import { docOgRenderer } from "./src/renderer/image-renderers";
 const baseUrl = process.env.EMBEDDED ? "/docsite/" : "/";
 
 const config: Config = {
-    title: "Wave Terminal Documentation",
+    title: "RemoteTerm Documentation",
     tagline: "Level Up Your Terminal With Graphical Widgets",
     favicon: "img/logo/wave-logo_appicon.svg",
 
@@ -40,7 +40,7 @@ const config: Config = {
                 path: "docs",
                 routeBasePath: "/",
                 exclude: ["features/**"],
-                editUrl: !process.env.EMBEDDED ? "https://github.com/wavetermdev/waveterm/edit/main/docs/" : undefined,
+                editUrl: !process.env.EMBEDDED ? "https://github.com/LannCo/remoteterm/edit/main/docs/" : undefined,
                 rehypePlugins: [rehypeHighlight],
             } as import("@docusaurus/plugin-content-docs").Options,
         ],
@@ -84,7 +84,7 @@ const config: Config = {
             logo: {
                 src: "img/logo/wave-light.png",
                 srcDark: "img/logo/wave-dark.png",
-                href: "https://www.waveterm.dev/",
+                href: "https://remoteterm.dev/",
             },
             hideOnScroll: true,
             items: [
@@ -108,7 +108,7 @@ const config: Config = {
                               "aria-label": "Discord invite",
                           },
                           {
-                              href: "https://github.com/wavetermdev/waveterm",
+                              href: "https://github.com/LannCo/remoteterm",
                               position: "right",
                               className: "header-link-custom custom-icon-github",
                               "aria-label": "GitHub repository",
@@ -129,15 +129,15 @@ const config: Config = {
             },
             {
                 name: "og:site_name",
-                content: "Wave Terminal Documentation",
+                content: "RemoteTerm Documentation",
             },
             {
                 name: "application-name",
-                content: "Wave Terminal Documentation",
+                content: "RemoteTerm Documentation",
             },
             {
                 name: "apple-mobile-web-app-title",
-                content: "Wave Terminal Documentation",
+                content: "RemoteTerm Documentation",
             },
         ],
         footer: {

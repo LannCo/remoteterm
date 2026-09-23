@@ -87,7 +87,7 @@ const BuildingStateView = memo(() => {
                 <div className="flex flex-col gap-3">
                     <h2 className="text-2xl font-semibold text-primary">App is Building...</h2>
                     <p className="text-base text-secondary leading-relaxed">
-                        Your WaveApp is being compiled and prepared. This may take a few moments.
+                        Your RTApp is being compiled and prepared. This may take a few moments.
                     </p>
                 </div>
             </div>
@@ -112,7 +112,7 @@ const StoppedStateView = memo(({ onStart }: { onStart: () => void }) => {
                 <div className="flex flex-col gap-3">
                     <h2 className="text-2xl font-semibold text-primary">App is Not Running</h2>
                     <p className="text-base text-secondary leading-relaxed">
-                        Your WaveApp is currently not running. Click the button below to start it.
+                        Your RTApp is currently not running. Click the button below to start it.
                     </p>
                 </div>
                 {!isStarting && (
