@@ -8,7 +8,7 @@ import { BrowserWindow, webContents } from "electron";
 import { globalEvents } from "emain/emain-events";
 import path from "path";
 import { getElectronAppBasePath, isDevVite, unamePlatform } from "./emain-platform";
-import { calculateWindowBounds, MinWindowHeight, MinWindowWidth } from "./emain-window";
+import { calculateWindowBounds, LinuxWindowIconPath, MinWindowHeight, MinWindowWidth } from "./emain-window";
 import { ElectronWshClient } from "./emain-wsh";
 
 export type BuilderWindowType = BrowserWindow & {
@@ -58,10 +58,7 @@ export async function createBuilderWindow(appId: string): Promise<BuilderWindowT
         minWidth: MinWindowWidth,
         minHeight: MinWindowHeight,
         titleBarStyle: unamePlatform === "darwin" ? "hiddenInset" : "default",
-        icon:
-            unamePlatform === "linux"
-                ? path.join(getElectronAppBasePath(), "public/logos/wave-logo-dark.png")
-                : undefined,
+        icon: unamePlatform === "linux" ? LinuxWindowIconPath : undefined,
         show: false,
         backgroundColor: "#222222",
         webPreferences: {

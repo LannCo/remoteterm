@@ -6,8 +6,8 @@ const UpgradeOnboardingModal_v0_13_0_Content = () => {
         <div className="flex flex-col items-start gap-6 w-full mb-4 unselectable">
             <div className="text-secondary leading-relaxed">
                 <p className="mb-0">
-                    RemoteTerm v0.13 brings local AI support, bring-your-own-key (BYOK), a redesigned configuration system,
-                    and improved terminal functionality.
+                    RemoteTerm v0.13 brings local AI support, bring-your-own-key (BYOK), a redesigned configuration
+                    system, and improved terminal functionality.
                 </p>
             </div>
 

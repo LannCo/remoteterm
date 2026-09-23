@@ -71,7 +71,8 @@ const config = {
             NSCameraUsageDescription: "A CLI application running in RemoteTerm wants to use the camera.",
             NSMicrophoneUsageDescription: "A CLI application running in RemoteTerm wants to use your microphone.",
             NSCalendarsUsageDescription: "A CLI application running in RemoteTerm wants to use Calendar data.",
-            NSLocationUsageDescription: "A CLI application running in RemoteTerm wants to use your location information.",
+            NSLocationUsageDescription:
+                "A CLI application running in RemoteTerm wants to use your location information.",
             NSAppleEventsUsageDescription: "A CLI application running in RemoteTerm wants to use AppleScript.",
         },
     },

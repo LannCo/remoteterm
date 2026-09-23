@@ -33,6 +33,8 @@ import {
     getRemoteTermConfigDir,
     getRemoteTermDataDir,
     isDev,
+    resolveIncompleteMigrationBlock,
+    resolveLegacyInstanceBlock,
     unameArch,
     unamePlatform,
 } from "./emain-platform";
@@ -264,6 +266,18 @@ async function appMain() {
     const instanceLock = electronApp.requestSingleInstanceLock();
     if (!instanceLock) {
         console.log("remoteterm-app could not get single-instance-lock, shutting down");
+        setUserConfirmedQuit(true);
+        electronApp.quit();
+        return;
+    }
+    // Must run before the server starts: the server would create the new data and config dirs
+    // next to the live legacy ones; quitting leaves the migration to retry on the next launch.
+    if (!(await resolveLegacyInstanceBlock())) {
+        setUserConfirmedQuit(true);
+        electronApp.quit();
+        return;
+    }
+    if (!(await resolveIncompleteMigrationBlock())) {
         setUserConfirmedQuit(true);
         electronApp.quit();
         return;

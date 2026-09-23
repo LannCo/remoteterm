@@ -12,9 +12,9 @@ import * as jotai from "jotai";
 import * as React from "react";
 
 import { useDimensionsWithExistingRef } from "@/app/hook/useDimensions";
+import type { MetaKeyAtomFnType, WaveEnv, WaveEnvSubset } from "@/app/remotetermenv/remotetermenv";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import type { MetaKeyAtomFnType, WaveEnv, WaveEnvSubset } from "@/app/remotetermenv/remotetermenv";
 import { OverlayScrollbarsComponent, OverlayScrollbarsComponentRef } from "overlayscrollbars-react";
 
 export type SysinfoEnv = WaveEnvSubset<{

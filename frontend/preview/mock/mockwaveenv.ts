@@ -1,12 +1,12 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { WaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { makeDefaultConnStatus } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { AllServiceTypes } from "@/app/store/services";
 import { handleWaveEvent } from "@/app/store/wps";
 import { RpcApiType } from "@/app/store/wshclientapi";
-import { WaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { PlatformLinux, PlatformMacOS, PlatformWindows } from "@/util/platformutil";
 import { NullAtom } from "@/util/util";
 import { Atom, atom, PrimitiveAtom, useAtomValue } from "jotai";

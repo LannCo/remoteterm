@@ -30,6 +30,8 @@ export class SourceControlViewModel implements ViewModel {
     selectedFileAtom: jotai.PrimitiveAtom<SelectedFile | null>;
     loadingAtom: jotai.PrimitiveAtom<boolean>;
     errorAtom: jotai.PrimitiveAtom<string | null>;
+    // Separate from errorAtom, which every successful status poll clears.
+    actionErrorAtom: jotai.PrimitiveAtom<string | null>;
     viewModeAtom: jotai.PrimitiveAtom<"side-by-side" | "inline">;
     diffAtom: jotai.PrimitiveAtom<GitDiffResponse | null>;
     directoryDropdownOpen: jotai.PrimitiveAtom<boolean>;
@@ -82,6 +84,7 @@ export class SourceControlViewModel implements ViewModel {
         this.selectedFileAtom = jotai.atom<SelectedFile | null>(null) as jotai.PrimitiveAtom<SelectedFile | null>;
         this.loadingAtom = jotai.atom<boolean>(true) as jotai.PrimitiveAtom<boolean>;
         this.errorAtom = jotai.atom<string | null>(null) as jotai.PrimitiveAtom<string | null>;
+        this.actionErrorAtom = jotai.atom<string | null>(null) as jotai.PrimitiveAtom<string | null>;
         this.viewModeAtom = jotai.atom<"side-by-side" | "inline">("side-by-side") as jotai.PrimitiveAtom<
             "side-by-side" | "inline"
         >;
@@ -345,6 +348,7 @@ export class SourceControlViewModel implements ViewModel {
             await this.fetchDiffForSelected();
         } catch (e) {
             console.error("[SCM] stageFiles failed:", e);
+            globalStore.set(this.actionErrorAtom, `Failed to stage files: ${e?.message ?? String(e)}`);
             await this.fetchStatus();
         } finally {
             globalStore.set(this.stagingAtom, false);
@@ -362,6 +366,7 @@ export class SourceControlViewModel implements ViewModel {
             await this.fetchDiffForSelected();
         } catch (e) {
             console.error("Failed to unstage files:", e);
+            globalStore.set(this.actionErrorAtom, `Failed to unstage files: ${e?.message ?? String(e)}`);
             await this.fetchStatus();
         } finally {
             globalStore.set(this.stagingAtom, false);
@@ -378,6 +383,7 @@ export class SourceControlViewModel implements ViewModel {
             await this.fetchDiffForSelected();
         } catch (e) {
             console.error("Failed to stage hunk:", e);
+            globalStore.set(this.actionErrorAtom, `Failed to stage hunk: ${e?.message ?? String(e)}`);
             await this.fetchStatus();
         } finally {
             globalStore.set(this.stagingAtom, false);
@@ -394,10 +400,15 @@ export class SourceControlViewModel implements ViewModel {
             await this.fetchDiffForSelected();
         } catch (e) {
             console.error("Failed to revert hunk:", e);
+            globalStore.set(this.actionErrorAtom, `Failed to revert hunk: ${e?.message ?? String(e)}`);
             await this.fetchStatus();
         } finally {
             globalStore.set(this.stagingAtom, false);
         }
+    }
+
+    dismissActionError() {
+        globalStore.set(this.actionErrorAtom, null);
     }
 
     async commit(amend: boolean = false): Promise<{ success: boolean; output: string } | null> {
@@ -628,7 +639,8 @@ export class SourceControlViewModel implements ViewModel {
         try {
             const diff = await this.fetchDiffCached(path, staged, false);
             const hunkCount = diff?.hunks?.length ?? 0;
-            for (let i = 0; i < hunkCount; i++) {
+            // Last to first: each revert re-diffs server-side, so earlier indices stay valid.
+            for (let i = hunkCount - 1; i >= 0; i--) {
                 await this.revertHunk(path, i, staged);
             }
             this.invalidateDiffCache(path);

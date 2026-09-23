@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { ModalsRenderer } from "@/app/modals/modalsrenderer";
-import { globalStore } from "@/app/store/jotaiStore";
 import { WaveEnvContext } from "@/app/remotetermenv/remotetermenv";
 import { makeWaveEnvImpl } from "@/app/remotetermenv/remotetermenvimpl";
+import { globalStore } from "@/app/store/jotaiStore";
 import { AppSelectionModal } from "@/builder/app-selection-modal";
 import { BuilderWorkspace } from "@/builder/builder-workspace";
 import { atoms, isDev } from "@/store/global";
@@ -49,9 +49,7 @@ function BuilderAppInner() {
                         <i className="fa fa-brands fa-dev fa-fw" />
                     </div>
                 ) : null}
-                <div className="text-sm font-medium">
-                    RTApp Builder{!isBlank(builderAppId) && ` (${builderAppId})`}
-                </div>
+                <div className="text-sm font-medium">RTApp Builder{!isBlank(builderAppId) && ` (${builderAppId})`}</div>
             </div>
             <DndProvider backend={HTML5Backend}>
                 {hasDraftApp ? <BuilderWorkspace /> : <AppSelectionModal />}

@@ -299,7 +299,10 @@ export function clearTabCache() {
 }
 
 // returns [tabview, initialized]
-export async function getOrCreateWebViewForTab(remoteTermWindowId: string, tabId: string): Promise<[RemoteTermTabView, boolean]> {
+export async function getOrCreateWebViewForTab(
+    remoteTermWindowId: string,
+    tabId: string
+): Promise<[RemoteTermTabView, boolean]> {
     let tabView = getRemoteTermTabView(tabId);
     if (tabView) {
         return [tabView, true];

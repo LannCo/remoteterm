@@ -2,17 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Tooltip } from "@/app/element/tooltip";
+import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { globalStore } from "@/app/store/jotaiStore";
 import { tryReinjectKey } from "@/app/store/keymodel";
 import { CodeEditor } from "@/app/view/codeeditor/codeeditor";
 import type { ConfigFile, RemoteTermConfigViewModel } from "@/app/view/remotetermconfig/remotetermconfig-model";
 import type { RemoteTermConfigEnv } from "@/app/view/remotetermconfig/remotetermconfigenv";
-import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { adaptFromReactOrNativeKeyEvent, checkKeyPressed, keydownWrapper } from "@/util/keyutil";
 import { cn } from "@/util/util";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import type * as MonacoTypes from "monaco-editor";
-import { memo, useCallback, useEffect } from "react";
+import { memo, useCallback, useEffect, useRef } from "react";
 
 interface ConfigSidebarProps {
     model: RemoteTermConfigViewModel;
@@ -119,6 +119,16 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
     const [activeTab, setActiveTab] = useAtom(model.activeTabAtom);
     const fullConfig = useAtomValue(env.atoms.fullConfigAtom);
     const configErrors = fullConfig?.configerrors;
+    const contentRef = useRef<HTMLDivElement>(null);
+    const titleFocusAnchorRef = useRef<HTMLDivElement>(null);
+
+    // Dismissing a banner unmounts its focused button; move focus to the file title first
+    // so it does not fall to <body>. Both banners only render inside the selectedFile branch,
+    // so the anchor is always mounted whenever dismissBanner can be called.
+    const dismissBanner = (clear: () => void) => {
+        titleFocusAnchorRef.current?.focus();
+        clear();
+    };
 
     const handleContentChange = useCallback(
         (newContent: string) => {
@@ -182,7 +192,7 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
                 <div className={`h-full ${isMenuOpen ? "" : "@max-w600:hidden"}`}>
                     <ConfigSidebar model={model} />
                 </div>
-                <div className="flex flex-col flex-1 min-w-0">
+                <div ref={contentRef} className="flex flex-col flex-1 min-w-0">
                     {selectedFile && (
                         <>
                             <div className="flex flex-row items-center justify-between px-4 py-2 border-b border-border">
@@ -194,7 +204,12 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
                                     >
                                         <i aria-hidden="true" className="fa fa-bars" />
                                     </button>
-                                    <div className="text-lg font-semibold whitespace-nowrap shrink-0">
+                                    <div
+                                        ref={titleFocusAnchorRef}
+                                        tabIndex={-1}
+                                        aria-label={`RemoteTerm Config: ${selectedFile.name}`}
+                                        className="text-lg font-semibold whitespace-nowrap shrink-0 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+                                    >
                                         {selectedFile.name}
                                     </div>
                                     {selectedFile.docsUrl && (
@@ -215,28 +230,33 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
                                     </div>
                                 </div>
                                 <div className="flex gap-2 items-baseline shrink-0">
-                                    {selectedFile.hasJsonView && (!selectedFile.visualComponent || activeTab === "json") && (
-                                        <>
-                                            {hasChanges && (
-                                                <span className="text-xs text-warning pb-0.5 @max-w450:hidden">
-                                                    Unsaved changes
-                                                </span>
-                                            )}
-                                            <Tooltip content={saveTooltip} placement="bottom" divClassName="shrink-0">
-                                                <button
-                                                    onClick={() => model.saveFile()}
-                                                    disabled={!hasChanges || isSaving}
-                                                    className={`px-3 py-1 rounded transition-colors text-sm ${
-                                                        !hasChanges || isSaving
-                                                            ? "border border-border text-muted-foreground opacity-50"
-                                                            : "bg-accent/80 text-background hover:bg-accent cursor-pointer"
-                                                    }`}
+                                    {selectedFile.hasJsonView &&
+                                        (!selectedFile.visualComponent || activeTab === "json") && (
+                                            <>
+                                                {hasChanges && (
+                                                    <span className="text-xs text-warning pb-0.5 @max-w450:hidden">
+                                                        Unsaved changes
+                                                    </span>
+                                                )}
+                                                <Tooltip
+                                                    content={saveTooltip}
+                                                    placement="bottom"
+                                                    divClassName="shrink-0"
                                                 >
-                                                    {isSaving ? "Saving..." : "Save"}
-                                                </button>
-                                            </Tooltip>
-                                        </>
-                                    )}
+                                                    <button
+                                                        onClick={() => model.saveFile()}
+                                                        disabled={!hasChanges || isSaving}
+                                                        className={`px-3 py-1 rounded transition-colors text-sm ${
+                                                            !hasChanges || isSaving
+                                                                ? "border border-border text-muted-foreground opacity-50"
+                                                                : "bg-accent/80 text-background hover:bg-accent cursor-pointer"
+                                                        }`}
+                                                    >
+                                                        {isSaving ? "Saving..." : "Save"}
+                                                    </button>
+                                                </Tooltip>
+                                            </>
+                                        )}
                                 </div>
                             </div>
                             {selectedFile.visualComponent && selectedFile.hasJsonView && (
@@ -274,9 +294,9 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
                             )}
                             {errorMessage && (
                                 <div className="bg-error text-black px-4 py-2 border-b border-error flex items-center justify-between">
-                                    <span>{errorMessage}</span>
+                                    <span role="alert">{errorMessage}</span>
                                     <button
-                                        onClick={() => model.clearError()}
+                                        onClick={() => dismissBanner(() => model.clearError())}
                                         aria-label="Dismiss error"
                                         className="ml-2 hover:bg-black/20 rounded p-1 cursor-pointer transition-colors"
                                     >
@@ -286,9 +306,9 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
                             )}
                             {validationError && (
                                 <div className="bg-error text-black px-4 py-2 border-b border-error flex items-center justify-between">
-                                    <span>{validationError}</span>
+                                    <span role="alert">{validationError}</span>
                                     <button
-                                        onClick={() => model.clearValidationError()}
+                                        onClick={() => dismissBanner(() => model.clearValidationError())}
                                         aria-label="Dismiss validation error"
                                         className="ml-2 hover:bg-black/20 rounded p-1 cursor-pointer transition-colors"
                                     >
@@ -324,7 +344,10 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
                 </div>
             </div>
             {configErrors?.length > 0 && (
-                <div className="bg-error text-black px-4 py-1 max-h-12 overflow-y-auto border-t border-error/50 shrink-0">
+                <div
+                    role="alert"
+                    className="bg-error text-black px-4 py-1 max-h-12 overflow-y-auto border-t border-error/50 shrink-0"
+                >
                     {configErrors.map((cerr, i) => (
                         <div key={i} className="text-sm">
                             <span className="font-semibold">Config Error: </span>

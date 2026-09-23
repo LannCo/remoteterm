@@ -132,6 +132,11 @@ var AppElectronExecPath_VarCache string // caches REMOTETERM_ELECTRONEXECPATH
 var Dev_VarCache string                 // caches REMOTETERM_DEV
 
 const WaveLockFile = "remoteterm.lock"
+
+// Frozen pre-rename lock name. emain's migration can rename a data dir out from under a running
+// pre-rename server, which keeps holding this lock in the moved dir, so the server also takes it
+// whenever it is present.
+const LegacyWaveLockFile = "wave.lock"
 const DomainSocketBaseName = "remoteterm.sock"
 const RemoteDomainSocketBaseName = "wave-remote.sock"
 const WaveDBDir = "db"
@@ -160,6 +165,41 @@ var SupportedWshBinaries = map[string]bool{
 
 type FDLock interface {
 	Close() error
+}
+
+type multiFDLock []FDLock
+
+func (locks multiFDLock) Close() error {
+	var errs []error
+	for i := len(locks) - 1; i >= 0; i-- {
+		if err := locks[i].Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func AcquireWaveLock() (FDLock, error) {
+	dataHomeDir := GetWaveDataDir()
+	lock, err := acquireLockFile(filepath.Join(dataHomeDir, WaveLockFile))
+	if err != nil {
+		return nil, err
+	}
+	legacyLockFileName := filepath.Join(dataHomeDir, LegacyWaveLockFile)
+	_, err = os.Stat(legacyLockFileName)
+	if errors.Is(err, fs.ErrNotExist) {
+		return lock, nil
+	}
+	if err != nil {
+		lock.Close()
+		return nil, fmt.Errorf("cannot stat legacy lock %s: %w", legacyLockFileName, err)
+	}
+	legacyLock, err := acquireLockFile(legacyLockFileName)
+	if err != nil {
+		lock.Close()
+		return nil, fmt.Errorf("legacy lock %s is held (a pre-rename instance is likely still running on this data dir): %w", legacyLockFileName, err)
+	}
+	return multiFDLock{lock, legacyLock}, nil
 }
 
 func CacheAndRemoveEnvVars() error {

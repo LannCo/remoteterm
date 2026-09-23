@@ -4,7 +4,7 @@
 import type { RemoteTermConfigViewModel } from "@/app/view/remotetermconfig/remotetermconfig-model";
 import { cn } from "@/util/util";
 import { useAtomValue, useSetAtom } from "jotai";
-import { memo, useState } from "react";
+import { memo, useRef, useState } from "react";
 
 type ControlType = "toggle" | "segmented" | "select" | "text" | "number" | "slider";
 
@@ -63,7 +63,7 @@ export const FieldSchemas: FieldSchema[] = [
         label: "Confirm before quitting",
         category: "Appearance",
         control: "toggle",
-        description: "Shows a confirmation dialog before quitting Wave Terminal. Requires an app restart.",
+        description: "Shows a confirmation dialog before quitting RemoteTerm. Requires an app restart.",
         nullable: true,
         defaultDisplay: "on",
     },
@@ -72,7 +72,7 @@ export const FieldSchemas: FieldSchema[] = [
         label: "Global hotkey",
         category: "Appearance",
         control: "text",
-        description: "A systemwide key combination (e.g. Ctrl:Option:e) that opens your most recent Wave window.",
+        description: "A systemwide key combination (e.g. Ctrl:Option:e) that opens your most recent RemoteTerm window.",
         placeholder: "e.g. Cmd+Shift+Space",
     },
     {
@@ -117,7 +117,7 @@ export const FieldSchemas: FieldSchema[] = [
         category: "Appearance",
         control: "toggle",
         description:
-            "Suppresses the startup warning shown when Wave is running under architecture translation (e.g. ARM64 emulation).",
+            "Suppresses the startup warning shown when RemoteTerm is running under architecture translation (e.g. ARM64 emulation).",
     },
     {
         key: "app:showoverlayblocknums",
@@ -141,11 +141,11 @@ export const FieldSchemas: FieldSchema[] = [
     },
     {
         key: "feature:rtappbuilder",
-        label: "RT app builder feature",
+        label: "RTApp Builder feature",
         category: "Appearance",
         control: "toggle",
         description:
-            "Shows the RT app builder entry points in the widget bar and app menu. Always shown in dev builds regardless of this setting.",
+            "Shows the RTApp Builder entry points in the widget bar and app menu. Always shown in dev builds regardless of this setting.",
     },
     {
         key: "window:transparent",
@@ -193,7 +193,7 @@ export const FieldSchemas: FieldSchema[] = [
         category: "Appearance",
         control: "toggle",
         description:
-            "Uses the OS-native title bar instead of Wave's overlay. Windows and Linux only, requires app restart.",
+            "Uses the OS-native title bar instead of RemoteTerm's overlay. Windows and Linux only, requires app restart.",
     },
     {
         key: "window:showmenubar",
@@ -557,7 +557,7 @@ export const FieldSchemas: FieldSchema[] = [
         label: "Open links in-app",
         category: "Editor & Web",
         control: "toggle",
-        description: "Opens web links inside Wave's web widget instead of the external browser.",
+        description: "Opens web links inside RemoteTerm's web widget instead of the external browser.",
     },
     {
         key: "web:defaulturl",
@@ -755,7 +755,7 @@ export const FieldSchemas: FieldSchema[] = [
         label: "Tsunami scaffold path",
         category: "Advanced",
         control: "text",
-        description: "Overrides the path to the local Tsunami app scaffold used when building Wave apps.",
+        description: "Overrides the path to the local Tsunami app scaffold used when building RTApps.",
         placeholder: "path",
     },
     {
@@ -764,7 +764,7 @@ export const FieldSchemas: FieldSchema[] = [
         category: "Advanced",
         control: "text",
         description:
-            "Sets a local filesystem path used as a Go module replace directive for the Tsunami SDK when building Wave apps.",
+            "Sets a local filesystem path used as a Go module replace directive for the Tsunami SDK when building RTApps.",
         placeholder: "path",
     },
     {
@@ -772,7 +772,7 @@ export const FieldSchemas: FieldSchema[] = [
         label: "Tsunami SDK version",
         category: "Advanced",
         control: "text",
-        description: "Overrides the Tsunami SDK version used when building Wave apps.",
+        description: "Overrides the Tsunami SDK version used when building RTApps.",
         placeholder: "e.g. v0.1.0",
     },
     {
@@ -780,7 +780,7 @@ export const FieldSchemas: FieldSchema[] = [
         label: "Tsunami Go path",
         category: "Advanced",
         control: "text",
-        description: "Overrides the Go path used when building Tsunami-based Wave apps.",
+        description: "Overrides the Go path used when building Tsunami-based RTApps.",
         placeholder: "path",
     },
 ];
@@ -1041,34 +1041,139 @@ interface NumberControlProps {
     min?: number;
     max?: number;
     step?: number;
-    onChange: (value: number) => void;
+    // Resolves false when the write failed, so the control can drop back to the stored value.
+    // Must be serialised with every other write to the key (FieldControl's queue does this).
+    onChange: (value: number) => Promise<boolean>;
     fieldLabel: string;
     labelledBy: string;
     describedBy?: string;
 }
 
+// Number("") is 0, so an emptied field must be rejected explicitly rather than saved as 0.
+// Out-of-range values are clamped because consumers index arrays by some of these settings
+// (window:maxtabcachesize drives emain's tab-cache eviction).
+export function parseNumberInput(raw: string, min?: number, max?: number): number | null {
+    if (raw.trim() === "") {
+        return null;
+    }
+    let next = Number(raw);
+    if (!Number.isFinite(next)) {
+        return null;
+    }
+    if (min != null) next = Math.max(min, next);
+    if (max != null) next = Math.min(max, next);
+    return next;
+}
+
+function decimalPlaces(n: number): number {
+    const m = /(?:\.(\d+))?(?:e([+-]\d+))?$/i.exec(String(n));
+    return Math.min(100, Math.max(0, (m[1]?.length ?? 0) - Number(m[2] ?? 0)));
+}
+
+// Step from the typed draft, not `value`: `value` only catches up after the settings
+// round-trip, so stepping from it would discard an uncommitted draft.
+// The sum is rounded to the finer of the step's and the base's precision: 1.1 + 0.05 is
+// 1.1500000000000001 in binary floating point, and that literal would be shown and stored.
+export function bumpNumberInput(draft: string, value: number, delta: number, min?: number, max?: number): number {
+    const base = parseNumberInput(draft, min, max) ?? value;
+    const decimals = Math.max(decimalPlaces(base), decimalPlaces(delta));
+    return parseNumberInput((base + delta).toFixed(decimals), min, max);
+}
+
 const NumberControl = memo(
     ({ value, unit, min, max, step = 1, onChange, fieldLabel, labelledBy, describedBy }: NumberControlProps) => {
+        const [local, setLocal] = useState(String(value));
+        const [dirty, setDirty] = useState(false);
+        // The last value this control wrote; `value` only catches up after the config watcher's
+        // event, so until then the written value, not the stale prop, is what is shown and stepped.
+        const [pending, setPending] = useState<number>(null);
+        const [prevValue, setPrevValue] = useState(value);
+        const inFlightRef = useRef(0);
+        // Values written since `pending` was last clear, so an echo of an earlier one is not
+        // mistaken for another writer's change.
+        const sentRef = useRef<number[]>([]);
+
+        if (value !== prevValue) {
+            setPrevValue(value);
+            // With nothing of ours outstanding, a change that is not our own echo came from another
+            // writer (Reset, another window, `wsh setconfig`), whose read may have skipped our echo.
+            if (pending != null && value !== pending && inFlightRef.current === 0 && !sentRef.current.includes(value)) {
+                setPending(null);
+            }
+        }
+        if (pending != null && pending === value) {
+            setPending(null);
+        }
+        if (!dirty && pending == null && local !== String(value)) {
+            setLocal(String(value));
+        }
+
+        const write = (next: number) => {
+            setLocal(String(next));
+            setPending(next);
+            sentRef.current = pending == null ? [next] : [...sentRef.current, next];
+            inFlightRef.current++;
+            onChange(next).then(
+                (ok) => {
+                    inFlightRef.current--;
+                    if (ok === false) setPending((p) => (p === next ? null : p));
+                },
+                () => {
+                    inFlightRef.current--;
+                    setPending((p) => (p === next ? null : p));
+                }
+            );
+        };
+
+        const commit = () => {
+            if (!dirty) {
+                return;
+            }
+            setDirty(false);
+            const next = parseNumberInput(local, min, max);
+            const current = pending ?? value;
+            if (next == null || next === current) {
+                setLocal(String(current));
+                return;
+            }
+            write(next);
+        };
+
         const bump = (delta: number) => {
-            let next = value + delta;
-            if (min != null) next = Math.max(min, next);
-            if (max != null) next = Math.min(max, next);
-            onChange(next);
+            setDirty(false);
+            write(bumpNumberInput(local, pending ?? value, delta, min, max));
+        };
+
+        // Commit only when focus leaves the whole control: moving from the input to its own spin
+        // button must not commit the draft, or the click would send a second write stepped from it.
+        const onControlBlur = (e: React.FocusEvent<HTMLDivElement>) => {
+            if (e.currentTarget.contains(e.relatedTarget as Node)) {
+                return;
+            }
+            commit();
         };
 
         return (
-            <div className="flex items-center gap-1 shrink-0 bg-black/25 border border-border rounded-md pl-2.5 pr-1 py-0.5">
+            <div
+                onBlur={onControlBlur}
+                className="flex items-center gap-1 shrink-0 bg-black/25 border border-border rounded-md pl-2.5 pr-1 py-0.5"
+            >
                 <input
                     type="number"
-                    value={value}
+                    value={local}
                     min={min}
                     max={max}
                     step={step}
                     aria-labelledby={labelledBy}
                     aria-describedby={describedBy}
                     onChange={(e) => {
-                        const next = Number(e.target.value);
-                        if (Number.isFinite(next)) onChange(next);
+                        setDirty(true);
+                        setLocal(e.target.value);
+                    }}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                            (e.target as HTMLInputElement).blur();
+                        }
                     }}
                     className="w-14 bg-transparent text-xs font-mono text-primary focus:outline-none"
                 />
@@ -1077,6 +1182,7 @@ const NumberControl = memo(
                     <button
                         type="button"
                         aria-label={`Increase ${fieldLabel}`}
+                        onMouseDown={(e) => e.preventDefault()}
                         onClick={() => bump(step)}
                         className="relative w-4 h-[11px] flex items-center justify-center bg-hover rounded-t-sm text-secondary cursor-pointer before:absolute before:-inset-x-1.5 before:-top-2 before:-bottom-0.5 before:content-['']"
                     >
@@ -1085,6 +1191,7 @@ const NumberControl = memo(
                     <button
                         type="button"
                         aria-label={`Decrease ${fieldLabel}`}
+                        onMouseDown={(e) => e.preventDefault()}
                         onClick={() => bump(-step)}
                         className="relative w-4 h-[11px] flex items-center justify-center bg-hover rounded-b-sm text-secondary cursor-pointer mt-px before:absolute before:-inset-x-1.5 before:-top-0.5 before:-bottom-2 before:content-['']"
                     >
@@ -1153,8 +1260,16 @@ interface FieldControlProps {
 const FieldControl = memo(({ schema, model, settings, isSet }: FieldControlProps) => {
     const rawValue = settings[schema.key];
     const defaultDisplay = resolveDefaultDisplay(schema, model);
-    const write = (value: unknown) => model.setGeneralSetting({ [schema.key]: value } as SettingsType);
-    const reset = () => model.setGeneralSetting({ [schema.key]: null } as SettingsType);
+    const writeQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+    // Each SetConfigCommand runs on its own goroutine server-side, so two in-flight writes for
+    // this key can be applied out of order; send the next only after the previous resolves.
+    // Reset shares the queue, or a spin write still queued behind it would undo it.
+    const write = (value: unknown): Promise<boolean> => {
+        const sent = writeQueueRef.current.then(() => model.setGeneralSetting({ [schema.key]: value } as SettingsType));
+        writeQueueRef.current = sent.catch(() => {});
+        return sent;
+    };
+    const reset = () => write(null);
 
     const labelId = `field-label-${String(schema.key)}`;
     const hintId = `field-hint-${String(schema.key)}`;

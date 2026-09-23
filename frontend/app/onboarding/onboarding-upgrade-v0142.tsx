@@ -42,9 +42,7 @@ const UpgradeOnboardingModal_v0_14_2_Content = () => {
                                 <strong>Claude Code Integration</strong> - Use <code>wsh badge</code> with Claude Code
                                 hooks to surface AI task status as tab bar notifications{" "}
                                 <button
-                                    onClick={() =>
-                                        waveEnv.electron.openExternal("https://docs.rterm.dev/claude-code")
-                                    }
+                                    onClick={() => waveEnv.electron.openExternal("https://docs.rterm.dev/claude-code")}
                                     className="text-accent text-sm font-normal cursor-pointer hover:underline"
                                 >
                                     [see docs]

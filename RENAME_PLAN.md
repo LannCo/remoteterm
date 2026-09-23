@@ -819,9 +819,48 @@ was added and is corrected here.
      do not repeat that. Handle the destination-already-exists case explicitly
      (after the override-var short-circuit above has already ruled out the "same path" case):
      empty directory (created by the app's own `mkdirSync` before the shim ran) -> remove it,
-     then move; non-empty without the migration marker -> abort loudly and tell the user to
-     merge manually rather than attempting a move-onto-existing that `fs.renameSync` will
-     reject (`ENOTEMPTY`/`EEXIST` on POSIX, `EPERM` on Windows).
+     then move; non-empty without the migration marker -> see the amendment below (this step
+     originally said to abort loudly and ask for a manual merge for every root, rather than
+     attempting a move-onto-existing that `fs.renameSync` will reject: `ENOTEMPTY`/`EEXIST` on
+     POSIX, `EPERM` on Windows).
+   - **Amended 2026-09-22: non-empty unmarked destination, per root (shipped behaviour).**
+     Abort-for-every-root proved sticky in practice: a build that skipped a legacy root, or a
+     launch held back by a running legacy instance (see the running-instance amendment below),
+     leaves a non-empty destination behind, and abort-only then fires on every later launch.
+     What ships instead:
+     - **Config root:** always merges into the existing destination.
+     - **Data root:** merges only if every top-level destination entry is something a launch
+       creates before the server starts: `logs/` and `rtapp.log` (emain-log, at module load),
+       plus Electron's userData dir when it sits directly in the data destination (macOS without
+       `XDG_DATA_HOME`: `app.setName("remoteterm/electron")` puts it at
+       `~/Library/Application Support/remoteterm/electron`, and `requestSingleInstanceLock()`
+       creates it before a blocked launch quits). Anything the server creates (`db/`,
+       `wave.lock`, `remoteterm.lock`) means the server has run there, and the root aborts as
+       originally specified.
+     - **Legacy-home root:** still aborts loudly and asks for a manual merge.
+     - **The merge never overwrites:** a legacy entry the destination lacks is moved in,
+       directories merge recursively, an entry the destination already has stays in the legacy
+       dir and is reported once, and Electron's `electron/` profile is kept whole on whichever
+       side has it. The completion marker (payload `merged-from:<source>`) is written after the
+       merge so the state converges.
+     - **The merge is resumable:** it writes `.migrating-from-waveterm` into the destination
+       before its first move and removes it after the completion marker. If a merge throws
+       part-way (for example a root-owned subdirectory that cannot be renamed into a new
+       parent), that file's presence makes the next launch run the same merge again, even though
+       the destination no longer passes the check above and the legacy root may have lost its
+       `wave.lock`; it moves what is left, overwrites nothing, then writes the marker.
+     - **The server does not start after a failed or incomplete migration.** If a root's move or
+       merge throws, or its destination cannot be inspected or emptied, `appMain()` awaits
+       `resolveIncompleteMigrationBlock()` (after `resolveLegacyInstanceBlock()`, before
+       `runRemoteTermSrv()`), which shows the "RemoteTerm Data Migration Issue" error box with the
+       failures and quits. The server would otherwise create an empty `db/` in the half-merged
+       destination and the resumed merge would keep it. A sticky abort (non-empty destination) and
+       a completed merge that kept destination copies do not block: nothing was left half-moved.
+     - **`db/` on both sides:** a merge (first or resumed) that finds `db/` in both the legacy
+       root and the destination moves nothing, deletes neither, and blocks startup as above with
+       both paths named, asking the user to move the destination's `db/` aside if it holds nothing
+       they need (a build without the startup block could leave an empty one). The next launch
+       then resumes. SQLite files are never merged.
    - **Concurrency:** the migration runs before
      `electronApp.requestSingleInstanceLock()` (`emain/emain.ts`, ~200 lines and one
      module-evaluation phase after the path getters), so two processes launched close together
@@ -831,6 +870,45 @@ was added and is corrected here.
      for the completion marker rather than crashing module evaluation (an uncaught throw here
      kills the process before any window exists, with no visible error to the user). Add this to
      the step's risk list rather than leaving concurrent launches undiscussed.
+   - **Amended 2026-09-22: a running pre-rename instance (shipped behaviour).** The race above is
+     between two new-build processes; the second hazard is the *legacy* app still running while
+     the new build moves its roots out from under it. Only when a root actually needs migrating
+     (legacy root present and valid, no marker), the shim reads the legacy app's Chromium
+     `SingletonLock` at `<appData>/waveterm/electron/SingletonLock`, a symlink to
+     `<hostname>-<pid>` held for as long as that app runs (Linux and macOS; Windows is not
+     checked because a rename there already fails while the legacy app holds files open).
+     - Absent lock, or a pid that is gone (`ESRCH`): stale, migrate.
+     - **Identity check:** a lock left by a crash can name a pid since reused by an unrelated
+       process, so a live pid counts as the legacy app only if its executable is the legacy
+       app's: `/proc/<pid>/exe` on Linux (a `" (deleted)"` suffix is ignored),
+       `ps -p <pid> -o comm=` on macOS. Expected basenames: production `waveterm` (Linux,
+       electron-builder's `executableName` from package.json `name`) / `Wave` (macOS,
+       `productName`); dev builds ran stock `electron` / `Electron`.
+       Stock Electron is shared by every `electron .` process, so a dev-flavour match cannot be
+       told apart from any other Electron app reusing the pid: it is never "confirmed running",
+       only "cannot be ruled out" (Quit / Migrate anyway). Only the production basenames get the
+       Quit-only dialog.
+     - **Dev vs production scoping:** both legacy flavours set their name to
+       `waveterm/electron`, so they shared one lock and one profile,
+       `<appData>/waveterm/electron`. The other flavour holding the lock means this flavour's
+       legacy app is not running, but that profile sits inside the production Linux config root
+       (`~/.config/waveterm`) and macOS data root (`~/Library/Application Support/waveterm`), so
+       moving either would move a running legacy dev app's profile and live `SingletonLock` into
+       this build's userData. A root that contains the profile is therefore blocked by a holder
+       of either flavour (same dialogs as below); a root that does not contain it migrates
+       without a dialog when the holder is the other flavour. The `-dev` roots never contain it,
+       so a dev build with a production holder migrates everything.
+     - When the legacy app is confirmed running, or cannot be ruled out (identity unreadable,
+       e.g. another uid, or an unrelated executable; lock unreadable, unparseable or written by
+       another host), nothing moves and no marker is written this launch. Before the server
+       starts, `appMain()` awaits `resolveLegacyInstanceBlock()` (after `app.whenReady()`) and
+       shows one of two dialogs, naming the legacy app "Wave Terminal" as it named itself:
+       confirmed running -> "Wave Terminal Is Still Running", **Quit** only, with the pid and
+       lock path in the detail; not ruled out -> "Wave Terminal May Still Be Running", **Quit**
+       (default) or **Migrate anyway**, which runs the migration now and continues startup.
+       Quitting before the server starts keeps the new roots from being created next to the live
+       legacy ones; the next launch retries. `emain/emain-startup-order.test.ts` fails if
+       `appMain()` stops awaiting that call or returning on `false` before `runRemoteTermSrv()`.
    - **Remote hosts are explicitly out of scope for this local migration shim** — see
      Prerequisites' "Remote-host `.waveterm` state" item. Do not extend this step to cover
      remote-side `.waveterm` directories; that needs its own decision and, if a migration is

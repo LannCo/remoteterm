@@ -107,7 +107,12 @@ const QuickAddRow = memo(({ model }: QuickAddRowProps) => {
                     Cancel
                 </button>
             </div>
-            {error && <div className="text-xs text-error">{error}</div>}
+            {error && (
+                <div role="alert" className="flex items-center gap-1.5 text-xs">
+                    <i aria-hidden="true" className="fa-sharp fa-solid fa-circle-exclamation text-error" />
+                    <span className="text-primary">{error}</span>
+                </div>
+            )}
         </div>
     );
 });
@@ -228,8 +233,8 @@ interface KeychainRowProps {
 
 const KeychainRow = memo(({ icon, name, subtitle, type, fingerprint, usedBy }: KeychainRowProps) => {
     return (
-        <div className="grid grid-cols-[22px_1.4fr_80px_1fr_80px_16px] items-center gap-2.5 bg-panel border border-border/60 rounded-md px-2.5 py-2 opacity-70">
-            <i aria-hidden="true" className={cn("fa-sharp fa-solid text-secondary text-sm", icon)} />
+        <div className="grid grid-cols-[22px_1.4fr_80px_1fr_80px_16px] items-center gap-2.5 bg-panel border border-border/60 rounded-md px-2.5 py-2">
+            <i aria-hidden="true" className={cn("fa-sharp fa-solid text-secondary text-sm opacity-70", icon)} />
             <span>
                 <div className="text-sm">{name}</div>
                 <div className="text-xxs text-muted">{subtitle}</div>
@@ -237,7 +242,7 @@ const KeychainRow = memo(({ icon, name, subtitle, type, fingerprint, usedBy }: K
             <span className="text-xxs text-secondary bg-surface rounded-full px-1.5 py-0.5 w-fit">{type}</span>
             <span className="font-mono text-xxs text-muted">{fingerprint}</span>
             <span className="text-xs text-secondary">{usedBy}</span>
-            <i aria-hidden="true" className="fa-sharp fa-solid fa-ellipsis text-muted justify-self-end" />
+            <i aria-hidden="true" className="fa-sharp fa-solid fa-ellipsis text-muted justify-self-end opacity-70" />
         </div>
     );
 });

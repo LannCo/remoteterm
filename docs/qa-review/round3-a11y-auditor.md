@@ -1,0 +1,21 @@
+# a11y-auditor report (round 3)
+**Target:** `git diff bab19e28 4d744a2f` — RemoteTerm config modal fix wave 2 + emain migration dialogs
+**Started:** 2026-09-22T15:14:00Z
+**Status:** COMPLETE
+
+## Findings
+_None._
+
+## Verified OK
+
+- **R2-A11Y-1 fix (backgroundscontent.tsx:113-116, connectionscontent.tsx:110-113):** error text moved off `text-error` onto `text-primary`, with a `text-error` icon (`aria-hidden="true"`) kept alongside for a non-colour-only indicator. Computed contrast: `text-primary` (#f7f7f7) on the blended `bg-panel` (rgba(31,33,31,0.5) over `--color-background` rgb(34,34,34) = rgb(32.5,33.5,32.5)) is **14.99:1**, passes 4.5:1 with large margin. `role="alert"` div unchanged, still announces on insertion only (safe pattern per round-1/2). 1.4.1 Use of Color satisfied: icon + text-primary + the `aria-invalid`/`aria-describedby` wiring on the paired inputs (unchanged) all independently convey the error.
+- **secretscontent.tsx:155 hint colour swap:** replaced `cn("text-caption", isNameInvalid ? "text-error" : "text-muted")` with a template literal. Confirmed the reason given (`cn()` drops `text-caption`) is real: `twMerge(clsx(["text-caption","text-error"]))` in this repo's plain (non-extended) `cn()` returns `"text-error"` only — verified live with `node -e` against the installed `tailwind-merge`. Grepped all other `text-caption` usages in `frontend/app/view/remotetermconfig/*.tsx`: every other site uses a plain string, not `cn()`, so this was the only occurrence of the bug and the fix is correctly scoped, not a partial fix of a wider problem. Resulting hint (`text-caption` 11px, `text-primary`) computes to the same 14.99:1 (on `bg-panel`) / 14.85:1 (on raw background) either way — passes.
+- **R2-CA-3 (`applyBackgroundToTab` error surfacing), `remotetermconfig-model.ts:946-956`:** now wraps the RPC call in try/catch and routes failures through the existing `errorMessageAtom`, rendered at `remotetermconfig.tsx:282` as `<span role="alert">{errorMessage}</span>` — the same previously-verified single-announce pattern (role present only once the element is inserted with content, not toggled on an empty node). No new live-region needed; reuses a working one.
+- **R2-CA-6 (`bumpNumberInput`), `generalcontent.tsx:1065-1069` + `NumberControl.bump` at `:1092-1096`:** pure logic fix (steps from the typed draft instead of the stale `value` prop). No markup, `aria-label`, role, or keyboard-handler changes — spin buttons remain native `<button type="button">` with `aria-label="Increase/Decrease {fieldLabel}"`, reachable and operable by Tab+Enter/Space exactly as before. The pre-existing sub-24px hit-area on these buttons (A11Y-6, round 1, still open, not touched by this diff) is unaffected and out of this round's scope.
+- **Electron native dialogs, `emain-platform.ts:169-208` (`resolveLegacyInstanceBlock`):** two `dialog.showMessageBox` calls. Single-button dialog (`buttons: ["Quit"]`, no explicit `defaultId`/`cancelId`): Electron defaults both to button 0, so Enter and Escape land on the only button either way. Two-button dialog (`buttons: ["Quit", "Migrate anyway"], defaultId: 0, cancelId: 0`): both Enter and Escape resolve to `"Quit"` (index 0), matching the brief's "default/cancel both land on the safe choice." Button labels are short but each dialog's `message`/`detail` text disambiguates the consequence. These are OS-native message boxes, not DOM content — outside WCAG 2.2's web-content scope; noting as UNVERIFIED for screen-reader announcement specifics since native dialog AT behaviour depends on the OS accessibility tree, not this codebase, and could not be rendered.
+- Regression tests: `npx vitest run remotetermconfig-a11y.test.tsx generalcontent.test.ts` → 23/23 pass, including the two new tests (`expectReadableErrorText` helper) that pin `text-error` absence / `text-primary` presence on both quick-add error paths, and 3 new `bumpNumberInput` unit tests.
+
+## Completion
+**Status:** COMPLETE
+**Findings by severity:** none (Critical 0, High 0, Medium 0, Low 0, Info 0)
+**Not checked:** rendered/live behaviour of the two native `dialog.showMessageBox` calls (screen-reader announcement, OS-level focus handling) — source-level review only, no app launch permitted this round.

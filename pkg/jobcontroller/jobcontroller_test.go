@@ -504,30 +504,82 @@ func TestOnConnectionDownDeduplication(t *testing.T) {
 	}
 }
 
-// TestHandleSystemResumeSmoke verifies that HandleSystemResume filters correctly
-// and does not panic when processing connections.
-func TestHandleSystemResumeSmoke(t *testing.T) {
-	t.Parallel()
+// TestHandleSystemResumeFastPathFiltering verifies HandleSystemResume fast-path
+// reconnects only disconnected connections with running durable jobs, and skips
+// ones with auto-reconnect suppressed, no durable jobs, interactive auth, or
+// already connected and healthy.
+func TestHandleSystemResumeFastPathFiltering(t *testing.T) {
 	ctx := context.Background()
-
-	// Mock hasRunningDurableJobs to return true for our test connection
-	hasRunningDurableJobsTestHook = func(ctx context.Context, connName string) bool {
-		return connName == "testuser@testhost:2222"
+	makeResumeConn := func(host string, status string, suppress bool) string {
+		conn := conncontroller.GetConn(&remote.SSHOpts{SSHHost: host, SSHUser: "testuser", SSHPort: "2222"})
+		conn.WithLock(func() {
+			conn.Status = status
+			conn.ConnHealthStatus = conncontroller.ConnHealthStatus_Good
+		})
+		conn.SetSuppressAutoReconnect(suppress)
+		connectionReconnectSchedulers.Set(conn.GetName(), true)
+		return conn.GetName()
 	}
-	defer func() { hasRunningDurableJobsTestHook = nil }()
+	eligible := makeResumeConn("resume-eligible", conncontroller.Status_Disconnected, false)
+	suppressed := makeResumeConn("resume-suppressed", conncontroller.Status_Disconnected, true)
+	noJobs := makeResumeConn("resume-nojobs", conncontroller.Status_Disconnected, false)
+	interactive := makeResumeConn("resume-interactive", conncontroller.Status_Disconnected, false)
+	healthy := makeResumeConn("resume-healthy", conncontroller.Status_Connected, false)
 
-	// Create a mock disconnected connection in the controller map
-	testOpts := &remote.SSHOpts{SSHHost: "testhost", SSHUser: "testuser", SSHPort: "2222"}
-	conn := conncontroller.GetConn(testOpts)
-	conn.Status = conncontroller.Status_Disconnected
-	conn.ConnHealthStatus = conncontroller.ConnHealthStatus_Good
+	hasRunningDurableJobsTestHook = func(ctx context.Context, connName string) bool {
+		return connName != noJobs
+	}
+	NeedsInteractiveAuthTestHook = func(connName string) bool {
+		return connName == interactive
+	}
+	attempted := make(chan string, 16)
+	resumeReconnectTestHook = func(ctx context.Context, connName string) error {
+		attempted <- connName
+		return nil
+	}
+	defer func() {
+		hasRunningDurableJobsTestHook = nil
+		NeedsInteractiveAuthTestHook = nil
+		resumeReconnectTestHook = nil
+	}()
 
-	// Call HandleSystemResume — should attempt reconnect for the disconnected conn
-	// (reconnect will fail because mock has no connectInternal hook, but that's expected)
 	HandleSystemResume(ctx)
 
-	// Note: mock connection remains in controller map but uses unique key,
-	// so it won't interfere with other tests.
+	gotEligible := false
+	timeout := time.After(2 * time.Second)
+	for !gotEligible {
+		select {
+		case name := <-attempted:
+			if name == eligible {
+				gotEligible = true
+				continue
+			}
+			if name == suppressed || name == noJobs || name == interactive || name == healthy {
+				t.Fatalf("fast-path reconnect attempted for filtered connection %s", name)
+			}
+		case <-timeout:
+			t.Fatalf("no fast-path reconnect attempted for %s", eligible)
+		}
+	}
+	// Every reconnect goroutine is spawned before HandleSystemResume returns; give
+	// any wrongly spawned ones time to report.
+	time.Sleep(100 * time.Millisecond)
+	for len(attempted) > 0 {
+		name := <-attempted
+		if name == suppressed || name == noJobs || name == interactive || name == healthy {
+			t.Fatalf("fast-path reconnect attempted for filtered connection %s", name)
+		}
+	}
+
+	if _, ok := connectionReconnectSchedulers.GetEx(eligible); ok {
+		t.Errorf("stale scheduler entry not cleared for %s", eligible)
+	}
+	for _, name := range []string{suppressed, noJobs, interactive, healthy} {
+		if _, ok := connectionReconnectSchedulers.GetEx(name); !ok {
+			t.Errorf("scheduler entry cleared for filtered connection %s", name)
+		}
+		connectionReconnectSchedulers.Delete(name)
+	}
 }
 
 // TestIsNetworkUnreachable_ContextDeadline verifies that "context deadline exceeded"
