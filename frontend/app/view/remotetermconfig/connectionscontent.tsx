@@ -1,10 +1,11 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { RemoteTermConfigViewModel } from "@/app/view/remotetermconfig/remotetermconfig-model";
 import { cn, formatRelativeTime } from "@/util/util";
 import { useAtomValue, useSetAtom } from "jotai";
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 
 type ConnectionsView = "hosts" | "keychain";
 
@@ -159,9 +160,13 @@ HostsHeader.displayName = "HostsHeader";
 interface HostsListProps {
     names: string[];
     connStatusMap: Map<string, ConnStatus>;
+    connKeywordsMap: Map<string, ConnKeywords>;
+    onSetHeavyInterval: (name: string, seconds: number) => void;
 }
 
-const HostsList = memo(({ names, connStatusMap }: HostsListProps) => {
+const HostsList = memo(({ names, connStatusMap, connKeywordsMap, onSetHeavyInterval }: HostsListProps) => {
+    const [expandedName, setExpandedName] = useState<string | null>(null);
+
     if (names.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
@@ -181,26 +186,48 @@ const HostsList = memo(({ names, connStatusMap }: HostsListProps) => {
             </div>
             {names.map((name) => {
                 const status = connStatusMap.get(name);
+                const expanded = expandedName === name;
+                const currentInterval = connKeywordsMap.get(name)?.["sysinfo:heavyinterval"] ?? 5;
                 return (
-                    <div
-                        key={name}
-                        className="grid grid-cols-[14px_20px_1fr_90px] items-center gap-2.5 bg-panel border border-border/60 rounded-md px-2 py-2"
-                        title={statusLabel(status)}
-                    >
-                        <span
-                            aria-hidden="true"
-                            className={cn("w-1.5 h-1.5 rounded-full justify-self-center", statusDotClass(status))}
-                        />
-                        <span className="w-5 h-5 rounded flex items-center justify-center bg-surface text-secondary">
-                            <i aria-hidden="true" className="fa-sharp fa-solid fa-server text-xxs" />
-                        </span>
-                        <span className="font-mono text-xs truncate">
-                            {name}
-                            <span className="sr-only"> — {statusLabel(status)}</span>
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                            {formatRelativeTime(status?.lastconnecttime ?? 0)}
-                        </span>
+                    <div key={name} className="flex flex-col gap-1.5">
+                        <button
+                            type="button"
+                            aria-expanded={expanded}
+                            onClick={() => setExpandedName(expanded ? null : name)}
+                            title={statusLabel(status)}
+                            className="grid grid-cols-[14px_20px_1fr_90px] items-center gap-2.5 bg-panel border border-border/60 rounded-md px-2 py-2 text-left cursor-pointer hover:border-border"
+                        >
+                            <span
+                                aria-hidden="true"
+                                className={cn("w-1.5 h-1.5 rounded-full justify-self-center", statusDotClass(status))}
+                            />
+                            <span className="w-5 h-5 rounded flex items-center justify-center bg-surface text-secondary">
+                                <i aria-hidden="true" className="fa-sharp fa-solid fa-server text-xxs" />
+                            </span>
+                            <span className="font-mono text-xs truncate">
+                                {name}
+                                <span className="sr-only"> — {statusLabel(status)}</span>
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                                {formatRelativeTime(status?.lastconnecttime ?? 0)}
+                            </span>
+                        </button>
+                        {expanded && (
+                            <div className="flex items-center gap-2 px-3 py-2 bg-panel/60 border border-border/40 rounded-md text-caption">
+                                <label htmlFor={`heavy-interval-${name}`} className="text-muted">
+                                    GPU/temp poll interval (seconds)
+                                </label>
+                                <input
+                                    id={`heavy-interval-${name}`}
+                                    type="number"
+                                    min={1}
+                                    max={60}
+                                    value={currentInterval}
+                                    onChange={(e) => onSetHeavyInterval(name, Number(e.target.value))}
+                                    className="w-16 bg-black/20 border border-border rounded px-1.5 py-0.5 text-xs"
+                                />
+                            </div>
+                        )}
                     </div>
                 );
             })}
@@ -298,7 +325,17 @@ export const ConnectionsContent = memo(({ model }: ConnectionsContentProps) => {
     const search = useAtomValue(model.connectionsSearchAtom);
     const connectionNames = useAtomValue(model.connectionNamesAtom);
     const connStatusMap = useAtomValue(model.connStatusMapAtom);
+    const connKeywordsMap = useAtomValue(model.connKeywordsMapAtom);
     const setView = useSetAtom(model.connectionsViewAtom);
+
+    const handleSetHeavyInterval = (name: string, seconds: number) => {
+        if (!Number.isFinite(seconds) || seconds < 1) {
+            return;
+        }
+        const metamaptype: unknown = { "sysinfo:heavyinterval": seconds };
+        const data: ConnConfigRequest = { host: name, metamaptype };
+        model.env.rpc.SetConnectionsConfigCommand(TabRpcClient, data);
+    };
 
     const filteredNames = useMemo(() => {
         const lowerSearch = search.trim().toLowerCase();
@@ -322,7 +359,12 @@ export const ConnectionsContent = memo(({ model }: ConnectionsContentProps) => {
     return (
         <div className="flex flex-col gap-4 w-full h-full p-4 min-h-0">
             <HostsHeader model={model} view={view} quickAddOpen={quickAddOpen} />
-            <HostsList names={filteredNames} connStatusMap={connStatusMap} />
+            <HostsList
+                names={filteredNames}
+                connStatusMap={connStatusMap}
+                connKeywordsMap={connKeywordsMap}
+                onSetHeavyInterval={handleSetHeavyInterval}
+            />
         </div>
     );
 });

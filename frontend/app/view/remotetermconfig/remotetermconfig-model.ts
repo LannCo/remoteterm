@@ -143,6 +143,7 @@ export class RemoteTermConfigViewModel implements ViewModel {
     connectionsQuickAddErrorAtom: PrimitiveAtom<string | null>;
     connectionNamesAtom: Atom<string[]>;
     connStatusMapAtom: Atom<Map<string, ConnStatus>>;
+    connKeywordsMapAtom: Atom<Map<string, ConnKeywords>>;
 
     widgetsMapAtom: Atom<{ [key: string]: WidgetConfigType }>;
     widgetsOrderedAtom: Atom<[string, WidgetConfigType][]>;
@@ -227,6 +228,10 @@ export class RemoteTermConfigViewModel implements ViewModel {
                 map.set(status.connection, status);
             }
             return map;
+        });
+        this.connKeywordsMapAtom = atom((get) => {
+            const fullConfig = get(this.env.atoms.fullConfigAtom);
+            return new Map(Object.entries(fullConfig?.connections ?? {}));
         });
 
         this.widgetsMapAtom = atom((get) => {
