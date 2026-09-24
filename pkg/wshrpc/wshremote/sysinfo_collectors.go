@@ -4,10 +4,13 @@
 package wshremote
 
 import (
+	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
+	"github.com/shirou/gopsutil/v4/sensors"
 )
 
 const BytesPerGB = 1073741824
@@ -113,4 +116,67 @@ func (m *memCollector) Collect() (map[string]float64, error) {
 		"mem:used":      float64(memData.Used) / BytesPerGB,
 		"mem:free":      float64(memData.Free) / BytesPerGB,
 	}, nil
+}
+
+type tempCollector struct {
+	available bool
+}
+
+func MakeTempCollector() Collector {
+	return &tempCollector{}
+}
+
+func (t *tempCollector) Name() string {
+	return "temp"
+}
+
+// Probe reads sensors once to confirm at least one usable reading exists.
+// Picking "the highest reading among sensor keys containing core/package,
+// else the first entry" is a heuristic — sensor key naming varies by
+// platform/driver (lm-sensors' coretemp module on Linux commonly exposes
+// "coretemp_package_id_0"/"coretemp_core_0" style keys, but this is not
+// guaranteed on every host) and there is no single correct "the" CPU
+// temperature on multi-socket or heterogeneous-core hardware.
+func (t *tempCollector) Probe() bool {
+	stats, err := sensors.SensorsTemperatures()
+	if err != nil || len(stats) == 0 {
+		t.available = false
+		return false
+	}
+	t.available = true
+	return true
+}
+
+func (t *tempCollector) Describe() map[string]MetricMeta {
+	if !t.available {
+		return map[string]MetricMeta{}
+	}
+	return map[string]MetricMeta{
+		"cpu:temp": {Label: "CPU Temp", Unit: "°C", Color: "var(--sysinfo-temp-color)", MinY: 0, MaxY: 100, DecimalPlaces: 1},
+	}
+}
+
+func (t *tempCollector) Collect() (map[string]float64, error) {
+	stats, err := sensors.SensorsTemperatures()
+	if err != nil {
+		return nil, err
+	}
+	if len(stats) == 0 {
+		return nil, errors.New("no temperature sensors reported")
+	}
+	best := 0.0
+	found := false
+	for _, s := range stats {
+		key := strings.ToLower(s.SensorKey)
+		if strings.Contains(key, "core") || strings.Contains(key, "package") {
+			if !found || s.Temperature > best {
+				best = s.Temperature
+				found = true
+			}
+		}
+	}
+	if !found && len(stats) > 0 {
+		best = stats[0].Temperature
+	}
+	return map[string]float64{"cpu:temp": best}, nil
 }

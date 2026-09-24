@@ -57,3 +57,21 @@ func TestMemCollectorProbeAndCollect(t *testing.T) {
 		t.Fatalf("expected mem:used to reference mem:total as its dynamic max, got %+v", meta["mem:used"])
 	}
 }
+
+func TestTempCollectorProbeIsHonest(t *testing.T) {
+	c := MakeTempCollector()
+	probed := c.Probe()
+	values, err := c.Collect()
+	if !probed {
+		if err == nil && len(values) != 0 {
+			t.Fatal("collector reported unavailable but still returned values")
+		}
+		t.Skip("no temperature sensors on this host/CI runner — Probe() correctly returned false")
+	}
+	if err != nil {
+		t.Fatalf("probed true but Collect failed: %v", err)
+	}
+	if _, ok := values["cpu:temp"]; !ok {
+		t.Fatal("expected cpu:temp key when probed true")
+	}
+}
