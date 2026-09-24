@@ -458,6 +458,12 @@ func GetSecretsNamesCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) ([]string, 
 	return resp, err
 }
 
+// command "getsysinfometrics", wshserver.GetSysInfoMetricsCommand
+func GetSysInfoMetricsCommand(w *wshutil.WshRpc, data wshrpc.CommandSysInfoMetricsData, opts *wshrpc.RpcOpts) (map[string]wshrpc.MetricMeta, error) {
+	resp, err := sendRpcRequestCallHelper[map[string]wshrpc.MetricMeta](w, "getsysinfometrics", data, opts)
+	return resp, err
+}
+
 // command "gettab", wshserver.GetTabCommand
 func GetTabCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (*remotetermobj.Tab, error) {
 	resp, err := sendRpcRequestCallHelper[*remotetermobj.Tab](w, "gettab", data, opts)
@@ -938,6 +944,12 @@ func StreamDataAckCommand(w *wshutil.WshRpc, data wshrpc.CommandStreamAckData, o
 // command "streamtest", wshserver.StreamTestCommand
 func StreamTestCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) chan wshrpc.RespOrErrorUnion[int] {
 	return sendRpcRequestResponseStreamHelper[int](w, "streamtest", nil, opts)
+}
+
+// command "sysinforeprobe", wshserver.SysInfoReprobeCommand
+func SysInfoReprobeCommand(w *wshutil.WshRpc, data wshrpc.CommandSysInfoReprobeData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "sysinforeprobe", data, opts)
+	return err
 }
 
 // command "termgetscrollbacklines", wshserver.TermGetScrollbackLinesCommand

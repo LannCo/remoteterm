@@ -70,6 +70,8 @@ type WshRpcInterface interface {
 	WriteTempFileCommand(ctx context.Context, data CommandWriteTempFileData) (string, error)
 	StreamTestCommand(ctx context.Context) chan RespOrErrorUnion[int]
 	StreamCpuDataCommand(ctx context.Context, request CpuDataRequest) chan RespOrErrorUnion[TimeSeriesData]
+	SysInfoReprobeCommand(ctx context.Context, data CommandSysInfoReprobeData) error
+	GetSysInfoMetricsCommand(ctx context.Context, data CommandSysInfoMetricsData) (map[string]MetricMeta, error)
 	TestCommand(ctx context.Context, data string) error
 	TestMultiArgCommand(ctx context.Context, arg1 string, arg2 int, arg3 bool) (string, error)
 	SetConfigCommand(ctx context.Context, data MetaSettingsType) error
@@ -394,6 +396,28 @@ const (
 type TimeSeriesData struct {
 	Ts     int64              `json:"ts"`
 	Values map[string]float64 `json:"values"`
+	Errors map[string]string  `json:"errors,omitempty"`
+}
+
+// MetricMeta mirrors wshremote.MetricMeta field-for-field. Duplicated rather
+// than imported to avoid an import cycle (wshremote imports this package);
+// keep both structs' fields and json tags in sync by hand.
+type MetricMeta struct {
+	Label         string  `json:"label"`
+	Unit          string  `json:"unit"`
+	Color         string  `json:"color"`
+	MinY          float64 `json:"miny"`
+	MaxY          float64 `json:"maxy"`
+	MaxYKey       string  `json:"maxykey,omitempty"`
+	DecimalPlaces int     `json:"decimalplaces"`
+}
+
+type CommandSysInfoReprobeData struct {
+	ConnName string `json:"connname"`
+}
+
+type CommandSysInfoMetricsData struct {
+	ConnName string `json:"connname"`
 }
 
 type MetaSettingsType struct {

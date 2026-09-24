@@ -691,6 +691,16 @@ declare global {
         error?: string;
     };
 
+    // wshrpc.CommandSysInfoMetricsData
+    type CommandSysInfoMetricsData = {
+        connname: string;
+    };
+
+    // wshrpc.CommandSysInfoReprobeData
+    type CommandSysInfoReprobeData = {
+        connname: string;
+    };
+
     // wshrpc.CommandTermGetScrollbackLinesData
     type CommandTermGetScrollbackLinesData = {
         linestart: number;
@@ -809,6 +819,7 @@ declare global {
         "conn:connectcount"?: number;
         "conn:lastconnecttime"?: number;
         "conn:authpromptused"?: boolean;
+        "sysinfo:heavyinterval"?: number;
         "display:hidden"?: boolean;
         "display:order"?: number;
         "term:*"?: boolean;
@@ -1262,6 +1273,17 @@ declare global {
         ReturnDesc: string;
     };
 
+    // wshrpc.MetricMeta
+    type MetricMeta = {
+        label: string;
+        unit: string;
+        color: string;
+        miny: number;
+        maxy: number;
+        maxykey?: string;
+        decimalplaces: number;
+    };
+
     // rtconfig.MimeTypeConfigType
     type MimeTypeConfigType = {
         icon: string;
@@ -1596,6 +1618,7 @@ declare global {
     type TimeSeriesData = {
         ts: number;
         values: {[key: string]: number};
+        errors?: {[key: string]: string};
     };
 
     // remotetermobj.UIContext
