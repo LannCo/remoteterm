@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/shirou/gopsutil/v4/sensors"
@@ -15,15 +16,7 @@ import (
 
 const BytesPerGB = 1073741824
 
-type MetricMeta struct {
-	Label         string  `json:"label"`
-	Unit          string  `json:"unit"`
-	Color         string  `json:"color"`
-	MinY          float64 `json:"miny"`
-	MaxY          float64 `json:"maxy"`
-	MaxYKey       string  `json:"maxykey,omitempty"`
-	DecimalPlaces int     `json:"decimalplaces"`
-}
+type MetricMeta = wshrpc.MetricMeta
 
 type Collector interface {
 	Name() string

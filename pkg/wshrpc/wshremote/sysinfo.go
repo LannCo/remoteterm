@@ -4,6 +4,7 @@
 package wshremote
 
 import (
+	"context"
 	"log"
 	"sync"
 	"time"
@@ -214,8 +215,6 @@ func ReprobeCollectors(connName string) error {
 	return nil
 }
 
-// DescribeActiveCollectors returns wshremote.MetricMeta; wshrpc.MetricMeta is a
-// hand-kept duplicate (import cycle), converted in the wshserver handler.
 func DescribeActiveCollectors(connName string) map[string]MetricMeta {
 	state := lookupLoopState(connName)
 	if state == nil {
@@ -228,6 +227,27 @@ func DescribeActiveCollectors(connName string) map[string]MetricMeta {
 		}
 	}
 	return meta
+}
+
+// The sysinfo RPCs live on ServerImpl, not wshserver: activeLoopStates is
+// per-process, and each connection's loop runs in the process behind its
+// conn:<name> route (wavesrv for local, wsh connserver otherwise).
+
+func (impl *ServerImpl) SysInfoReprobeCommand(ctx context.Context, data wshrpc.CommandSysInfoReprobeData) error {
+	return ReprobeCollectors(normalizeSysInfoConnName(data.ConnName))
+}
+
+func (impl *ServerImpl) GetSysInfoMetricsCommand(ctx context.Context, data wshrpc.CommandSysInfoMetricsData) (map[string]wshrpc.MetricMeta, error) {
+	return DescribeActiveCollectors(normalizeSysInfoConnName(data.ConnName)), nil
+}
+
+// normalizeSysInfoConnName matches the frontend's makeConnRoute, which treats a
+// blank connection as local.
+func normalizeSysInfoConnName(connName string) string {
+	if connName == "" {
+		return wshrpc.LocalConnName
+	}
+	return connName
 }
 
 func collectTick(state *sysInfoLoopState) (map[string]float64, map[string]string) {

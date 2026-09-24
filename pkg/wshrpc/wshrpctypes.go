@@ -399,9 +399,6 @@ type TimeSeriesData struct {
 	Errors map[string]string  `json:"errors,omitempty"`
 }
 
-// MetricMeta mirrors wshremote.MetricMeta field-for-field. Duplicated rather
-// than imported to avoid an import cycle (wshremote imports this package);
-// keep both structs' fields and json tags in sync by hand.
 type MetricMeta struct {
 	Label         string  `json:"label"`
 	Unit          string  `json:"unit"`

@@ -6,6 +6,11 @@ package wshremote
 import (
 	"fmt"
 	"testing"
+
+	"github.com/LannCo/remoteterm/pkg/baseds"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
 )
 
 type fakeCollector struct {
@@ -258,6 +263,44 @@ func TestReplaceCollectorsConcurrentWithTicksIsRaceFree(t *testing.T) {
 		collectTick(state)
 	}
 	<-done
+}
+
+// makeServerImplRpcPair wires a client WshRpc directly to a WshRpc serving
+// ServerImpl, so calls go through the real reflection-based dispatch that a
+// conn:<name> leaf (wavesrv local or wsh connserver) uses.
+func makeServerImplRpcPair() *wshutil.WshRpc {
+	serverIn := make(chan baseds.RpcInputChType, wshutil.DefaultInputChSize)
+	clientIn := make(chan baseds.RpcInputChType, wshutil.DefaultInputChSize)
+	server := wshutil.MakeWshRpcWithChannels(serverIn, nil, wshrpc.RpcContext{}, &ServerImpl{}, "sysinfo-test-server")
+	client := wshutil.MakeWshRpcWithChannels(clientIn, nil, wshrpc.RpcContext{}, nil, "sysinfo-test-client")
+	pipe := func(from chan []byte, to chan baseds.RpcInputChType) {
+		for msg := range from {
+			to <- baseds.RpcInputChType{MsgBytes: msg}
+		}
+	}
+	go pipe(client.OutputCh, serverIn)
+	go pipe(server.OutputCh, clientIn)
+	return client
+}
+
+func TestSysInfoRpcsDispatchToServerImpl(t *testing.T) {
+	gpu := &fakeCollector{name: "gpu-amd", meta: map[string]MetricMeta{"gpu:0:util": {Label: "GPU 0"}}}
+	state := &sysInfoLoopState{heavyCollectors: []Collector{gpu}}
+	registerLoopState(wshrpc.LocalConnName, state)
+	defer unregisterLoopState(wshrpc.LocalConnName, state)
+
+	client := makeServerImplRpcPair()
+	meta, err := wshclient.GetSysInfoMetricsCommand(client, wshrpc.CommandSysInfoMetricsData{}, nil)
+	if err != nil {
+		t.Fatalf("getsysinfometrics: %v", err)
+	}
+	if meta["gpu:0:util"].Label != "GPU 0" {
+		t.Fatalf("expected blank connname to resolve to the local loop's metadata, got %v", meta)
+	}
+	err = wshclient.SysInfoReprobeCommand(client, wshrpc.CommandSysInfoReprobeData{ConnName: "no-such-connection"}, nil)
+	if err != nil {
+		t.Fatalf("sysinforeprobe: %v", err)
+	}
 }
 
 func collectorNames(cs []Collector) []string {

@@ -46,7 +46,6 @@ import (
 	"github.com/LannCo/remoteterm/pkg/util/utilfn"
 	"github.com/LannCo/remoteterm/pkg/wps"
 	"github.com/LannCo/remoteterm/pkg/wshrpc"
-	"github.com/LannCo/remoteterm/pkg/wshrpc/wshremote"
 	"github.com/LannCo/remoteterm/pkg/wshutil"
 	"github.com/LannCo/remoteterm/pkg/wsl"
 	"github.com/LannCo/remoteterm/pkg/wslconn"
@@ -89,24 +88,6 @@ func (ws *WshServer) TestMultiArgCommand(ctx context.Context, arg1 string, arg2 
 func (ws *WshServer) MessageCommand(ctx context.Context, data wshrpc.CommandMessageData) error {
 	log.Printf("MESSAGE: %s\n", data.Message)
 	return nil
-}
-
-func (ws *WshServer) SysInfoReprobeCommand(ctx context.Context, data wshrpc.CommandSysInfoReprobeData) error {
-	return wshremote.ReprobeCollectors(data.ConnName)
-}
-
-// wshrpc.MetricMeta duplicates wshremote.MetricMeta (import cycle), so convert
-// field-by-field here.
-func (ws *WshServer) GetSysInfoMetricsCommand(ctx context.Context, data wshrpc.CommandSysInfoMetricsData) (map[string]wshrpc.MetricMeta, error) {
-	descriptions := wshremote.DescribeActiveCollectors(data.ConnName)
-	converted := make(map[string]wshrpc.MetricMeta, len(descriptions))
-	for k, v := range descriptions {
-		converted[k] = wshrpc.MetricMeta{
-			Label: v.Label, Unit: v.Unit, Color: v.Color,
-			MinY: v.MinY, MaxY: v.MaxY, MaxYKey: v.MaxYKey, DecimalPlaces: v.DecimalPlaces,
-		}
-	}
-	return converted, nil
 }
 
 // for testing
