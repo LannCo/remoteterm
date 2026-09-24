@@ -4,6 +4,7 @@
 package wshremote
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -126,6 +127,113 @@ func (n *nvidiaGpuCollector) Collect() (map[string]float64, error) {
 		return nil, err
 	}
 	readings, err := parseNvidiaSmiCsv(out)
+	if err != nil {
+		return nil, err
+	}
+	values := make(map[string]float64)
+	for _, r := range readings {
+		values[fmt.Sprintf("gpu:%d:util", r.index)] = r.util
+		values[fmt.Sprintf("gpu:%d:vram", r.index)] = r.vram
+		values[fmt.Sprintf("gpu:%d:vramtotal", r.index)] = r.vramTotal
+		values[fmt.Sprintf("gpu:%d:temp", r.index)] = r.temp
+	}
+	return values, nil
+}
+
+const (
+	rocmKeyUtil      = "GPU use (%)"
+	rocmKeyVramUsed  = "VRAM Total Used Memory (B)"
+	rocmKeyVramTotal = "VRAM Total Memory (B)"
+	rocmKeyTemp      = "Temperature (Sensor edge) (C)"
+)
+
+type amdGpuCollector struct {
+	indices []int
+}
+
+func MakeAmdGpuCollector() Collector {
+	return &amdGpuCollector{}
+}
+
+func (a *amdGpuCollector) Name() string {
+	return "gpu-amd"
+}
+
+func parseRocmSmiJson(output []byte) ([]gpuReading, error) {
+	var raw map[string]map[string]string
+	if err := json.Unmarshal(output, &raw); err != nil {
+		return nil, fmt.Errorf("rocm-smi JSON parse failed: %w", err)
+	}
+	if len(raw) == 0 {
+		return nil, errors.New("rocm-smi returned no cards")
+	}
+	readings := make([]gpuReading, 0, len(raw))
+	for cardKey, fields := range raw {
+		idxStr := strings.TrimPrefix(cardKey, "card")
+		idx, err := strconv.Atoi(idxStr)
+		if err != nil {
+			return nil, fmt.Errorf("unexpected rocm-smi card key %q: %w", cardKey, err)
+		}
+		util, err := strconv.ParseFloat(fields[rocmKeyUtil], 64)
+		if err != nil {
+			return nil, fmt.Errorf("bad util for %q: %w", cardKey, err)
+		}
+		vramBytes, err := strconv.ParseFloat(fields[rocmKeyVramUsed], 64)
+		if err != nil {
+			return nil, fmt.Errorf("bad vram for %q: %w", cardKey, err)
+		}
+		vramTotalBytes, err := strconv.ParseFloat(fields[rocmKeyVramTotal], 64)
+		if err != nil {
+			return nil, fmt.Errorf("bad vram total for %q: %w", cardKey, err)
+		}
+		temp, err := strconv.ParseFloat(fields[rocmKeyTemp], 64)
+		if err != nil {
+			return nil, fmt.Errorf("bad temp for %q: %w", cardKey, err)
+		}
+		readings = append(readings, gpuReading{
+			index:     idx,
+			util:      util,
+			vram:      vramBytes / (1024 * 1024),
+			vramTotal: vramTotalBytes / (1024 * 1024),
+			temp:      temp,
+		})
+	}
+	return readings, nil
+}
+
+func (a *amdGpuCollector) Probe() bool {
+	out, err := execCommand("rocm-smi", "--showuse", "--showmeminfo", "vram", "--showtemp", "--json")
+	if err != nil {
+		return false
+	}
+	readings, err := parseRocmSmiJson(out)
+	if err != nil || len(readings) == 0 {
+		return false
+	}
+	indices := make([]int, len(readings))
+	for i, r := range readings {
+		indices[i] = r.index
+	}
+	a.indices = indices
+	return true
+}
+
+func (a *amdGpuCollector) Describe() map[string]MetricMeta {
+	meta := make(map[string]MetricMeta)
+	for _, idx := range a.indices {
+		for k, v := range gpuMetaFor(idx) {
+			meta[k] = v
+		}
+	}
+	return meta
+}
+
+func (a *amdGpuCollector) Collect() (map[string]float64, error) {
+	out, err := execCommand("rocm-smi", "--showuse", "--showmeminfo", "vram", "--showtemp", "--json")
+	if err != nil {
+		return nil, err
+	}
+	readings, err := parseRocmSmiJson(out)
 	if err != nil {
 		return nil, err
 	}
