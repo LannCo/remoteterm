@@ -328,13 +328,17 @@ export const ConnectionsContent = memo(({ model }: ConnectionsContentProps) => {
     const connKeywordsMap = useAtomValue(model.connKeywordsMapAtom);
     const setView = useSetAtom(model.connectionsViewAtom);
 
-    const handleSetHeavyInterval = (name: string, seconds: number) => {
+    const handleSetHeavyInterval = async (name: string, seconds: number) => {
         if (!Number.isFinite(seconds) || seconds < 1) {
             return;
         }
         const metamaptype: unknown = { "sysinfo:heavyinterval": seconds };
         const data: ConnConfigRequest = { host: name, metamaptype };
-        model.env.rpc.SetConnectionsConfigCommand(TabRpcClient, data);
+        try {
+            await model.env.rpc.SetConnectionsConfigCommand(TabRpcClient, data);
+        } catch (e) {
+            console.log("problem setting connection config: ", e);
+        }
     };
 
     const filteredNames = useMemo(() => {
