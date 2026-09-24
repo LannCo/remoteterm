@@ -134,3 +134,47 @@ func TestAmdCollectorRejectsEmptyOutput(t *testing.T) {
 		t.Fatal("expected probe false on empty output")
 	}
 }
+
+func TestIntelCollectorParsesEngineBusy(t *testing.T) {
+	withFakeExec(t, func(name string, args ...string) ([]byte, error) {
+		return []byte(`{"engines":{"Render/3D":{"busy":37.5}}}`), nil
+	})
+	c := MakeIntelGpuCollector()
+	if !c.Probe() {
+		t.Fatal("expected probe true with fake exec returning valid JSON")
+	}
+	values, err := c.Collect()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if values["gpu:0:util"] != 37.5 {
+		t.Errorf("gpu:0:util = %v, want 37.5", values["gpu:0:util"])
+	}
+	if _, ok := values["gpu:0:vram"]; ok {
+		t.Error("Intel collector must not emit vram — not reliably available, by design")
+	}
+	if _, ok := values["gpu:0:temp"]; ok {
+		t.Error("Intel collector must not emit temp — not reliably available, by design")
+	}
+}
+
+func TestIntelCollectorProbeFalseOnMissingCommand(t *testing.T) {
+	withFakeExec(t, func(name string, args ...string) ([]byte, error) {
+		return nil, errors.New("exec: \"intel_gpu_top\": executable file not found in $PATH")
+	})
+	c := MakeIntelGpuCollector()
+	if c.Probe() {
+		t.Fatal("expected probe false when intel_gpu_top is not installed")
+	}
+}
+
+func TestIntelCollectorRejectsMalformedJson(t *testing.T) {
+	withFakeExec(t, func(name string, args ...string) ([]byte, error) {
+		return []byte("garbage"), nil
+	})
+	c := MakeIntelGpuCollector()
+	c.Probe()
+	if _, err := c.Collect(); err == nil {
+		t.Fatal("expected an error on malformed JSON, got nil")
+	}
+}

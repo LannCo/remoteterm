@@ -246,3 +246,66 @@ func (a *amdGpuCollector) Collect() (map[string]float64, error) {
 	}
 	return values, nil
 }
+
+type intelEngineJson struct {
+	Engines map[string]struct {
+		Busy float64 `json:"busy"`
+	} `json:"engines"`
+}
+
+type intelGpuCollector struct {
+	available bool
+}
+
+func MakeIntelGpuCollector() Collector {
+	return &intelGpuCollector{}
+}
+
+func (i *intelGpuCollector) Name() string {
+	return "gpu-intel"
+}
+
+func parseIntelGpuTopJson(output []byte) (float64, error) {
+	var parsed intelEngineJson
+	if err := json.Unmarshal(output, &parsed); err != nil {
+		return 0, fmt.Errorf("intel_gpu_top JSON parse failed: %w", err)
+	}
+	engine, ok := parsed.Engines["Render/3D"]
+	if !ok {
+		return 0, errors.New("intel_gpu_top output missing Render/3D engine")
+	}
+	return engine.Busy, nil
+}
+
+func (i *intelGpuCollector) Probe() bool {
+	out, err := execCommand("intel_gpu_top", "-J", "-s", "1000", "-o", "-")
+	if err != nil {
+		return false
+	}
+	if _, err := parseIntelGpuTopJson(out); err != nil {
+		return false
+	}
+	i.available = true
+	return true
+}
+
+func (i *intelGpuCollector) Describe() map[string]MetricMeta {
+	if !i.available {
+		return map[string]MetricMeta{}
+	}
+	return map[string]MetricMeta{
+		"gpu:0:util": {Label: "GPU 0 %", Unit: "%", Color: gpuColorFor(0), MinY: 0, MaxY: 100, DecimalPlaces: 0},
+	}
+}
+
+func (i *intelGpuCollector) Collect() (map[string]float64, error) {
+	out, err := execCommand("intel_gpu_top", "-J", "-s", "1000", "-o", "-")
+	if err != nil {
+		return nil, err
+	}
+	busy, err := parseIntelGpuTopJson(out)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]float64{"gpu:0:util": busy}, nil
+}
