@@ -362,10 +362,7 @@ func isStdinCharDevice() bool {
 	return fi.Mode()&os.ModeCharDevice != 0
 }
 
-func webOpenRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func webOpenRun(cmd *cobra.Command, args []string) error {
 	var replaceBlockORef *waveobj.ORef
 	if webOpenReplaceBlock != "" {
 		var err error

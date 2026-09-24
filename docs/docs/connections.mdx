@@ -41,7 +41,7 @@ As there are several different types of connections, not all of the types have a
 - The user-defined environment variables in the `cmd:env` entry of`connections.json` are injected into the session.
 - The user-defined initialization scripts located in `connections.json` are run. For more information on these scripts, see the section below.
 
-If this fails for some reason, Wave will attempt to run without `wsh`. You will see this indicated by a small **<code><i className="fa-link-slash fa-solid fa-sharp"/></code>** icon in the block header. For more info on what `wsh` is capable of, see [wsh command](/wsh). And if you wish to view the source code of `wsh`, you can find it [here](https://github.com/wavetermdev/waveterm/tree/main/cmd/wsh).
+If this fails for some reason, RemoteTerm will attempt to run without `wsh`. You will see this indicated by a small **<code><i className="fa-link-slash fa-solid fa-sharp"/></code>** icon in the block header. For more info on what `wsh` is capable of, see [wsh command](/wsh). And if you wish to view the source code of `wsh`, you can find it [here](https://github.com/LannCo/remoteterm/tree/main/cmd/wsh).
 
 With `wsh` installed, you have the ability to view certain widgets from the remote machine as if it were your host, for instance the `files` and `sysinfo` widgets. In addition, `wsh` can be used to influence the widgets across various machines. As a simple example, you can close a widget on the host machine by using the `wsh` command in a terminal window on a remote machine. For more information on what you can accomplish with `wsh`, take a look [here](/wsh).
 
@@ -134,6 +134,11 @@ In addition to the regular ssh config file, wave also has its own config file to
 | conn:ignoresshconfig | This boolean allows wave to ignore the `~/.ssh/config` file for resolving keywords for this connection. The regular defaults will be used, but all changes to those must be specified in the `connections.json` file instead. This defaults to false.|
 | conn:stallautodisconnect | This boolean automatically disconnects SSH connections when they stall (keepalive timeout) for longer than the threshold. Once disconnected, the existing auto-reconnect machinery will attempt to restore the connection and any durable sessions. It defaults to `true`. See [Connection Resilience](/reconnect) for details on how detection and reconnection work.|
 | conn:stalldisconnectthreshold | This int (seconds) controls how long a connection must be stalled before auto-disconnect triggers. It defaults to `30`. See [Connection Resilience](/reconnect) for details. |
+| conn:keepaliveinterval | This int (seconds) controls how long the connection can sit idle before the monitor sends a keepalive probe. It defaults to `3`. See [Connection Resilience](/reconnect) for details. |
+| conn:stallthreshold | This int (seconds) controls how long the monitor waits for a keepalive response before declaring the connection stalled. It defaults to `3`. See [Connection Resilience](/reconnect) for details. |
+| conn:reconnecttimeout | This int (seconds) controls how long each reconnect attempt waits for the SSH handshake before giving up. It defaults to `5`. See [Connection Resilience](/reconnect) for details. |
+| conn:reconnectinterval | This int (seconds) controls how long the reconnect scheduler waits between attempts in normal mode. It defaults to `5`. See [Connection Resilience](/reconnect) for details. |
+| conn:reconnectaggressiveinterval | This int (seconds) controls how long the reconnect scheduler waits between attempts in aggressive mode (triggered by network-unreachable errors). It defaults to `3`. See [Connection Resilience](/reconnect) for details. |
 | display:hidden | This boolean hides the connection from the dropdown list. It defaults to `false` |
 | display:order | This float determines the order of connections in the connection dropdown. It defaults to `0`.|
 | term:fontsize | This int can be used to override the terminal font size for blocks using this connection. The block metadata takes priority over this setting. It defaults to null which means the global setting will be used instead. |

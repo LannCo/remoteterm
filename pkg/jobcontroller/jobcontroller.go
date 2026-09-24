@@ -191,11 +191,45 @@ var (
 	recentReconnectAttempts = ds.MakeSyncMap[[]int64]()
 )
 
+const ConnReconnectTimeout = 5 * time.Second
 const ConnReconnectInterval = 5 * time.Second
 const ConnReconnectMaxDuration = 5 * time.Minute        // cap for interactive-attempt connections (defensive; interactive conns rarely reach the scheduler post-fix-#1)
 const ConnReconnectMaxDurationSilent = 15 * time.Minute // cap for silently-reconnectable connections (key-based / cached password) — silent retries are cheap
 const ConnReconnectAggressiveInterval = 3 * time.Second
 const ConnReconnectAggressiveDuration = 2 * time.Minute
+
+// reconnectConfigTestHook overrides per-connection reconnect config lookup in tests.
+var reconnectConfigTestHook func(connName string) (wconfig.ConnKeywords, bool)
+
+// getReconnectConfig returns the per-connection reconnect scheduler timing
+// (dial timeout, normal interval, aggressive interval), falling back to the
+// PR #1 fast defaults when the connection has no config or a field is unset.
+func getReconnectConfig(connName string) (timeout, interval, aggressiveInterval time.Duration) {
+	timeout = ConnReconnectTimeout
+	interval = ConnReconnectInterval
+	aggressiveInterval = ConnReconnectAggressiveInterval
+
+	var connConfig wconfig.ConnKeywords
+	var ok bool
+	if reconnectConfigTestHook != nil {
+		connConfig, ok = reconnectConfigTestHook(connName)
+	} else {
+		connConfig, ok = wconfig.GetWatcher().GetFullConfig().Connections[connName]
+	}
+	if !ok {
+		return
+	}
+	if connConfig.ConnReconnectTimeoutSec != nil && *connConfig.ConnReconnectTimeoutSec > 0 {
+		timeout = time.Duration(*connConfig.ConnReconnectTimeoutSec) * time.Second
+	}
+	if connConfig.ConnReconnectIntervalSec != nil && *connConfig.ConnReconnectIntervalSec > 0 {
+		interval = time.Duration(*connConfig.ConnReconnectIntervalSec) * time.Second
+	}
+	if connConfig.ConnReconnectAggressiveIntervalSec != nil && *connConfig.ConnReconnectAggressiveIntervalSec > 0 {
+		aggressiveInterval = time.Duration(*connConfig.ConnReconnectAggressiveIntervalSec) * time.Second
+	}
+	return
+}
 
 // FlappingWindowDuration is the lookback window for detecting rapid
 // disconnect/reconnect cycles. (UX-2.2)
@@ -1311,7 +1345,7 @@ func scheduleConnectionReconnect(connName string) {
 		} else {
 			attempt++
 			updateRetryState(connName, attempt, 0, "") // active attempt
-			connectTimeout := 5 * time.Second
+			connectTimeout, normalInterval, aggressiveInterval := getReconnectConfig(connName)
 			log.Printf("[conn:%s] scheduler attempt start (timeout=%s, aggressive=%v)", connName, connectTimeout, aggressiveMode)
 			attemptStart := time.Now()
 			// UX-2.5: capture whether the last successful handshake used no
@@ -1358,9 +1392,9 @@ func scheduleConnectionReconnect(connName string) {
 				}
 
 				// Update retry state with failure info and next attempt time
-				interval := ConnReconnectInterval
+				interval := normalInterval
 				if aggressiveMode {
-					interval = ConnReconnectAggressiveInterval
+					interval = aggressiveInterval
 				}
 				nextAttempt := time.Now().Add(interval).UnixMilli()
 				updateRetryState(connName, attempt, nextAttempt, err.Error())
@@ -1392,9 +1426,10 @@ func scheduleConnectionReconnect(connName string) {
 		// UX-2.7: Add per-connection jitter (±50% of interval) so multiple
 		// connections with active schedulers do not hammer the network
 		// simultaneously. This spreads out retry attempts naturally.
-		interval := ConnReconnectInterval
+		_, normalInterval, aggressiveInterval := getReconnectConfig(connName)
+		interval := normalInterval
 		if aggressiveMode {
-			interval = ConnReconnectAggressiveInterval
+			interval = aggressiveInterval
 		}
 		jitteredInterval := jitterInterval(interval)
 		timer := time.NewTimer(jitteredInterval)

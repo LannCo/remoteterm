@@ -16,8 +16,8 @@ var editConfigMagnified bool
 
 var editConfigCmd = &cobra.Command{
 	Use:     "editconfig [configfile]",
-	Short:   "edit Wave configuration files",
-	Long:    "Edit Wave configuration files. Defaults to settings.json if no file specified. Common files: settings.json, presets.json, widgets.json",
+	Short:   "edit RemoteTerm configuration files",
+	Long:    "Edit RemoteTerm configuration files. Defaults to settings.json if no file specified. Common files: settings.json, presets.json, widgets.json",
 	Args:    cobra.MaximumNArgs(1),
 	RunE:    editConfigRun,
 	PreRunE: preRunSetupRpcClient,
@@ -28,10 +28,7 @@ func init() {
 	rootCmd.AddCommand(editConfigCmd)
 }
 
-func editConfigRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func editConfigRun(cmd *cobra.Command, args []string) error {
 	configFile := "settings.json" // default
 	if len(args) > 0 {
 		configFile = args[0]

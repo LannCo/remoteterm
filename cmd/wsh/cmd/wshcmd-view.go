@@ -40,10 +40,8 @@ func init() {
 	rootCmd.AddCommand(editCmd)
 }
 
-func viewRun(cmd *cobra.Command, args []string) (rtnErr error) {
+func viewRun(cmd *cobra.Command, args []string) error {
 	cmdName := cmd.Name()
-	defer func() {
-	}()
 	if len(args) == 0 {
 		OutputHelpMessage(cmd)
 		return fmt.Errorf("no arguments.  wsh %s requires a file or URL as an argument argument", cmdName)

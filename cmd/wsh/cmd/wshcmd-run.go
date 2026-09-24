@@ -44,10 +44,7 @@ func init() {
 	rootCmd.AddCommand(runCmd)
 }
 
-func runRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func runRun(cmd *cobra.Command, args []string) error {
 	flags := cmd.Flags()
 	magnified, _ := flags.GetBool("magnified")
 	commandArg, _ := flags.GetString("command")

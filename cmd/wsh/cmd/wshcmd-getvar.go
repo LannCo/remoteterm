@@ -52,9 +52,6 @@ func shouldPrintNewline() bool {
 }
 
 func getVarRun(cmd *cobra.Command, args []string) error {
-	defer func() {
-	}()
-
 	// Resolve block to get zoneId
 	if blockArg == "" {
 		if getVarLocal {

@@ -1,8 +1,8 @@
-# Wave Terminal Connection Architecture
+# RemoteTerm Connection Architecture
 
 ## Overview
 
-Wave Terminal's connection system is designed to provide a unified interface for running shell processes across local, SSH, and WSL environments. The architecture is built in layers, with clear separation of concerns between connection management, shell process execution, and block-level orchestration.
+RemoteTerm's connection system is designed to provide a unified interface for running shell processes across local, SSH, and WSL environments. The architecture is built in layers, with clear separation of concerns between connection management, shell process execution, and block-level orchestration.
 
 ## Architecture Layers
 
@@ -163,7 +163,7 @@ type SSHConn struct {
   - Max depth: `SshProxyJumpMaxDepth = 10`
 
 - **User Interaction**:
-  - Integrates with Wave's [`userinput`](../pkg/userinput/) system
+  - Integrates with RemoteTerm's [`userinput`](../pkg/userinput/) system
   - Non-blocking prompts for passwords, passphrases, host verification
 
 #### WSL Connections (`pkg/wslconn/`)
@@ -280,7 +280,7 @@ proc.Wait()
    - [`DetectShellTypeAndVersion()`](../pkg/util/shellutil/shellutil.go:486) - Gets shell version info
 
 2. **Shell Integration Files**:
-   - [`InitCustomShellStartupFiles()`](../pkg/util/shellutil/shellutil.go:270) - Creates Wave's shell integration
+   - [`InitCustomShellStartupFiles()`](../pkg/util/shellutil/shellutil.go:270) - Creates RemoteTerm's shell integration
    - Manages startup files for each shell type:
      - Bash: `.bashrc` in `shell/bash/`
      - Zsh: `.zshrc`, `.zprofile`, etc. in `shell/zsh/`
@@ -393,9 +393,9 @@ proc.Wait()
 
 **What is WSH?**
 - Binary program (`wsh`) that runs on remote hosts
-- Provides RPC services for Wave Terminal
+- Provides RPC services for RemoteTerm
 - Written in Go, cross-platform
-- Versioned to match Wave Terminal version
+- Versioned to match RemoteTerm version
 
 **WSH Components:**
 1. **wsh version**: Reports installed version
@@ -609,4 +609,4 @@ wps.Broker.Publish(wps.WaveEvent{
 
 8. **User Interaction**: Non-blocking prompts for passwords, confirmations, installations
 
-This architecture provides a robust foundation for Wave Terminal's multi-environment shell capabilities, with clear extension points for adding new connection types or capabilities.
+This architecture provides a robust foundation for RemoteTerm's multi-environment shell capabilities, with clear extension points for adding new connection types or capabilities.

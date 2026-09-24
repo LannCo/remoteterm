@@ -23,10 +23,7 @@ func init() {
 	rootCmd.AddCommand(setConfigCmd)
 }
 
-func setConfigRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func setConfigRun(cmd *cobra.Command, args []string) error {
 	metaSetsStrs := args[:]
 	meta, err := parseMetaSets(metaSetsStrs)
 	if err != nil {

@@ -41,10 +41,7 @@ func init() {
 	tabIndicatorCmd.Flags().BoolVar(&tabIndicatorBeep, "beep", false, "play system bell sound")
 }
 
-func tabIndicatorRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func tabIndicatorRun(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(os.Stderr, "tabindicator is deprecated, use 'wsh badge' instead\n")
 
 	tabId := tabIndicatorTabId

@@ -26,10 +26,7 @@ func init() {
 	rootCmd.AddCommand(launchCmd)
 }
 
-func launchRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func launchRun(cmd *cobra.Command, args []string) error {
 	widgetId := args[0]
 
 	// Get the full configuration

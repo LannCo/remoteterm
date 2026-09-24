@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://remoteterm.io">
+  <a href="https://remoteterm.dev">
 	<picture>
 		<source media="(prefers-color-scheme: dark)" srcset="./assets/wave-dark.png">
 		<source media="(prefers-color-scheme: light)" srcset="./assets/wave-light.png">
@@ -35,7 +35,7 @@ This fork is tuned for developers who work on remote machines, with the local ap
 
 ## Key Features
 
-- Durable SSH Sessions - Remote terminal sessions survive connection interruptions, network changes, and app restarts with automatic reconnection
+- Durable SSH Sessions - Remote terminal sessions survive connection interruptions, network changes, and RemoteTerm restarts with automatic reconnection
 - Flexible drag & drop interface to organize terminal blocks, editors, web browsers, and previews
 - Built-in editor for editing remote files with syntax highlighting and modern editor features
 - Rich file preview system for remote files (markdown, images, video, PDFs, CSVs, directories)
@@ -50,7 +50,7 @@ This fork is tuned for developers who work on remote machines, with the local ap
 
 ## Download
 
-Pre-built binaries are produced by GitHub Actions CI on the [fork's repo](https://github.com/whoisjeremylam/remoteterm) — grab the latest build from [Releases](https://github.com/whoisjeremylam/remoteterm/releases) or from the artifacts of a recent successful workflow run.
+Pre-built binaries are produced by GitHub Actions CI on the [fork's repo](https://github.com/LannCo/remoteterm) — grab the latest build from [Releases](https://github.com/LannCo/remoteterm/releases) or from the artifacts of a recent successful workflow run.
 
 ## Quickstart
 
@@ -80,15 +80,15 @@ The WSH helper runs on the following platforms:
 
 ## Building from Source
 
-See [Building from Source](BUILD.md).
+See [Building RemoteTerm](BUILD.md).
 
 ## Contributing
 
-Issues and feature requests belong in [this fork's issue tracker](https://github.com/whoisjeremylam/remoteterm/issues) — please don't file fork-specific bugs against upstream Wave Terminal.
+RemoteTerm uses GitHub Issues for issue tracking.
 
 Find more information in our [Contributions Guide](CONTRIBUTING.md), which includes:
 
-- [Ways to contribute](CONTRIBUTING.md#contributing-to-wave-terminal)
+- [Ways to contribute](CONTRIBUTING.md#contributing-to-remoteterm)
 - [Contribution guidelines](CONTRIBUTING.md#before-you-start)
 
 ## License

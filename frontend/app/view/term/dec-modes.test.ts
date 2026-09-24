@@ -8,7 +8,7 @@ const mockWrite = vi.fn();
 const mockScrollToBottom = vi.fn();
 const mockOpen = vi.fn();
 const mockDispose = vi.fn();
-const capturedCsiHandlers: Record<string, Function> = {};
+const capturedCsiHandlers: Record<string, (...args: any[]) => any> = {};
 
 vi.mock("@xterm/xterm", () => ({
     Terminal: class MockTerminal {
@@ -17,7 +17,7 @@ vi.mock("@xterm/xterm", () => ({
         rows = 24;
         cols = 80;
         parser = {
-            registerCsiHandler: vi.fn((id: { prefix?: string; final: string }, cb: Function) => {
+            registerCsiHandler: vi.fn((id: { prefix?: string; final: string }, cb: (...args: any[]) => any) => {
                 const key = (id.prefix ?? "") + id.final;
                 capturedCsiHandlers[key] = cb;
                 return { dispose: mockDispose };
@@ -56,7 +56,10 @@ vi.mock("@/store/global", () => ({
     getSettingsKeyAtom: vi.fn(() => vi.fn()),
     isDev: false,
     openLink: vi.fn(),
-    WOS: {},
+    WOS: {
+        makeORef: vi.fn((otype: string, oid: string) => `${otype}:${oid}`),
+        getWaveObjectAtom: vi.fn(),
+    },
     fetchWaveFile: vi.fn(),
 }));
 

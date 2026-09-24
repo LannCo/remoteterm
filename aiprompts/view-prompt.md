@@ -1,8 +1,8 @@
-# Wave Terminal ViewModel Guide
+# RemoteTerm ViewModel Guide
 
 ## Overview
 
-Wave Terminal uses a modular ViewModel system to define interactive blocks. Each block has a **ViewModel**, which manages its metadata, configuration, and state using **Jotai atoms**. The ViewModel also specifies a **React component (ViewComponent)** that renders the block.
+RemoteTerm uses a modular ViewModel system to define interactive blocks. Each block has a **ViewModel**, which manages its metadata, configuration, and state using **Jotai atoms**. The ViewModel also specifies a **React component (ViewComponent)** that renders the block.
 
 ### Key Concepts
 

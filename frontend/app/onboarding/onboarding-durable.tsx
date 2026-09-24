@@ -23,7 +23,6 @@ export const DurableSessionPage = ({
 
     const handleFireClick = () => {
         setFireClicked(!fireClicked);
-        if (!fireClicked) {        }
     };
 
     return (

@@ -1,6 +1,6 @@
-# Wave Terminal OSC 16162 Escape Sequences
+# RemoteTerm OSC 16162 Escape Sequences
 
-Wave Terminal uses a custom OSC (Operating System Command) escape sequence numbered **16162** for shell integration. This allows the shell to communicate its state and events to the terminal.
+RemoteTerm uses a custom OSC (Operating System Command) escape sequence numbered **16162** for shell integration. This allows the shell to communicate its state and events to the terminal.
 
 ## Format
 
@@ -26,7 +26,7 @@ Marks the beginning of a new shell prompt.
 
 **When:** Sent in `precmd` hook (after previous command completes, before new prompt is displayed)
 
-**Purpose:** Signals to the terminal that a new prompt is being drawn. This helps Wave Terminal distinguish between prompt output and command output.
+**Purpose:** Signals to the terminal that a new prompt is being drawn. This helps RemoteTerm distinguish between prompt output and command output.
 
 **Example:**
 ```bash
@@ -78,7 +78,7 @@ Sends shell metadata information (typically only once at shell initialization).
 
 **When:** Sent during first `precmd` hook (on shell startup)
 
-**Purpose:** Provides Wave Terminal with information about the shell environment and operating system.
+**Purpose:** Provides RemoteTerm with information about the shell environment and operating system.
 
 **Example:**
 ```bash
@@ -103,7 +103,7 @@ Reports the exit status of the previously executed command.
 
 **When:** Sent in `precmd` hook (after command completes)
 
-**Purpose:** Communicates whether the previous command succeeded or failed, allowing Wave Terminal to display success/failure indicators.
+**Purpose:** Communicates whether the previous command succeeded or failed, allowing RemoteTerm to display success/failure indicators.
 
 **Example:**
 ```bash
@@ -133,7 +133,7 @@ Reports the current state of the command line input buffer.
 - `zle-line-init` - When line editor is initialized
 - `zle-line-pre-redraw` - Before line is redrawn
 
-**Purpose:** Allows Wave Terminal to track the state of the command line input. Currently reports whether the buffer is empty, but may be extended to include additional input state information in the future.
+**Purpose:** Allows RemoteTerm to track the state of the command line input. Currently reports whether the buffer is empty, but may be extended to include additional input state information in the future.
 
 **Example:**
 ```bash
@@ -204,7 +204,7 @@ Here's the typical sequence during shell interaction:
 
 ## Standard OSC 7
 
-Wave Terminal also uses the standard **OSC 7** sequence for reporting the current working directory:
+RemoteTerm also uses the standard **OSC 7** sequence for reporting the current working directory:
 
 **Format:** `7;file://<hostname><encoded_path>`
 

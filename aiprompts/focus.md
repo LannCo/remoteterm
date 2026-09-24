@@ -1,10 +1,10 @@
-# Wave Terminal Focus System
+# RemoteTerm Focus System
 
-This document explains how the focus system works in Wave Terminal, particularly for terminal blocks.
+This document explains how the focus system works in RemoteTerm, particularly for terminal blocks.
 
 ## Overview
 
-Wave Terminal uses a multi-layered focus system that coordinates between:
+RemoteTerm uses a multi-layered focus system that coordinates between:
 - **Layout Focus State**: Jotai atoms tracking which block is focused (`nodeModel.isFocused`)
 - **Visual Focus Ring**: CSS styling showing the focused block
 - **DOM Focus**: Actual browser focus on interactive elements

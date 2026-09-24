@@ -47,7 +47,7 @@ body:
     - type: dropdown
       attributes:
           label: Platform
-          description: The OS platform of the computer where you are running Wave
+          description: The OS platform of the computer where you are running RemoteTerm
           options:
               - macOS
               - Linux
@@ -57,14 +57,14 @@ body:
     - type: input
       attributes:
           label: OS Version/Distribution
-          description: The version of the operating system of the computer where you are running Wave
+          description: The version of the operating system of the computer where you are running RemoteTerm
           placeholder: Ubuntu 24.04
       validations:
           required: false
     - type: dropdown
       attributes:
           label: Architecture
-          description: The architecture of the computer where you are running Wave
+          description: The architecture of the computer where you are running RemoteTerm
           options:
               - arm64
               - x64
