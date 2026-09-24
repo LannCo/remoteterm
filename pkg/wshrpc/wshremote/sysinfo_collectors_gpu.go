@@ -7,9 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // execCommand is a package-level seam so GPU collector tests can inject
@@ -17,6 +22,97 @@ import (
 // the three vendors' tools can be assumed present on any given dev/CI host.
 var execCommand = func(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).Output()
+}
+
+// rocmLookPath, rocmGlobPaths and rocmStatPath are package-level seams so
+// rocm-smi discovery tests can stub PATH lookup, filesystem globbing and
+// existence checks without depending on this machine's actual ROCm install.
+var rocmLookPath = exec.LookPath
+var rocmGlobPaths = filepath.Glob
+var rocmStatPath = os.Stat
+
+var rocmVersionPattern = regexp.MustCompile(`rocm-(\d+(?:\.\d+)*)`)
+
+func rocmVersionParts(path string) []int {
+	m := rocmVersionPattern.FindStringSubmatch(path)
+	if m == nil {
+		return nil
+	}
+	segs := strings.Split(m[1], ".")
+	parts := make([]int, len(segs))
+	for i, s := range segs {
+		// rocmVersionPattern guarantees s is \d+, so the only possible
+		// Atoi failure is overflow, which clamps to max int and still
+		// sorts correctly — nothing meaningful to handle here.
+		parts[i], _ = strconv.Atoi(s)
+	}
+	return parts
+}
+
+// rocmVersionLess compares version segments numerically, not lexicographically:
+// a string compare would rank "rocm-7.2.4" above "rocm-7.10.0" (the byte '2' > '1').
+func rocmVersionLess(a, b []int) bool {
+	for i := 0; i < len(a) || i < len(b); i++ {
+		var av, bv int
+		if i < len(a) {
+			av = a[i]
+		}
+		if i < len(b) {
+			bv = b[i]
+		}
+		if av != bv {
+			return av < bv
+		}
+	}
+	return false
+}
+
+// rocmSmiPathUsable guards against filepath.Glob matching a dangling
+// symlink: rocm-smi itself is typically a symlink under /opt/rocm-X/bin,
+// and the numerically-highest match on paper may be a broken or stale
+// install, so each candidate is verified to actually resolve before it's
+// trusted.
+func rocmSmiPathUsable(path string) bool {
+	info, err := rocmStatPath(path)
+	if err != nil || info.IsDir() {
+		return false
+	}
+	return info.Mode()&0111 != 0
+}
+
+// highestVersionedRocmSmiPath sorts candidates newest-version-first, then
+// returns the first one that actually exists and is executable — not just
+// the numerically-highest match blindly.
+func highestVersionedRocmSmiPath(matches []string) (string, bool) {
+	sorted := append([]string(nil), matches...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return rocmVersionLess(rocmVersionParts(sorted[j]), rocmVersionParts(sorted[i]))
+	})
+	for _, m := range sorted {
+		if rocmSmiPathUsable(m) {
+			return m, true
+		}
+	}
+	return "", false
+}
+
+// resolveRocmSmiPath tries PATH first (works on hosts where rocm-smi is
+// properly linked), then falls back to globbing every side-by-side
+// /opt/rocm-* install — ROCm installs commonly live side by side under
+// /opt/rocm-X.Y.Z, and that bin dir is often not on the server process's PATH.
+func resolveRocmSmiPath() (string, error) {
+	if path, err := rocmLookPath("rocm-smi"); err == nil {
+		return path, nil
+	}
+	matches, err := rocmGlobPaths("/opt/rocm-*/bin/rocm-smi")
+	if err != nil || len(matches) == 0 {
+		return "", errors.New("rocm-smi not found on PATH or under /opt/rocm-*/bin")
+	}
+	path, ok := highestVersionedRocmSmiPath(matches)
+	if !ok {
+		return "", errors.New("rocm-smi not found on PATH or under /opt/rocm-*/bin")
+	}
+	return path, nil
 }
 
 type gpuReading struct {
@@ -149,6 +245,9 @@ const (
 
 type amdGpuCollector struct {
 	indices []int
+
+	mu          sync.Mutex
+	rocmSmiPath string
 }
 
 func MakeAmdGpuCollector() Collector {
@@ -157,6 +256,22 @@ func MakeAmdGpuCollector() Collector {
 
 func (a *amdGpuCollector) Name() string {
 	return "gpu-amd"
+}
+
+// resolvedRocmSmiPath caches the discovered rocm-smi path on first success so
+// later ticks don't re-glob /opt/rocm-*/bin on every Probe/Collect call.
+func (a *amdGpuCollector) resolvedRocmSmiPath() (string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.rocmSmiPath != "" {
+		return a.rocmSmiPath, nil
+	}
+	path, err := resolveRocmSmiPath()
+	if err != nil {
+		return "", err
+	}
+	a.rocmSmiPath = path
+	return path, nil
 }
 
 func parseRocmSmiJson(output []byte) ([]gpuReading, error) {
@@ -202,7 +317,11 @@ func parseRocmSmiJson(output []byte) ([]gpuReading, error) {
 }
 
 func (a *amdGpuCollector) Probe() bool {
-	out, err := execCommand("rocm-smi", "--showuse", "--showmeminfo", "vram", "--showtemp", "--json")
+	path, err := a.resolvedRocmSmiPath()
+	if err != nil {
+		return false
+	}
+	out, err := execCommand(path, "--showuse", "--showmeminfo", "vram", "--showtemp", "--json")
 	if err != nil {
 		return false
 	}
@@ -229,7 +348,11 @@ func (a *amdGpuCollector) Describe() map[string]MetricMeta {
 }
 
 func (a *amdGpuCollector) Collect() (map[string]float64, error) {
-	out, err := execCommand("rocm-smi", "--showuse", "--showmeminfo", "vram", "--showtemp", "--json")
+	path, err := a.resolvedRocmSmiPath()
+	if err != nil {
+		return nil, err
+	}
+	out, err := execCommand(path, "--showuse", "--showmeminfo", "vram", "--showtemp", "--json")
 	if err != nil {
 		return nil, err
 	}
