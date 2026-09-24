@@ -166,14 +166,20 @@ func TestTransientSendFailureRecoversInOrder(t *testing.T) {
 		t.Fatalf("success must reset failure streak, got %d", streak)
 	}
 
-	// State transitions: retrying then back to connected
+	// State transitions: retrying then back to connected. The recovery
+	// "connected" status is emitted just after the packet is delivered, so
+	// wait for the completed transition instead of reading states() inline —
+	// an immediate read races the emission and can observe only "retrying".
 	waitCond(t, time.Second, func() bool {
-		for _, s := range states() {
+		found := states()
+		var sawRetrying, lastConnected bool
+		for _, s := range found {
 			if s == wshrpc.StreamStateRetrying {
-				return true
+				sawRetrying = true
 			}
+			lastConnected = s == wshrpc.StreamStateConnected
 		}
-		return false
+		return sawRetrying && lastConnected
 	})
 	found := states()
 	last := found[len(found)-1]
