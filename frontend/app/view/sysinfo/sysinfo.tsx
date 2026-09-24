@@ -175,6 +175,7 @@ class SysinfoViewModel implements ViewModel {
     connStatus: jotai.Atom<ConnStatus>;
     availableMetaAtom: jotai.PrimitiveAtom<Record<string, TimeSeriesMeta>>;
     errorsAtom: jotai.PrimitiveAtom<Record<string, string>>;
+    metricsRefetchInFlight = false;
     endIconButtons: jotai.Atom<IconButtonDecl[]>;
     env: SysinfoEnv;
 
@@ -312,6 +313,39 @@ class SysinfoViewModel implements ViewModel {
         }
     }
 
+    // The backend registers its loop only after the first probe (which includes a ~1s intel_gpu_top
+    // sample), so discovery at connect time can return {}; a live event proves registration.
+    refetchMetricsIfEmpty() {
+        if (this.metricsRefetchInFlight || Object.keys(globalStore.get(this.availableMetaAtom)).length > 0) {
+            return;
+        }
+        this.metricsRefetchInFlight = true;
+        this.loadAvailableMetrics().finally(() => {
+            this.metricsRefetchInFlight = false;
+        });
+    }
+
+    handleSysinfoEvent(event: Extract<WaveEvent, { event: "sysinfo" }>) {
+        this.refetchMetricsIfEmpty();
+        if (globalStore.get(this.loadingAtom)) {
+            return;
+        }
+        globalStore.set(this.errorsAtom, event.data?.errors ?? {});
+        const dataItem = convertWaveEventToDataItem(event);
+        const prevData = globalStore.get(this.dataAtom);
+        const prevLastTs = prevData[prevData.length - 1]?.ts ?? 0;
+        if (dataItem.ts - prevLastTs > 2000) {
+            this.loadInitialData();
+        } else {
+            globalStore.set(this.addContinuousDataAtom, dataItem);
+        }
+    }
+
+    resetConnectionState() {
+        globalStore.set(this.errorsAtom, {});
+        globalStore.set(this.availableMetaAtom, {});
+    }
+
     async reprobe() {
         const connName = globalStore.get(this.connection);
         try {
@@ -409,7 +443,6 @@ function SysinfoView({ model, blockId }: SysinfoViewProps) {
     const connName = jotai.useAtomValue(model.connection);
     const lastConnName = React.useRef(connName);
     const connStatus = jotai.useAtomValue(model.connStatus);
-    const addContinuousData = jotai.useSetAtom(model.addContinuousDataAtom);
     const loading = jotai.useAtomValue(model.loadingAtom);
 
     React.useEffect(() => {
@@ -418,6 +451,7 @@ function SysinfoView({ model, blockId }: SysinfoViewProps) {
         }
         if (lastConnName.current !== connName) {
             lastConnName.current = connName;
+            model.resetConnectionState();
             model.loadInitialData();
         }
     }, [connStatus.status, connName]);
@@ -431,27 +465,13 @@ function SysinfoView({ model, blockId }: SysinfoViewProps) {
         const unsubFn = waveEventSubscribeSingle({
             eventType: "sysinfo",
             scope: connName,
-            handler: (event) => {
-                const loading = globalStore.get(model.loadingAtom);
-                if (loading) {
-                    return;
-                }
-                globalStore.set(model.errorsAtom, event.data?.errors ?? {});
-                const dataItem = convertWaveEventToDataItem(event);
-                const prevData = globalStore.get(model.dataAtom);
-                const prevLastTs = prevData[prevData.length - 1]?.ts ?? 0;
-                if (dataItem.ts - prevLastTs > 2000) {
-                    model.loadInitialData();
-                } else {
-                    addContinuousData(dataItem);
-                }
-            },
+            handler: (event) => model.handleSysinfoEvent(event),
         });
         console.log("subscribe to sysinfo", connName);
         return () => {
             unsubFn();
         };
-    }, [connName, addContinuousData]);
+    }, [connName]);
     if (connStatus?.status != "connected") {
         return null;
     }

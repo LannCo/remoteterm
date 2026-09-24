@@ -166,6 +166,35 @@ function makeFakeEnv(connection: string) {
     };
 }
 
+function makeSysinfoEvent(ts: number, errors?: Record<string, string>): Extract<WaveEvent, { event: "sysinfo" }> {
+    return { event: "sysinfo", scopes: ["local"], data: { ts, values: { cpu: 10 }, errors } };
+}
+
+describe("SysinfoViewModel errorsAtom", () => {
+    it("is populated from the last history event on initial load", async () => {
+        const env = makeFakeEnv("local");
+        const now = Date.now();
+        env.rpc.EventReadHistoryCommand.mockResolvedValue([
+            makeSysinfoEvent(now - 1000, { cpu: "stale" }),
+            makeSysinfoEvent(now, { "gpu-amd": "rocm-smi failed" }),
+        ]);
+        const model = new SysinfoViewModel({ blockId: "b1", waveEnv: env } as any);
+        await vi.waitFor(() => expect(globalStore.get(model.loadingAtom)).toBe(false));
+        expect(globalStore.get(model.errorsAtom)).toEqual({ "gpu-amd": "rocm-smi failed" });
+    });
+
+    it("is replaced by each live event's errors", async () => {
+        const model = new SysinfoViewModel({ blockId: "b1", waveEnv: makeFakeEnv("local") } as any);
+        await vi.waitFor(() => expect(globalStore.get(model.loadingAtom)).toBe(false));
+        const now = Date.now();
+        globalStore.set(model.dataAtom, [{ ts: now - 1000 }]);
+        model.handleSysinfoEvent(makeSysinfoEvent(now, { temp: "no sensors" }));
+        expect(globalStore.get(model.errorsAtom)).toEqual({ temp: "no sensors" });
+        model.handleSysinfoEvent(makeSysinfoEvent(now + 1000));
+        expect(globalStore.get(model.errorsAtom)).toEqual({});
+    });
+});
+
 describe("SysinfoViewModel RPC routing", () => {
     it.each([
         ["myhost", "conn:myhost"],
@@ -185,6 +214,36 @@ describe("SysinfoViewModel RPC routing", () => {
         expect(reprobeData).toEqual({ connname: expectedConnName });
         expect(reprobeOpts.route).toBe(route);
         expect(reprobeOpts.timeout).toBeGreaterThanOrEqual(5000);
+    });
+
+    it("refetches discovery once when a live event arrives while metadata is still empty", async () => {
+        const env = makeFakeEnv("local");
+        env.rpc.GetSysInfoMetricsCommand.mockResolvedValueOnce({}).mockResolvedValue({
+            cpu: { label: "CPU %", unit: "%", color: "c", miny: 0, maxy: 100, decimalplaces: 0 },
+        });
+        const model = new SysinfoViewModel({ blockId: "b1", waveEnv: env } as any);
+        await vi.waitFor(() => expect(globalStore.get(model.loadingAtom)).toBe(false));
+        await model.loadAvailableMetrics();
+        expect(globalStore.get(model.availableMetaAtom)).toEqual({});
+
+        const now = Date.now();
+        globalStore.set(model.dataAtom, [{ ts: now - 1000 }]);
+        model.handleSysinfoEvent(makeSysinfoEvent(now));
+        model.handleSysinfoEvent(makeSysinfoEvent(now + 1));
+        await vi.waitFor(() => expect(globalStore.get(model.availableMetaAtom).cpu?.name).toBe("CPU %"));
+        expect(env.rpc.GetSysInfoMetricsCommand).toHaveBeenCalledTimes(2);
+
+        model.handleSysinfoEvent(makeSysinfoEvent(now + 2));
+        expect(env.rpc.GetSysInfoMetricsCommand).toHaveBeenCalledTimes(2);
+    });
+
+    it("resetConnectionState clears errors and discovery metadata", () => {
+        const model = new SysinfoViewModel({ blockId: "b1", waveEnv: makeFakeEnv("local") } as any);
+        globalStore.set(model.errorsAtom, { cpu: "old" });
+        globalStore.set(model.availableMetaAtom, { cpu: { name: "CPU %" } });
+        model.resetConnectionState();
+        expect(globalStore.get(model.errorsAtom)).toEqual({});
+        expect(globalStore.get(model.availableMetaAtom)).toEqual({});
     });
 
     it("stores discovery results as plot metadata", async () => {
