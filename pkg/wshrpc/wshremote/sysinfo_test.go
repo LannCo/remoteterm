@@ -59,10 +59,10 @@ func TestFailureCounterClearsOnRecovery(t *testing.T) {
 	attempt := 0
 	recovering := &fakeCollector{name: "gpu-amd", probeOk: true, collectFn: func() (map[string]float64, error) {
 		attempt++
-		if attempt <= 3 {
-			return nil, fmt.Errorf("fail %d", attempt)
+		if attempt == 4 {
+			return map[string]float64{"gpu:0:util": 5}, nil
 		}
-		return map[string]float64{"gpu:0:util": 5}, nil
+		return nil, fmt.Errorf("fail %d", attempt)
 	}}
 	tracker := makeFailureTracker()
 	for i := 0; i < 3; i++ {
@@ -74,6 +74,37 @@ func TestFailureCounterClearsOnRecovery(t *testing.T) {
 	}
 	if values["gpu:0:util"] != 5 {
 		t.Fatalf("expected recovered value, got %v", values)
+	}
+	_, errMsg = tracker.record(recovering)
+	if errMsg != "" {
+		t.Fatalf("expected first failure after recovery to be strike 1 (no error), got %q", errMsg)
+	}
+}
+
+func TestHeavyValuesCarryForwardOnSubThresholdFailure(t *testing.T) {
+	attempt := 0
+	gpu := &fakeCollector{name: "gpu-amd", probeOk: true, collectFn: func() (map[string]float64, error) {
+		attempt++
+		if attempt == 1 {
+			return map[string]float64{"gpu:0:util": 42}, nil
+		}
+		return nil, fmt.Errorf("transient %d", attempt)
+	}}
+	state := &sysInfoLoopState{
+		heavyCollectors: []Collector{gpu},
+		tracker:         makeFailureTracker(),
+		heavyInterval:   1,
+	}
+	values, _ := collectTick(state)
+	if values["gpu:0:util"] != 42 {
+		t.Fatalf("expected tick 1 value 42, got %v", values)
+	}
+	values, errs := collectTick(state)
+	if v, ok := values["gpu:0:util"]; !ok || v != 42 {
+		t.Fatalf("expected tick 1 value carried forward after one failure, got %v", values)
+	}
+	if len(errs) != 0 {
+		t.Fatalf("expected no errors on strike 1, got %v", errs)
 	}
 }
 

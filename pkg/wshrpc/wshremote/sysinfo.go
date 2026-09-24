@@ -122,8 +122,7 @@ func ReprobeCollectors(connName string) error {
 	return nil
 }
 
-func generateSingleServerData(state *sysInfoLoopState) {
-	now := time.Now()
+func collectTick(state *sysInfoLoopState) (map[string]float64, map[string]string) {
 	values := make(map[string]float64)
 	errorsMap := make(map[string]string)
 
@@ -139,7 +138,12 @@ func generateSingleServerData(state *sysInfoLoopState) {
 
 	runHeavyThisTick := state.heavyInterval <= 1 || state.tickCount%state.heavyInterval == 0
 	if runHeavyThisTick && len(state.heavyCollectors) > 0 {
-		heavyValues := make(map[string]float64)
+		// Seeded from the previous tick so a sub-threshold failure keeps the
+		// collector's last values on screen instead of blanking its chart.
+		heavyValues := make(map[string]float64, len(state.lastHeavyValues))
+		for k, v := range state.lastHeavyValues {
+			heavyValues[k] = v
+		}
 		heavyErrors := make(map[string]string)
 		for _, c := range state.heavyCollectors {
 			v, errMsg := state.tracker.record(c)
@@ -164,7 +168,12 @@ func generateSingleServerData(state *sysInfoLoopState) {
 	}
 
 	state.tickCount++
+	return values, errorsMap
+}
 
+func generateSingleServerData(state *sysInfoLoopState) {
+	now := time.Now()
+	values, errorsMap := collectTick(state)
 	tsData := wshrpc.TimeSeriesData{Ts: now.UnixMilli(), Values: values, Errors: errorsMap}
 	event := wps.WaveEvent{
 		Event:   wps.Event_SysInfo,
