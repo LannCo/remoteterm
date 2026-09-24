@@ -28,8 +28,8 @@ func TestNvidiaCollectorParsesMultiGpuCsv(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	want := map[string]float64{
-		"gpu:0:util": 45, "gpu:0:vram": 2048, "gpu:0:temp": 62,
-		"gpu:1:util": 12, "gpu:1:vram": 512, "gpu:1:temp": 51,
+		"gpu:0:util":      45, "gpu:0:vram": 2048, "gpu:0:vramtotal": 8192, "gpu:0:temp": 62,
+		"gpu:1:util":      12, "gpu:1:vram": 512, "gpu:1:vramtotal": 8192, "gpu:1:temp": 51,
 	}
 	for k, v := range want {
 		if values[k] != v {

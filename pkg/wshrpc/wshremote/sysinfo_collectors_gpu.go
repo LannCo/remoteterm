@@ -19,10 +19,11 @@ var execCommand = func(name string, args ...string) ([]byte, error) {
 }
 
 type gpuReading struct {
-	index int
-	util  float64
-	vram  float64
-	temp  float64
+	index     int
+	util      float64
+	vram      float64
+	vramTotal float64
+	temp      float64
 }
 
 func gpuMetaFor(index int) map[string]MetricMeta {
@@ -79,11 +80,15 @@ func parseNvidiaSmiCsv(output []byte) ([]gpuReading, error) {
 		if err != nil {
 			return nil, fmt.Errorf("bad vram in row %q: %w", line, err)
 		}
+		vramTotal, err := strconv.ParseFloat(strings.TrimSpace(fields[3]), 64)
+		if err != nil {
+			return nil, fmt.Errorf("bad vram total in row %q: %w", line, err)
+		}
 		temp, err := strconv.ParseFloat(strings.TrimSpace(fields[4]), 64)
 		if err != nil {
 			return nil, fmt.Errorf("bad temp in row %q: %w", line, err)
 		}
-		readings = append(readings, gpuReading{index: idx, util: util, vram: vram, temp: temp})
+		readings = append(readings, gpuReading{index: idx, util: util, vram: vram, vramTotal: vramTotal, temp: temp})
 	}
 	return readings, nil
 }
@@ -128,6 +133,7 @@ func (n *nvidiaGpuCollector) Collect() (map[string]float64, error) {
 	for _, r := range readings {
 		values[fmt.Sprintf("gpu:%d:util", r.index)] = r.util
 		values[fmt.Sprintf("gpu:%d:vram", r.index)] = r.vram
+		values[fmt.Sprintf("gpu:%d:vramtotal", r.index)] = r.vramTotal
 		values[fmt.Sprintf("gpu:%d:temp", r.index)] = r.temp
 	}
 	return values, nil
