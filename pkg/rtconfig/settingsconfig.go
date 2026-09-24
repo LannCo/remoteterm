@@ -252,6 +252,8 @@ type ConnKeywords struct {
 	// and prompt immediately for password-auth connections.
 	ConnAuthPromptUsed *bool `json:"conn:authpromptused,omitempty"`
 
+	SysInfoHeavyInterval int `json:"sysinfo:heavyinterval,omitempty"`
+
 	DisplayHidden *bool   `json:"display:hidden,omitempty"`
 	DisplayOrder  float32 `json:"display:order,omitempty"`
 
