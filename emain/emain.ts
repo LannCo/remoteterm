@@ -25,6 +25,7 @@ import {
 import { initIpcHandlers } from "./emain-ipc";
 import { log } from "./emain-log";
 import { initMenuEventSubscriptions, makeAndSetAppMenu, makeDockTaskbar } from "./emain-menu";
+import { formatRssSampleLine, summarizeProcessMetrics } from "./emain-rss-monitor";
 import {
     checkIfRunningUnderARM64Translation,
     getElectronAppBasePath,
@@ -122,6 +123,21 @@ function handleWSEvent(evtMsg: WSEventType) {
 
 // this isn't perfect, but gets the job done without being complicated
 function runActiveTimer() {    setTimeout(runActiveTimer, 60000);
+}
+
+const RssSampleIntervalMs = 5 * 60 * 1000;
+
+// Trend data for chasing renderer-death/OOM reports (see [render-process-gone] logging in
+// emain-tab-lifecycle.ts) — a single manual `ps` snapshot can't distinguish "always been this
+// high" from "grew over hours", this can.
+function sampleRss() {
+    const samples = summarizeProcessMetrics(electronApp.getAppMetrics());
+    console.log(formatRssSampleLine(samples, Date.now()));
+}
+
+function startRssMonitor() {
+    sampleRss();
+    setInterval(sampleRss, RssSampleIntervalMs);
 }
 
 function hideWindowWithCatch(window: RemoteTermBrowserWindow) {
@@ -322,6 +338,7 @@ async function appMain() {
     ensureHotSpareTab(fullConfig);
     await relaunchBrowserWindows();
     setTimeout(runActiveTimer, 5000); // start active timer, wait 5s just to be safe
+    startRssMonitor();
     makeAndSetAppMenu();
     makeDockTaskbar();
 
