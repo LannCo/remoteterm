@@ -42,7 +42,7 @@ const EmptyState = memo(({ onAddSecret }: { onAddSecret: () => void }) => {
             <h3 className="text-sm font-semibold text-secondary">No Secrets</h3>
             <p className="text-xs text-muted">Add a secret to get started</p>
             <button
-                className="flex items-center gap-2 mt-1 px-3 py-1.5 text-xs rounded bg-accent/80 text-background hover:bg-accent transition-colors cursor-pointer"
+                className="flex items-center gap-2 mt-1 px-3 py-1.5 text-xs rounded bg-accent/80 text-onaccent hover:bg-accent transition-colors cursor-pointer"
                 onClick={onAddSecret}
             >
                 <i aria-hidden="true" className="fa-sharp fa-solid fa-plus" />
@@ -144,7 +144,7 @@ const AddSecretForm = memo(
                         aria-invalid={isNameInvalid || undefined}
                         aria-describedby={nameHintId}
                         className={cn(
-                            "px-2.5 py-1.5 bg-black/20 border rounded-md focus:outline-none font-mono text-xs",
+                            "px-2.5 py-1.5 bg-inputbg border rounded-md focus:outline-none font-mono text-xs",
                             isNameInvalid ? "border-error focus:border-error" : "border-border focus:border-accent"
                         )}
                         value={newSecretName}
@@ -163,7 +163,7 @@ const AddSecretForm = memo(
                     </label>
                     <textarea
                         id={valueId}
-                        className="w-full px-2.5 py-1.5 bg-black/20 border border-border rounded-md focus:outline-none focus:border-accent font-mono text-xs"
+                        className="w-full px-2.5 py-1.5 bg-inputbg border border-border rounded-md focus:outline-none focus:border-accent font-mono text-xs"
                         value={newSecretValue}
                         onChange={(e) => onValueChange(e.target.value)}
                         placeholder="Enter secret value..."
@@ -181,7 +181,7 @@ const AddSecretForm = memo(
                         Cancel
                     </button>
                     <button
-                        className="flex items-center gap-2 px-3.5 py-1.5 text-xs font-medium rounded bg-accent/80 text-background hover:bg-accent transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                        className="flex items-center gap-2 px-3.5 py-1.5 text-xs font-medium rounded bg-accent/80 text-onaccent hover:bg-accent transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
                         onClick={onSubmit}
                         disabled={isLoading || isNameInvalid || newSecretName.trim() === ""}
                     >
@@ -241,7 +241,7 @@ const SecretDetailView = memo(({ model }: SecretDetailViewProps) => {
                 <textarea
                     id={valueId}
                     ref={valueRef}
-                    className="w-full px-2.5 py-1.5 bg-black/20 border border-border rounded-md focus:outline-none focus:border-accent font-mono text-xs"
+                    className="w-full px-2.5 py-1.5 bg-inputbg border border-border rounded-md focus:outline-none focus:border-accent font-mono text-xs"
                     value={secretValue}
                     onChange={(e) => setSecretValue(e.target.value)}
                     onKeyDown={(e) => {
@@ -308,7 +308,7 @@ const SecretDetailView = memo(({ model }: SecretDetailViewProps) => {
                         Cancel
                     </button>
                     <button
-                        className="flex items-center gap-2 px-3.5 py-1.5 text-xs font-medium rounded bg-accent/80 text-background hover:bg-accent transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                        className="flex items-center gap-2 px-3.5 py-1.5 text-xs font-medium rounded bg-accent/80 text-onaccent hover:bg-accent transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
                         onClick={() => model.saveSecret()}
                         disabled={isLoading}
                     >

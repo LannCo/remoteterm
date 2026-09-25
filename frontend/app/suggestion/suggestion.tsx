@@ -117,7 +117,7 @@ function SuggestionContent({ suggestion }: { suggestion: SuggestionType }) {
         return (
             <div className="flex flex-col">
                 {/* Title on the first line, with highlighting */}
-                <div className="truncate text-white">{highlightPositions(suggestion.display, suggestion.matchpos)}</div>
+                <div className="truncate text-primary">{highlightPositions(suggestion.display, suggestion.matchpos)}</div>
                 {/* Subtext on the second line in a smaller, grey style */}
                 <div className="truncate text-sm text-secondary">
                     {highlightPositions(suggestion.subtext, suggestion.submatchpos)}

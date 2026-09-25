@@ -20,8 +20,12 @@ describe("resolveAppearanceMode", () => {
         expect(resolveAppearanceMode(null, "system", false)).toBe("light");
     });
 
-    test("everything absent falls back to dark", () => {
+    test("osPrefersDark true with no overrides resolves dark", () => {
         expect(resolveAppearanceMode(null, null, true)).toBe("dark");
+    });
+
+    test("osPrefersDark false with no overrides resolves light", () => {
+        expect(resolveAppearanceMode(null, null, false)).toBe("light");
         expect(resolveAppearanceMode(undefined, undefined, false)).toBe("light");
     });
 });
