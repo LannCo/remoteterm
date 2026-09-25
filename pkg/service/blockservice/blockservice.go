@@ -9,14 +9,14 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/blockcontroller"
+	"github.com/LannCo/remoteterm/pkg/filestore"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtcore"
+	"github.com/LannCo/remoteterm/pkg/rtstore"
+	"github.com/LannCo/remoteterm/pkg/tsgen/tsgenmeta"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
 	"github.com/google/uuid"
-	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
-	"github.com/wavetermdev/waveterm/pkg/filestore"
-	"github.com/wavetermdev/waveterm/pkg/tsgen/tsgenmeta"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wcore"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
 type BlockService struct{}
@@ -43,8 +43,8 @@ func (*BlockService) SaveTerminalState_Meta() tsgenmeta.MethodMeta {
 	}
 }
 
-func (bs *BlockService) SaveTerminalState(ctx context.Context, blockId string, state string, stateType string, ptyOffset int64, termSize waveobj.TermSize, decModes string) error {
-	_, err := wstore.DBMustGet[*waveobj.Block](ctx, blockId)
+func (bs *BlockService) SaveTerminalState(ctx context.Context, blockId string, state string, stateType string, ptyOffset int64, termSize remotetermobj.TermSize, decModes string) error {
+	_, err := rtstore.DBMustGet[*remotetermobj.Block](ctx, blockId)
 	if err != nil {
 		return err
 	}
@@ -77,17 +77,17 @@ func (*BlockService) CleanupOrphanedBlocks_Meta() tsgenmeta.MethodMeta {
 	}
 }
 
-func (bs *BlockService) CleanupOrphanedBlocks(ctx context.Context, tabId string) (waveobj.UpdatesRtnType, error) {
-	ctx = waveobj.ContextWithUpdates(ctx)
-	layoutAction := waveobj.LayoutActionData{
-		ActionType: wcore.LayoutActionDataType_CleanupOrphaned,
+func (bs *BlockService) CleanupOrphanedBlocks(ctx context.Context, tabId string) (remotetermobj.UpdatesRtnType, error) {
+	ctx = remotetermobj.ContextWithUpdates(ctx)
+	layoutAction := remotetermobj.LayoutActionData{
+		ActionType: rtcore.LayoutActionDataType_CleanupOrphaned,
 		ActionId:   uuid.NewString(),
 	}
-	err := wcore.QueueLayoutActionForTab(ctx, tabId, layoutAction)
+	err := rtcore.QueueLayoutActionForTab(ctx, tabId, layoutAction)
 	if err != nil {
 		return nil, fmt.Errorf("error queuing cleanup layout action: %w", err)
 	}
-	return waveobj.ContextGetUpdatesRtn(ctx), nil
+	return remotetermobj.ContextGetUpdatesRtn(ctx), nil
 }
 
 func (*BlockService) SaveTerminalImages_Meta() tsgenmeta.MethodMeta {
@@ -98,7 +98,7 @@ func (*BlockService) SaveTerminalImages_Meta() tsgenmeta.MethodMeta {
 }
 
 func (bs *BlockService) SaveTerminalImages(ctx context.Context, blockId string, manifest string) error {
-	_, err := wstore.DBMustGet[*waveobj.Block](ctx, blockId)
+	_, err := rtstore.DBMustGet[*remotetermobj.Block](ctx, blockId)
 	if err != nil {
 		return err
 	}
@@ -119,7 +119,7 @@ func (bs *BlockService) SaveImageAsset(ctx context.Context, blockId string, name
 	if !hexNamePattern.MatchString(name) {
 		return fmt.Errorf("invalid image asset name: %q", name)
 	}
-	_, err := wstore.DBMustGet[*waveobj.Block](ctx, blockId)
+	_, err := rtstore.DBMustGet[*remotetermobj.Block](ctx, blockId)
 	if err != nil {
 		return err
 	}

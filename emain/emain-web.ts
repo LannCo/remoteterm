@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { ipcMain, webContents, WebContents } from "electron";
-import { getWaveTabView } from "./emain-tabview";
-import { WaveBrowserWindow } from "./emain-window";
+import { getRemoteTermTabView } from "./emain-tabview";
+import { RemoteTermBrowserWindow } from "./emain-window";
 import { isUsableWebContentsId, tabNotLoadedError } from "./web-agent-pure";
 
 const WebContentsLookupTimeoutMs = 5000;
 const WebContentsLookupPollMs = 200;
 
-export function getWebContentsByBlockId(ww: WaveBrowserWindow, tabId: string, blockId: string): Promise<WebContents> {
-    const tabView = getWaveTabView(tabId) ?? ww?.allLoadedTabViews?.get(tabId);
+export function getWebContentsByBlockId(ww: RemoteTermBrowserWindow, tabId: string, blockId: string): Promise<WebContents> {
+    const tabView = getRemoteTermTabView(tabId) ?? ww?.allLoadedTabViews?.get(tabId);
     if (tabView == null || tabView.webContents == null || tabView.webContents.isDestroyed()) {
         return Promise.reject(tabNotLoadedError(blockId));
     }

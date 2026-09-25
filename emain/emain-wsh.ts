@@ -9,7 +9,7 @@ import { Notification, net, safeStorage, shell } from "electron";
 import { assertWebAgentControl, runWebRun, runWebScreenshot, runWebSnapshot } from "./emain-web-agent";
 import { unamePlatform } from "./emain-platform";
 import { getWebContentsByBlockId, webGetSelector } from "./emain-web";
-import { createBrowserWindow, getWaveWindowById, getWaveWindowByWorkspaceId } from "./emain-window";
+import { createBrowserWindow, getRemoteTermWindowById, getRemoteTermWindowByWorkspaceId } from "./emain-window";
 import { tabNotLoadedError } from "./web-agent-pure";
 
 export class ElectronWshClientType extends WshClient {
@@ -23,7 +23,7 @@ export class ElectronWshClientType extends WshClient {
         if (!data.tabid || !data.blockid || !data.workspaceid) {
             throw new Error("tabid and blockid are required");
         }
-        const ww = getWaveWindowByWorkspaceId(data.workspaceid);
+        const ww = getRemoteTermWindowByWorkspaceId(data.workspaceid);
         if (ww == null) {
             throw new Error(`no window found with workspace ${data.workspaceid}`);
         }
@@ -61,7 +61,7 @@ export class ElectronWshClientType extends WshClient {
     async handle_focuswindow(rh: RpcResponseHelper, windowId: string) {
         console.log(`focuswindow ${windowId}`);
         const fullConfig = await RpcApi.GetFullConfigCommand(ElectronWshClient);
-        let ww = getWaveWindowById(windowId);
+        let ww = getRemoteTermWindowById(windowId);
         if (ww == null) {
             const window = await WindowService.GetWindow(windowId);
             if (window == null) {

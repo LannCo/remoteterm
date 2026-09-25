@@ -1,0 +1,28 @@
+# round3-security-auditor report
+**Target:** `git diff bab19e28 4d744a2f` on `qa/fleet-2026-09-22` (RemoteTerm, second fix wave)
+**Started:** 2026-09-22T00:00:00Z
+**Status:** IN PROGRESS
+
+## Findings
+<!-- appended one at a time, as found -->
+
+### R3-SEC-1 [Low] [Confidence: Medium] Recursive merge into an already-existing config root follows symlinks at the destination, same precondition class already accepted in round1/2 (SEC-1)
+
+- **Location:** `emain/emain-platform.ts:333-352` (`mergeTree`), `:358-383` (`mergeDataRoot`), `:427` (`canMergeIntoDest: () => true` for the config root)
+- **Description:** `mergeTree` decides per entry with `existsSync(destPath)` (:338, follows symlinks) then, if the entry exists, `statSync(destPath).isDirectory()` (:343, also follows symlinks) to decide whether to recurse. Both checks resolve through a symlink at any level of `dest`, not just the top-level `spec.dest` already covered by the round1/2 discussion. If a directory entry inside the destination tree is a symlink to a real directory, `mergeTree` recurses into whatever it points at and `renameSync(sourcePath, destPath)` (:339) moves the corresponding legacy file there — including `secrets.enc` (`LegacySecretsFileName`, :23) if it hasn't already been placed, since the config root's `canMergeIntoDest` (:427) is unconditionally `true` and imposes no shape check on `destEntries` (unlike the data root's `EmainDataEntryNames.every(...)` at :440).
+- **Precondition:** identical to round1/2 SEC-1 — the attacker needs write access to the user's `$XDG_CONFIG_HOME`/`~/.config` tree before the merge runs, which round1/2 already treated as a "game over" precondition and refuted on that basis (`docs/qa-review/security-auditor.md:10-24`, refutation recorded in round2). The merge path adds no new door into the home directory; it widens *where inside that already-writable tree* an attacker's symlink is effective (any entry the merge walks, not only the migration source/dest roots) and, because the config merge is unconditional, means a moved file can be the real `secrets.enc` rather than a placeholder.
+- **TOCTOU note (per brief):** `!existsSync(destPath)` (:338) then `renameSync` (:339) is check-then-act, not atomic (`renameSync` uses plain `rename(2)`, not `RENAME_NOREPLACE`), so a destination entry planted between the two calls would be silently overwritten rather than rejected. This still requires the same local write access to the destination directory as the symlink case above — no new actor class, just confirming the "never overwrite" comment (:359) is enforced by ordering, not atomicity.
+- **Recommendation:** given the standing precondition bar, no action required unless the team wants defence-in-depth. If so, `lstatSync` each `destPath` before the `existsSync`/`statSync` checks and refuse (fold into `result.kept`) when it is a symlink, matching the `SEC-1` `lstatSync` recommendation already on file for the source side.
+
+## Verified OK
+<!-- appended as checked -->
+
+- `emain/emain-platform.ts:160-192` (`checkLegacyInstanceRunning`): `readlinkSync`/hostname parse/`process.kill(pid,0)` — no shell exec, no path/command injection; `pid`/`hostname` only ever compared or passed to `kill(2)`'s signal-0 liveness probe. A crafted `SingletonLock` target (attacker needs write access to `~/.config/waveterm/electron`, same precondition class as R3-SEC-1) can only steer the result between the three `LegacyInstanceState` branches — worst observed case is `process.kill(pid,0)` throwing `EPERM` (e.g. target pid owned by another user) rather than `ESRCH`, which falls through the `catch` uncaught and reaches `confirmedRunning: true` (:191) — i.e. a false "WaveTerm is running" block. Impact is a blocking dialog on migration (`resolveLegacyInstanceBlock`, :175-215, "Quit" only when `confirmedRunning`), not code execution or data exposure.
+- `emain/emain.ts:269-278`, `emain-window.ts`, `emain-builder.ts`: `resolveLegacyInstanceBlock` is called exactly once, synchronously in `appMain()` before any IPC/renderer surface is wired up; not reachable from a webContents/renderer or any wshrpc handler. "Migrate anyway" requires a physical click on that specific dialog button (`buttons: ["Quit", "Migrate anyway"]`, `defaultId: 0`, so Enter/default selects Quit) — not triggerable by a non-interactive or remote actor.
+- `emain/emain-window.ts` (`linuxWindowIconPath` via `?asset` import) and `emain-builder.ts`: icon path resolved at build time from the local `build/icons/256x256.png`, same mechanism Vite uses for other bundled assets — no network fetch, no user-controlled path component.
+- `pkg/wshrpc/wshremote/git.go:321-355` (`GitRevertHunkCommand`), `:1137-1147` (`applyPatchReverseCached`): `git apply -R --cached`/`git apply -R` invoked via `exec.CommandContext` with a fixed argv (no shell), patch content passed only via `cmd.Stdin`; `data.Path`/`data.Dir` flow into `runGitCommand`'s argv as discrete elements, never string-concatenated into a shell command — no injection surface beyond the existing wshrpc trust boundary (local authkey) already verified clean in round1/2. Revert-then-unstage ordering (unstage first, then working tree; error path in the second step leaves the change as an unstaged edit rather than losing it) matches the new tests in `git_revert_test.go`.
+
+## Completion
+**Status:** COMPLETE
+**Findings:** 1 (0 Critical, 0 High, 0 Medium, 1 Low)
+**Not checked / out of scope:** No live-app/`task dev` runtime verification (live-system rule); R3-SEC-1 reasoned from `fs`/`rename(2)` symlink semantics against committed code. Windows-specific migration path not re-audited (SingletonLock check is a no-op on `win32`, :161-163).

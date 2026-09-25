@@ -1,0 +1,27 @@
+// Copyright 2025, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+//go:build !windows
+
+package remotetermbase
+
+import (
+	"log"
+	"os"
+
+	"golang.org/x/sys/unix"
+)
+
+func acquireLockFile(lockFileName string) (FDLock, error) {
+	log.Printf("[base] acquiring lock on %s\n", lockFileName)
+	fd, err := os.OpenFile(lockFileName, os.O_RDWR|os.O_CREATE, 0600)
+	if err != nil {
+		return nil, err
+	}
+	err = unix.Flock(int(fd.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+	if err != nil {
+		fd.Close()
+		return nil, err
+	}
+	return fd, nil
+}

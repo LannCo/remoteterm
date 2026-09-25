@@ -1,0 +1,31 @@
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+import type { MetaKeyAtomFnType, WaveEnv, WaveEnvSubset } from "@/app/remotetermenv/remotetermenv";
+
+export type RemoteTermConfigEnv = WaveEnvSubset<{
+    electron: {
+        getConfigDir: WaveEnv["electron"]["getConfigDir"];
+        getPlatform: WaveEnv["electron"]["getPlatform"];
+    };
+    rpc: {
+        FileInfoCommand: WaveEnv["rpc"]["FileInfoCommand"];
+        FileReadCommand: WaveEnv["rpc"]["FileReadCommand"];
+        FileWriteCommand: WaveEnv["rpc"]["FileWriteCommand"];
+        SetMetaCommand: WaveEnv["rpc"]["SetMetaCommand"];
+        GetSecretsLinuxStorageBackendCommand: WaveEnv["rpc"]["GetSecretsLinuxStorageBackendCommand"];
+        GetSecretsNamesCommand: WaveEnv["rpc"]["GetSecretsNamesCommand"];
+        GetSecretsCommand: WaveEnv["rpc"]["GetSecretsCommand"];
+        SetSecretsCommand: WaveEnv["rpc"]["SetSecretsCommand"];
+        SetConnectionsConfigCommand: WaveEnv["rpc"]["SetConnectionsConfigCommand"];
+        SetConfigCommand: WaveEnv["rpc"]["SetConfigCommand"];
+    };
+    atoms: {
+        fullConfigAtom: WaveEnv["atoms"]["fullConfigAtom"];
+        allConnStatus: WaveEnv["atoms"]["allConnStatus"];
+        workspaceId: WaveEnv["atoms"]["workspaceId"];
+    };
+    getBlockMetaKeyAtom: MetaKeyAtomFnType<"file">;
+    getTabMetaKeyAtom: MetaKeyAtomFnType<"tab:background">;
+    isWindows: WaveEnv["isWindows"];
+}>;

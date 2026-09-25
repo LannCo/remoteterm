@@ -9,8 +9,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/wavetermdev/waveterm/pkg/streamclient"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/streamclient"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
 )
 
 type nopAckSender struct{}

@@ -12,11 +12,11 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
+	"github.com/LannCo/remoteterm/pkg/util/utilfn"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtconfig"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 )
 
 var configCmd = &cobra.Command{
@@ -326,7 +326,7 @@ type configListEntry struct {
 }
 
 func configListRun(cmd *cobra.Command, args []string) error {
-	idx := buildConfigFieldIndex(reflect.TypeOf(wconfig.SettingsType{}))
+	idx := buildConfigFieldIndex(reflect.TypeOf(rtconfig.SettingsType{}))
 	keys := make([]string, 0, len(idx))
 	for key := range idx {
 		keys = append(keys, key)
@@ -369,7 +369,7 @@ func configSetRun(cmd *cobra.Command, args []string) (rtnErr error) {
 
 	// Connection-scoped set is deferred (see Phase 4 note); only top-level
 	// SettingsType keys are settable here.
-	fieldIdx := buildConfigFieldIndex(reflect.TypeOf(wconfig.SettingsType{}))
+	fieldIdx := buildConfigFieldIndex(reflect.TypeOf(rtconfig.SettingsType{}))
 	field, ok := fieldIdx[key]
 	if !ok {
 		return fmt.Errorf("unknown config key %q", key)
@@ -378,7 +378,7 @@ func configSetRun(cmd *cobra.Command, args []string) (rtnErr error) {
 	if err != nil {
 		return fmt.Errorf("parsing value for %q: %w", key, err)
 	}
-	err = wshclient.SetConfigCommand(RpcClient, wshrpc.MetaSettingsType{MetaMapType: waveobj.MetaMapType{key: parsed}}, &wshrpc.RpcOpts{Timeout: 2000})
+	err = wshclient.SetConfigCommand(RpcClient, wshrpc.MetaSettingsType{MetaMapType: remotetermobj.MetaMapType{key: parsed}}, &wshrpc.RpcOpts{Timeout: 2000})
 	if err != nil {
 		return fmt.Errorf("setting config: %w", err)
 	}

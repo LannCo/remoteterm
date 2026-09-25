@@ -9,12 +9,12 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/LannCo/remoteterm/pkg/baseds"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtconfig"
+	"github.com/LannCo/remoteterm/pkg/vdom"
+	"github.com/LannCo/remoteterm/pkg/wps"
 	"github.com/google/uuid"
-	"github.com/wavetermdev/waveterm/pkg/baseds"
-	"github.com/wavetermdev/waveterm/pkg/vdom"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
-	"github.com/wavetermdev/waveterm/pkg/wps"
 )
 
 type RespOrErrorUnion[T any] struct {
@@ -47,15 +47,15 @@ type WshRpcInterface interface {
 
 	MessageCommand(ctx context.Context, data CommandMessageData) error
 	PromptCommand(ctx context.Context, data CommandPromptData) (string, error)
-	GetMetaCommand(ctx context.Context, data CommandGetMetaData) (waveobj.MetaMapType, error)
+	GetMetaCommand(ctx context.Context, data CommandGetMetaData) (remotetermobj.MetaMapType, error)
 	SetMetaCommand(ctx context.Context, data CommandSetMetaData) error
 	ControllerInputCommand(ctx context.Context, data CommandBlockInputData) error
 	ControllerDestroyCommand(ctx context.Context, blockId string) error
 	ControllerResyncCommand(ctx context.Context, data CommandControllerResyncData) error
 	ControllerAppendOutputCommand(ctx context.Context, data CommandControllerAppendOutputData) error
 	ResolveIdsCommand(ctx context.Context, data CommandResolveIdsData) (CommandResolveIdsRtnData, error)
-	CreateBlockCommand(ctx context.Context, data CommandCreateBlockData) (waveobj.ORef, error)
-	CreateSubBlockCommand(ctx context.Context, data CommandCreateSubBlockData) (waveobj.ORef, error)
+	CreateBlockCommand(ctx context.Context, data CommandCreateBlockData) (remotetermobj.ORef, error)
+	CreateSubBlockCommand(ctx context.Context, data CommandCreateSubBlockData) (remotetermobj.ORef, error)
 	DeleteBlockCommand(ctx context.Context, data CommandDeleteBlockData) error
 	DeleteSubBlockCommand(ctx context.Context, data CommandDeleteBlockData) error
 	WaitForRouteCommand(ctx context.Context, data CommandWaitForRouteData) (bool, error)
@@ -71,11 +71,13 @@ type WshRpcInterface interface {
 	WriteTempFileCommand(ctx context.Context, data CommandWriteTempFileData) (string, error)
 	StreamTestCommand(ctx context.Context) chan RespOrErrorUnion[int]
 	StreamCpuDataCommand(ctx context.Context, request CpuDataRequest) chan RespOrErrorUnion[TimeSeriesData]
+	SysInfoReprobeCommand(ctx context.Context, data CommandSysInfoReprobeData) error
+	GetSysInfoMetricsCommand(ctx context.Context, data CommandSysInfoMetricsData) (map[string]MetricMeta, error)
 	TestCommand(ctx context.Context, data string) error
 	TestMultiArgCommand(ctx context.Context, arg1 string, arg2 int, arg3 bool) (string, error)
 	SetConfigCommand(ctx context.Context, data MetaSettingsType) error
 	SetConnectionsConfigCommand(ctx context.Context, data ConnConfigRequest) error
-	GetFullConfigCommand(ctx context.Context) (wconfig.FullConfigType, error)
+	GetFullConfigCommand(ctx context.Context) (rtconfig.FullConfigType, error)
 	BlockInfoCommand(ctx context.Context, blockId string) (*BlockInfoData, error)
 	DebugTermCommand(ctx context.Context, data CommandDebugTermData) (*CommandDebugTermRtnData, error)
 	BlocksListCommand(ctx context.Context, data BlocksListRequest) ([]BlocksListEntry, error)
@@ -87,7 +89,7 @@ type WshRpcInterface interface {
 	PathCommand(ctx context.Context, data PathCommandData) (string, error)
 	FetchSuggestionsCommand(ctx context.Context, data FetchSuggestionsData) (*FetchSuggestionsResponse, error)
 	DisposeSuggestionsCommand(ctx context.Context, widgetId string) error
-	GetTabCommand(ctx context.Context, tabId string) (*waveobj.Tab, error)
+	GetTabCommand(ctx context.Context, tabId string) (*remotetermobj.Tab, error)
 	UpdateTabNameCommand(ctx context.Context, tabId string, newName string) error
 	UpdateWorkspaceTabIdsCommand(ctx context.Context, workspaceId string, tabIds []string) error
 	CreateTabCommand(ctx context.Context, data CommandCreateTabData) (CommandCreateTabRtnData, error)
@@ -164,7 +166,7 @@ type WshRpcInterface interface {
 	WorkspaceListCommand(ctx context.Context) ([]WorkspaceInfoData, error)
 
 	// terminal
-	VDomCreateContextCommand(ctx context.Context, data vdom.VDomCreateContext) (*waveobj.ORef, error)
+	VDomCreateContextCommand(ctx context.Context, data vdom.VDomCreateContext) (*remotetermobj.ORef, error)
 	VDomAsyncInitiationCommand(ctx context.Context, data vdom.VDomAsyncInitiationRequest) error
 
 	// screenshot
@@ -174,10 +176,10 @@ type WshRpcInterface interface {
 	SetBlockFocusCommand(ctx context.Context, blockId string) error
 	GetFocusedBlockDataCommand(ctx context.Context) (*FocusedBlockData, error)
 	GetBlockInputStateCommand(ctx context.Context, blockId string) (*BlockInputState, error)
-	ResolveDirectionalCommand(ctx context.Context, data CommandResolveDirectionalData) (*waveobj.ORef, error)
+	ResolveDirectionalCommand(ctx context.Context, data CommandResolveDirectionalData) (*remotetermobj.ORef, error)
 
 	// rtinfo
-	GetRTInfoCommand(ctx context.Context, data CommandGetRTInfoData) (*waveobj.ObjRTInfo, error)
+	GetRTInfoCommand(ctx context.Context, data CommandGetRTInfoData) (*remotetermobj.ObjRTInfo, error)
 	SetRTInfoCommand(ctx context.Context, data CommandSetRTInfoData) error
 
 	// terminal
@@ -213,7 +215,7 @@ type WshRpcInterface interface {
 
 	// job controller
 	JobControllerDeleteJobCommand(ctx context.Context, jobId string) error
-	JobControllerListCommand(ctx context.Context) ([]*waveobj.Job, error)
+	JobControllerListCommand(ctx context.Context) ([]*remotetermobj.Job, error)
 	JobControllerStartJobCommand(ctx context.Context, data CommandJobControllerStartJobData) (string, error)
 	JobControllerExitJobCommand(ctx context.Context, jobId string) error
 	JobControllerDisconnectJobCommand(ctx context.Context, jobId string) error
@@ -318,12 +320,12 @@ type BlockInputState struct {
 }
 
 type CommandGetMetaData struct {
-	ORef waveobj.ORef `json:"oref"`
+	ORef remotetermobj.ORef `json:"oref"`
 }
 
 type CommandSetMetaData struct {
-	ORef waveobj.ORef        `json:"oref"`
-	Meta waveobj.MetaMapType `json:"meta"`
+	ORef remotetermobj.ORef        `json:"oref"`
+	Meta remotetermobj.MetaMapType `json:"meta"`
 }
 
 type CommandResolveIdsData struct {
@@ -332,7 +334,7 @@ type CommandResolveIdsData struct {
 }
 
 type CommandResolveIdsRtnData struct {
-	ResolvedIds map[string]waveobj.ORef `json:"resolvedids"`
+	ResolvedIds map[string]remotetermobj.ORef `json:"resolvedids"`
 }
 
 // CommandResolveDirectionalData resolves the block geometrically adjacent to
@@ -343,27 +345,27 @@ type CommandResolveDirectionalData struct {
 }
 
 type CommandCreateBlockData struct {
-	TabId         string               `json:"tabid"`
-	BlockDef      *waveobj.BlockDef    `json:"blockdef"`
-	RtOpts        *waveobj.RuntimeOpts `json:"rtopts,omitempty"`
-	Magnified     bool                 `json:"magnified,omitempty"`
-	Ephemeral     bool                 `json:"ephemeral,omitempty"`
-	Focused       bool                 `json:"focused,omitempty"`
-	TargetBlockId string               `json:"targetblockid,omitempty"`
-	TargetAction  string               `json:"targetaction,omitempty"` // "replace", "splitright", "splitdown", "splitleft", "splitup"
+	TabId         string                     `json:"tabid"`
+	BlockDef      *remotetermobj.BlockDef    `json:"blockdef"`
+	RtOpts        *remotetermobj.RuntimeOpts `json:"rtopts,omitempty"`
+	Magnified     bool                       `json:"magnified,omitempty"`
+	Ephemeral     bool                       `json:"ephemeral,omitempty"`
+	Focused       bool                       `json:"focused,omitempty"`
+	TargetBlockId string                     `json:"targetblockid,omitempty"`
+	TargetAction  string                     `json:"targetaction,omitempty"` // "replace", "splitright", "splitdown", "splitleft", "splitup"
 }
 
 type CommandCreateSubBlockData struct {
-	ParentBlockId string            `json:"parentblockid"`
-	BlockDef      *waveobj.BlockDef `json:"blockdef"`
+	ParentBlockId string                  `json:"parentblockid"`
+	BlockDef      *remotetermobj.BlockDef `json:"blockdef"`
 }
 
 type CommandControllerResyncData struct {
-	ForceRestart bool                 `json:"forcerestart,omitempty"`
-	TabId        string               `json:"tabid"`
-	BlockId      string               `json:"blockid"`
-	ConnName     string               `json:"connname,omitempty"`
-	RtOpts       *waveobj.RuntimeOpts `json:"rtopts,omitempty"`
+	ForceRestart bool                       `json:"forcerestart,omitempty"`
+	TabId        string                     `json:"tabid"`
+	BlockId      string                     `json:"blockid"`
+	ConnName     string                     `json:"connname,omitempty"`
+	RtOpts       *remotetermobj.RuntimeOpts `json:"rtopts,omitempty"`
 }
 
 type CommandControllerAppendOutputData struct {
@@ -372,19 +374,19 @@ type CommandControllerAppendOutputData struct {
 }
 
 type CommandBlockInputData struct {
-	BlockId     string            `json:"blockid"`
-	InputData64 string            `json:"inputdata64,omitempty"`
-	SigName     string            `json:"signame,omitempty"`
-	TermSize    *waveobj.TermSize `json:"termsize,omitempty"`
+	BlockId     string                  `json:"blockid"`
+	InputData64 string                  `json:"inputdata64,omitempty"`
+	SigName     string                  `json:"signame,omitempty"`
+	TermSize    *remotetermobj.TermSize `json:"termsize,omitempty"`
 }
 
 type CommandJobInputData struct {
-	JobId          string            `json:"jobid"`
-	InputSessionId string            `json:"inputsessionid,omitempty"`
-	SeqNum         int               `json:"seqnum,omitempty"`
-	InputData64    string            `json:"inputdata64,omitempty"`
-	SigName        string            `json:"signame,omitempty"`
-	TermSize       *waveobj.TermSize `json:"termsize,omitempty"`
+	JobId          string                  `json:"jobid"`
+	InputSessionId string                  `json:"inputsessionid,omitempty"`
+	SeqNum         int                     `json:"seqnum,omitempty"`
+	InputData64    string                  `json:"inputdata64,omitempty"`
+	SigName        string                  `json:"signame,omitempty"`
+	TermSize       *remotetermobj.TermSize `json:"termsize,omitempty"`
 }
 
 type CommandWaitForRouteData struct {
@@ -432,9 +434,9 @@ type CommandRemoteWriteTempFileData struct {
 }
 
 type ConnRequest struct {
-	Host       string               `json:"host"`
-	Keywords   wconfig.ConnKeywords `json:"keywords,omitempty"`
-	LogBlockId string               `json:"logblockid,omitempty"`
+	Host       string                `json:"host"`
+	Keywords   rtconfig.ConnKeywords `json:"keywords,omitempty"`
+	LogBlockId string                `json:"logblockid,omitempty"`
 	// Force, when true, performs CloseInvoluntary then Connect if already
 	// connected/connecting. Preserves password cache (UX-1.3 stalled Reconnect Now).
 	Force bool `json:"force,omitempty"`
@@ -455,14 +457,33 @@ const (
 type TimeSeriesData struct {
 	Ts     int64              `json:"ts"`
 	Values map[string]float64 `json:"values"`
+	Errors map[string]string  `json:"errors,omitempty"`
+}
+
+type MetricMeta struct {
+	Label         string  `json:"label"`
+	Unit          string  `json:"unit"`
+	Color         string  `json:"color"`
+	MinY          float64 `json:"miny"`
+	MaxY          float64 `json:"maxy"`
+	MaxYKey       string  `json:"maxykey,omitempty"`
+	DecimalPlaces int     `json:"decimalplaces"`
+}
+
+type CommandSysInfoReprobeData struct {
+	ConnName string `json:"connname"`
+}
+
+type CommandSysInfoMetricsData struct {
+	ConnName string `json:"connname"`
 }
 
 type MetaSettingsType struct {
-	waveobj.MetaMapType
+	remotetermobj.MetaMapType
 }
 
 func (m *MetaSettingsType) UnmarshalJSON(data []byte) error {
-	var metaMap waveobj.MetaMapType
+	var metaMap remotetermobj.MetaMapType
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
 	if err := decoder.Decode(&metaMap); err != nil {
@@ -477,8 +498,8 @@ func (m MetaSettingsType) MarshalJSON() ([]byte, error) {
 }
 
 type ConnConfigRequest struct {
-	Host        string              `json:"host"`
-	MetaMapType waveobj.MetaMapType `json:"metamaptype"`
+	Host        string                    `json:"host"`
+	MetaMapType remotetermobj.MetaMapType `json:"metamaptype"`
 }
 
 type ConnStatus struct {
@@ -571,11 +592,11 @@ type WebScreenshotResult struct {
 }
 
 type BlockInfoData struct {
-	BlockId     string          `json:"blockid"`
-	TabId       string          `json:"tabid"`
-	WorkspaceId string          `json:"workspaceid"`
-	Block       *waveobj.Block  `json:"block"`
-	Files       []*WaveFileInfo `json:"files"`
+	BlockId     string               `json:"blockid"`
+	TabId       string               `json:"tabid"`
+	WorkspaceId string               `json:"workspaceid"`
+	Block       *remotetermobj.Block `json:"block"`
+	Files       []*WaveFileInfo      `json:"files"`
 }
 
 type WaveNotificationOptions struct {
@@ -606,8 +627,8 @@ type WaveInfoData struct {
 }
 
 type WorkspaceInfoData struct {
-	WindowId      string             `json:"windowid"`
-	WorkspaceData *waveobj.Workspace `json:"workspacedata"`
+	WindowId      string                   `json:"windowid"`
+	WorkspaceData *remotetermobj.Workspace `json:"workspacedata"`
 }
 
 type BlocksListRequest struct {
@@ -629,7 +650,7 @@ type BlocksListEntry struct {
 	WorkspaceId string              `json:"workspaceid"`
 	TabId       string              `json:"tabid"`
 	BlockId     string              `json:"blockid"`
-	Meta        waveobj.MetaMapType `json:"meta"`
+	Meta        remotetermobj.MetaMapType `json:"meta"`
 	Index       int                 `json:"index,omitempty"`
 	Geometry    *BlockGeometry      `json:"geometry,omitempty"`
 	Focused     bool                `json:"focused,omitempty"`
@@ -713,13 +734,13 @@ type SuggestionType struct {
 }
 
 type CommandGetRTInfoData struct {
-	ORef waveobj.ORef `json:"oref"`
+	ORef remotetermobj.ORef `json:"oref"`
 }
 
 type CommandSetRTInfoData struct {
-	ORef   waveobj.ORef   `json:"oref"`
-	Data   map[string]any `json:"data" tstype:"ObjRTInfo"`
-	Delete bool           `json:"delete,omitempty"`
+	ORef   remotetermobj.ORef `json:"oref"`
+	Data   map[string]any     `json:"data" tstype:"ObjRTInfo"`
+	Delete bool               `json:"delete,omitempty"`
 }
 
 type CommandTermGetScrollbackLinesData struct {
@@ -828,24 +849,24 @@ type CommandAuthenticateJobManagerData struct {
 }
 
 type CommandStartJobData struct {
-	Cmd        string            `json:"cmd"`
-	Args       []string          `json:"args"`
-	Env        map[string]string `json:"env"`
-	TermSize   waveobj.TermSize  `json:"termsize"`
-	StreamMeta *StreamMeta       `json:"streammeta,omitempty"`
+	Cmd        string                 `json:"cmd"`
+	Args       []string               `json:"args"`
+	Env        map[string]string      `json:"env"`
+	TermSize   remotetermobj.TermSize `json:"termsize"`
+	StreamMeta *StreamMeta            `json:"streammeta,omitempty"`
 }
 
 type CommandRemoteStartJobData struct {
-	Cmd                string            `json:"cmd"`
-	Args               []string          `json:"args"`
-	Env                map[string]string `json:"env"`
-	TermSize           waveobj.TermSize  `json:"termsize"`
-	StreamMeta         *StreamMeta       `json:"streammeta,omitempty"`
-	JobAuthToken       string            `json:"jobauthtoken"`
-	JobId              string            `json:"jobid"`
-	MainServerJwtToken string            `json:"mainserverjwttoken"`
-	ClientId           string            `json:"clientid"`
-	PublicKeyBase64    string            `json:"publickeybase64"`
+	Cmd                string                 `json:"cmd"`
+	Args               []string               `json:"args"`
+	Env                map[string]string      `json:"env"`
+	TermSize           remotetermobj.TermSize `json:"termsize"`
+	StreamMeta         *StreamMeta            `json:"streammeta,omitempty"`
+	JobAuthToken       string                 `json:"jobauthtoken"`
+	JobId              string                 `json:"jobid"`
+	MainServerJwtToken string                 `json:"mainserverjwttoken"`
+	ClientId           string                 `json:"clientid"`
+	PublicKeyBase64    string                 `json:"publickeybase64"`
 }
 
 type CommandRemoteReconnectToJobManagerData struct {
@@ -880,9 +901,9 @@ type CommandStartJobRtnData struct {
 }
 
 type CommandJobPrepareConnectData struct {
-	StreamMeta StreamMeta       `json:"streammeta"`
-	Seq        int64            `json:"seq"`
-	TermSize   waveobj.TermSize `json:"termsize"`
+	StreamMeta StreamMeta             `json:"streammeta"`
+	Seq        int64                  `json:"seq"`
+	TermSize   remotetermobj.TermSize `json:"termsize"`
 }
 
 type CommandJobStartStreamData struct {
@@ -911,12 +932,12 @@ type CommandJobCmdExitedData struct {
 }
 
 type CommandJobControllerStartJobData struct {
-	ConnName string            `json:"connname"`
-	JobKind  string            `json:"jobkind"`
-	Cmd      string            `json:"cmd"`
-	Args     []string          `json:"args"`
-	Env      map[string]string `json:"env"`
-	TermSize *waveobj.TermSize `json:"termsize,omitempty"`
+	ConnName string                  `json:"connname"`
+	JobKind  string                  `json:"jobkind"`
+	Cmd      string                  `json:"cmd"`
+	Args     []string                `json:"args"`
+	Env      map[string]string       `json:"env"`
+	TermSize *remotetermobj.TermSize `json:"termsize,omitempty"`
 }
 
 type CommandJobControllerAttachJobData struct {
@@ -947,9 +968,9 @@ type WaveFileInfo struct {
 }
 
 type CommandBadgeWatchPidData struct {
-	Pid     int          `json:"pid"`
-	ORef    waveobj.ORef `json:"oref"`
-	BadgeId string       `json:"badgeid"`
+	Pid     int                `json:"pid"`
+	ORef    remotetermobj.ORef `json:"oref"`
+	BadgeId string             `json:"badgeid"`
 }
 
 type BlockJobStatusData struct {
@@ -969,15 +990,15 @@ type BlockJobStatusData struct {
 }
 
 type FocusedBlockData struct {
-	BlockId                    string              `json:"blockid"`
-	ViewType                   string              `json:"viewtype"`
-	Controller                 string              `json:"controller"`
-	ConnName                   string              `json:"connname"`
-	BlockMeta                  waveobj.MetaMapType `json:"blockmeta"`
-	TermJobStatus              *BlockJobStatusData `json:"termjobstatus,omitempty"`
-	ConnStatus                 *ConnStatus         `json:"connstatus,omitempty"`
-	TermShellIntegrationStatus string              `json:"termshellintegrationstatus,omitempty"`
-	TermLastCommand            string              `json:"termlastcommand,omitempty"`
+	BlockId                    string                    `json:"blockid"`
+	ViewType                   string                    `json:"viewtype"`
+	Controller                 string                    `json:"controller"`
+	ConnName                   string                    `json:"connname"`
+	BlockMeta                  remotetermobj.MetaMapType `json:"blockmeta"`
+	TermJobStatus              *BlockJobStatusData       `json:"termjobstatus,omitempty"`
+	ConnStatus                 *ConnStatus               `json:"connstatus,omitempty"`
+	TermShellIntegrationStatus string                    `json:"termshellintegrationstatus,omitempty"`
+	TermLastCommand            string                    `json:"termlastcommand,omitempty"`
 }
 
 // ProcessInfo holds per-process information for the process viewer.

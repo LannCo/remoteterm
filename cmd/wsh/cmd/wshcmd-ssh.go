@@ -6,12 +6,12 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/LannCo/remoteterm/pkg/remote"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtconfig"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/remote"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
 var (
@@ -53,7 +53,7 @@ func sshRun(cmd *cobra.Command, args []string) error {
 	connOpts := wshrpc.ConnRequest{
 		Host:       sshArg,
 		LogBlockId: blockId,
-		Keywords: wconfig.ConnKeywords{
+		Keywords: rtconfig.ConnKeywords{
 			SshIdentityFile: identityFiles,
 		},
 	}
@@ -62,21 +62,21 @@ func sshRun(cmd *cobra.Command, args []string) error {
 	if newBlock {
 		tabId := getTabIdFromEnv()
 		if tabId == "" {
-			return fmt.Errorf("no WAVETERM_TABID env var set")
+			return fmt.Errorf("no REMOTETERM_TABID env var set")
 		}
 
 		// Create a new block with the SSH connection
 		createMeta := map[string]any{
-			waveobj.MetaKey_View:       "term",
-			waveobj.MetaKey_Controller: "shell",
-			waveobj.MetaKey_Connection: sshArg,
+			remotetermobj.MetaKey_View:       "term",
+			remotetermobj.MetaKey_Controller: "shell",
+			remotetermobj.MetaKey_Connection: sshArg,
 		}
 		if RpcContext.Conn != "" {
-			createMeta[waveobj.MetaKey_Connection] = RpcContext.Conn
+			createMeta[remotetermobj.MetaKey_Connection] = RpcContext.Conn
 		}
 		createBlockData := wshrpc.CommandCreateBlockData{
 			TabId: tabId,
-			BlockDef: &waveobj.BlockDef{
+			BlockDef: &remotetermobj.BlockDef{
 				Meta: createMeta,
 			},
 			Focused: true,
@@ -91,10 +91,10 @@ func sshRun(cmd *cobra.Command, args []string) error {
 
 	// Update existing block with the new connection
 	data := wshrpc.CommandSetMetaData{
-		ORef: waveobj.MakeORef(waveobj.OType_Block, blockId),
+		ORef: remotetermobj.MakeORef(remotetermobj.OType_Block, blockId),
 		Meta: map[string]any{
-			waveobj.MetaKey_Connection: sshArg,
-			waveobj.MetaKey_CmdCwd:     nil,
+			remotetermobj.MetaKey_Connection: sshArg,
+			remotetermobj.MetaKey_CmdCwd:     nil,
 		},
 	}
 	err = wshclient.SetMetaCommand(RpcClient, data, nil)

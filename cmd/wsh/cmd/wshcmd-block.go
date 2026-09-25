@@ -16,12 +16,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/util/envutil"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
+	"github.com/LannCo/remoteterm/pkg/util/envutil"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
 )
 
 const (
@@ -441,7 +441,7 @@ func blockCaptureRun(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("error getting block metadata: %w", err)
 	}
 
-	viewType, ok := metaData[waveobj.MetaKey_View].(string)
+	viewType, ok := metaData[remotetermobj.MetaKey_View].(string)
 	if !ok || viewType != "term" {
 		return fmt.Errorf("block %s is not a terminal block (view type: %s)", fullORef.OID, viewType)
 	}
@@ -634,7 +634,7 @@ func lookupConnStatus(connStatuses []wshrpc.ConnStatus, connection string) strin
 
 // getTermBlockMeta resolves the block ref and returns its metadata, verifying
 // the block is a terminal block. Both send-keys and status share this check.
-func getTermBlockMeta(blockRef string) (*waveobj.ORef, waveobj.MetaMapType, error) {
+func getTermBlockMeta(blockRef string) (*remotetermobj.ORef, remotetermobj.MetaMapType, error) {
 	fullORef, err := resolveBlockArgWithOverride(blockRef)
 	if err != nil {
 		return nil, nil, err
@@ -645,7 +645,7 @@ func getTermBlockMeta(blockRef string) (*waveobj.ORef, waveobj.MetaMapType, erro
 	if err != nil {
 		return nil, nil, fmt.Errorf("error getting block metadata: %w", err)
 	}
-	viewType, ok := metaData[waveobj.MetaKey_View].(string)
+	viewType, ok := metaData[remotetermobj.MetaKey_View].(string)
 	if !ok || viewType != "term" {
 		return nil, nil, fmt.Errorf("block %s is not a terminal block (view type: %s)", fullORef.OID, viewType)
 	}
@@ -654,7 +654,7 @@ func getTermBlockMeta(blockRef string) (*waveobj.ORef, waveobj.MetaMapType, erro
 
 // tabRouteForBlock returns the tab:<tabid> route for a block. Prefers the
 // block's owning tab (BlockInfo) so send-keys/screenshot work across tabs;
-// falls back to WAVETERM_TABID. Empty string means no route is available.
+// falls back to REMOTETERM_TABID. Empty string means no route is available.
 func tabRouteForBlock(blockId string) string {
 	blockTabId := ""
 	info, err := wshclient.BlockInfoCommand(RpcClient, blockId, &wshrpc.RpcOpts{Timeout: 2000})
@@ -669,7 +669,7 @@ func tabRouteForBlock(blockId string) string {
 }
 
 // pickTabIdForBlockRoute prefers the block's owning tab over the CLI process
-// WAVETERM_TABID so send-keys/screenshot route to the tab that hosts the block.
+// REMOTETERM_TABID so send-keys/screenshot route to the tab that hosts the block.
 func pickTabIdForBlockRoute(blockTabId, envTabId string) string {
 	if blockTabId != "" {
 		return blockTabId
@@ -789,7 +789,7 @@ func blockStatusRun(cmd *cobra.Command, args []string) error {
 	exitCode := status.ShellProcExitCode
 	connection := status.ShellProcConnName
 	if connection == "" {
-		connection = metaData.GetString(waveobj.MetaKey_Connection, "")
+		connection = metaData.GetString(remotetermobj.MetaKey_Connection, "")
 	}
 	if connection == "" {
 		connection = "local"
@@ -839,7 +839,7 @@ type blockNewOptions struct {
 	relativeTo string
 	tabRef     string
 	focused    bool
-	extraMeta  waveobj.MetaMapType
+	extraMeta  remotetermobj.MetaMapType
 }
 
 // blockNewJSONOutput is the structured output shape for `block new` and
@@ -898,8 +898,8 @@ func blockRenameRun(cmd *cobra.Command, args []string) error {
 	}
 	err = wshclient.SetMetaCommand(RpcClient, wshrpc.CommandSetMetaData{
 		ORef: *fullORef,
-		Meta: waveobj.MetaMapType{
-			waveobj.MetaKey_FrameTitle: name,
+		Meta: remotetermobj.MetaMapType{
+			remotetermobj.MetaKey_FrameTitle: name,
 		},
 	}, &wshrpc.RpcOpts{Timeout: 2000})
 	if err != nil {
@@ -911,36 +911,36 @@ func blockRenameRun(cmd *cobra.Command, args []string) error {
 
 // createBlockNew builds and submits a CommandCreateBlockData for the given
 // options, returning the created block ORef.
-func createBlockNew(opts blockNewOptions) (waveobj.ORef, error) {
+func createBlockNew(opts blockNewOptions) (remotetermobj.ORef, error) {
 	if err := validateSplitPair(opts.split, opts.relativeTo); err != nil {
-		return waveobj.ORef{}, err
+		return remotetermobj.ORef{}, err
 	}
 
 	var targetBlockId, targetAction string
 	if opts.split != "" {
 		targetOref, err := resolveBlockArgWithOverride(opts.relativeTo)
 		if err != nil {
-			return waveobj.ORef{}, err
+			return remotetermobj.ORef{}, err
 		}
 		targetBlockId = targetOref.OID
 		targetAction, err = directionToTargetAction(opts.split)
 		if err != nil {
-			return waveobj.ORef{}, err
+			return remotetermobj.ORef{}, err
 		}
 	}
 
 	tabId, err := resolveTabIdArg(opts.tabRef)
 	if err != nil {
-		return waveobj.ORef{}, err
+		return remotetermobj.ORef{}, err
 	}
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		return waveobj.ORef{}, fmt.Errorf("getting current directory: %w", err)
+		return remotetermobj.ORef{}, fmt.Errorf("getting current directory: %w", err)
 	}
 	cwd, err = filepath.Abs(cwd)
 	if err != nil {
-		return waveobj.ORef{}, fmt.Errorf("getting absolute path: %w", err)
+		return remotetermobj.ORef{}, fmt.Errorf("getting absolute path: %w", err)
 	}
 
 	connName := opts.connection
@@ -952,10 +952,10 @@ func createBlockNew(opts blockNewOptions) (waveobj.ORef, error) {
 	for k, v := range opts.extraMeta {
 		meta[k] = v
 	}
-	blockDef := &waveobj.BlockDef{Meta: meta}
+	blockDef := &remotetermobj.BlockDef{Meta: meta}
 	if opts.cmd != "" {
-		blockDef.Files = map[string]*waveobj.FileDef{
-			wavebase.BlockFile_Env: {
+		blockDef.Files = map[string]*remotetermobj.FileDef{
+			remotetermbase.BlockFile_Env: {
 				Content: buildEnvContent(os.Environ()),
 			},
 		}
@@ -972,14 +972,14 @@ func createBlockNew(opts blockNewOptions) (waveobj.ORef, error) {
 
 	oref, err := wshclient.CreateBlockCommand(RpcClient, createData, nil)
 	if err != nil {
-		return waveobj.ORef{}, fmt.Errorf("creating new block: %w", err)
+		return remotetermobj.ORef{}, fmt.Errorf("creating new block: %w", err)
 	}
 	return oref, nil
 }
 
 // writeBlockNewOutput prints the created block ref, or a JSON object when
 // jsonOut is set.
-func writeBlockNewOutput(oref waveobj.ORef, jsonOut bool) error {
+func writeBlockNewOutput(oref remotetermobj.ORef, jsonOut bool) error {
 	if jsonOut {
 		outBytes, err := json.Marshal(blockNewJSONOutput{BlockId: oref.OID})
 		if err != nil {
@@ -1024,24 +1024,24 @@ func validateSplitPair(split, relativeTo string) error {
 // empty and the view is a terminal, it creates a plain terminal (controller
 // "shell"); when cmd is set it creates a persistent command block (controller
 // "cmd", runs on start, no close-on-exit).
-func buildBlockNewMeta(viewType, cmd, cwd, connection string) waveobj.MetaMapType {
-	meta := waveobj.MetaMapType{
-		waveobj.MetaKey_View: viewType,
+func buildBlockNewMeta(viewType, cmd, cwd, connection string) remotetermobj.MetaMapType {
+	meta := remotetermobj.MetaMapType{
+		remotetermobj.MetaKey_View: viewType,
 	}
 	if cmd != "" {
-		meta[waveobj.MetaKey_Controller] = "cmd"
-		meta[waveobj.MetaKey_CmdCwd] = cwd
-		meta[waveobj.MetaKey_CmdClearOnStart] = true
-		meta[waveobj.MetaKey_Cmd] = cmd
-		meta[waveobj.MetaKey_CmdArgs] = []string{}
-		meta[waveobj.MetaKey_CmdShell] = true
-		meta[waveobj.MetaKey_CmdRunOnStart] = true
+		meta[remotetermobj.MetaKey_Controller] = "cmd"
+		meta[remotetermobj.MetaKey_CmdCwd] = cwd
+		meta[remotetermobj.MetaKey_CmdClearOnStart] = true
+		meta[remotetermobj.MetaKey_Cmd] = cmd
+		meta[remotetermobj.MetaKey_CmdArgs] = []string{}
+		meta[remotetermobj.MetaKey_CmdShell] = true
+		meta[remotetermobj.MetaKey_CmdRunOnStart] = true
 	} else if viewType == "term" {
-		meta[waveobj.MetaKey_Controller] = "shell"
-		meta[waveobj.MetaKey_CmdCwd] = cwd
+		meta[remotetermobj.MetaKey_Controller] = "shell"
+		meta[remotetermobj.MetaKey_CmdCwd] = cwd
 	}
 	if connection != "" {
-		meta[waveobj.MetaKey_Connection] = connection
+		meta[remotetermobj.MetaKey_Connection] = connection
 	}
 	return meta
 }
@@ -1079,16 +1079,16 @@ func resolveTabIdArg(tabRef string) (string, error) {
 	if tabRef == "" {
 		tabId := getTabIdFromEnv()
 		if tabId == "" {
-			return "", fmt.Errorf("no WAVETERM_TABID env var set (use --tab)")
+			return "", fmt.Errorf("no REMOTETERM_TABID env var set (use --tab)")
 		}
 		return tabId, nil
 	}
 	if isFullORef(tabRef) {
-		oref, err := waveobj.ParseORef(tabRef)
+		oref, err := remotetermobj.ParseORef(tabRef)
 		if err != nil {
 			return "", err
 		}
-		if oref.OType != waveobj.OType_Tab {
+		if oref.OType != remotetermobj.OType_Tab {
 			return "", fmt.Errorf("--tab %q is a %s, expected a tab", tabRef, oref.OType)
 		}
 		return oref.OID, nil
@@ -1100,7 +1100,7 @@ func resolveTabIdArg(tabRef string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolving tab ref %q: %w", tabRef, err)
 	}
-	if oref.OType != waveobj.OType_Tab {
+	if oref.OType != remotetermobj.OType_Tab {
 		return "", fmt.Errorf("--tab %q resolved to a %s, expected a tab", tabRef, oref.OType)
 	}
 	return oref.OID, nil
@@ -1161,7 +1161,7 @@ func blockScreenshotRun(cmd *cobra.Command, args []string) error {
 
 	route := tabRouteForBlock(fullORef.OID)
 	if route == "" {
-		return fmt.Errorf("no WAVETERM_TABID env var set")
+		return fmt.Errorf("no REMOTETERM_TABID env var set")
 	}
 
 	dataURL, err := wshclient.CaptureBlockScreenshotCommand(RpcClient, wshrpc.CommandCaptureBlockScreenshotData{

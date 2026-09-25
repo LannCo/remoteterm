@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { TermViewModel } from "@/app/view/term/term-model";
-import { useWaveEnv } from "@/app/waveenv/waveenv";
+import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 import * as util from "@/util/util";
 import { cn } from "@/util/util";
 import {
@@ -29,7 +29,7 @@ function LearnMoreButton() {
     return (
         <button
             className="text-muted text-xs hover:underline cursor-pointer text-left"
-            onClick={() => waveEnv.electron.openExternal("https://docs.waveterm.dev/durable-sessions")}
+            onClick={() => waveEnv.electron.openExternal("https://docs.rterm.dev/durable-sessions")}
         >
             Learn More
         </button>
@@ -42,7 +42,8 @@ interface StandardSessionContentProps {
 }
 
 function StandardSessionContent({ viewModel, onClose }: StandardSessionContentProps) {
-    const handleRestartAsDurable = () => {        onClose();
+    const handleRestartAsDurable = () => {
+        onClose();
         util.fireAndForget(() => viewModel.restartSessionWithDurability(true));
     };
 

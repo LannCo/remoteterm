@@ -8,15 +8,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 	"text/tabwriter"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
 const (
@@ -188,7 +187,7 @@ func agentSpawnRun(cmd *cobra.Command, args []string) error {
 		relativeTo: relativeTo,
 		tabRef:     "",
 		focused:    agentSpawnFocus,
-		extraMeta:  buildAgentSpawnExtraMeta(agentSpawnCmdStr, agentSpawnName, os.Getenv("WAVETERM_BLOCKID"), agentSpawnIdempotencyKey),
+		extraMeta:  buildAgentSpawnExtraMeta(agentSpawnCmdStr, agentSpawnName, getEnvNewOrLegacy("REMOTETERM_BLOCKID", "REMOTETERM_BLOCKID"), agentSpawnIdempotencyKey),
 	})
 	if err != nil {
 		return err
@@ -208,19 +207,19 @@ func agentSpawnRun(cmd *cobra.Command, args []string) error {
 // buildAgentSpawnExtraMeta returns the agent:* (and optional frame:title) meta
 // merged into a spawned block. parentBlockId and idempotencyKey are omitted
 // when empty. Secrets must never be placed in these fields.
-func buildAgentSpawnExtraMeta(cmdStr, name, parentBlockId, idempotencyKey string) waveobj.MetaMapType {
-	meta := waveobj.MetaMapType{
-		waveobj.MetaKey_AgentOwned: true,
-		waveobj.MetaKey_AgentCmd:   cmdStr,
+func buildAgentSpawnExtraMeta(cmdStr, name, parentBlockId, idempotencyKey string) remotetermobj.MetaMapType {
+	meta := remotetermobj.MetaMapType{
+		remotetermobj.MetaKey_AgentOwned: true,
+		remotetermobj.MetaKey_AgentCmd:   cmdStr,
 	}
 	if parentBlockId != "" {
-		meta[waveobj.MetaKey_AgentParent] = parentBlockId
+		meta[remotetermobj.MetaKey_AgentParent] = parentBlockId
 	}
 	if idempotencyKey != "" {
-		meta[waveobj.MetaKey_AgentIdempotencyKey] = idempotencyKey
+		meta[remotetermobj.MetaKey_AgentIdempotencyKey] = idempotencyKey
 	}
 	if name != "" {
-		meta[waveobj.MetaKey_FrameTitle] = name
+		meta[remotetermobj.MetaKey_FrameTitle] = name
 	}
 	return meta
 }
@@ -256,28 +255,28 @@ func isControllerStillRunning(status *wshrpc.BlockControllerStatusData, err erro
 	return status.ShellProcStatus != "done"
 }
 
-func findExistingIdempotentBlock(key string) (waveobj.ORef, bool, error) {
+func findExistingIdempotentBlock(key string) (remotetermobj.ORef, bool, error) {
 	if key == "" {
-		return waveobj.ORef{}, false, nil
+		return remotetermobj.ORef{}, false, nil
 	}
 	entries, err := listBlockEntries("")
 	if err != nil {
-		return waveobj.ORef{}, false, err
+		return remotetermobj.ORef{}, false, err
 	}
 	reduced := make([]agentIdempotencyEntry, 0, len(entries))
 	for _, e := range entries {
 		status, statusErr := wshclient.BlockControllerStatusCommand(RpcClient, e.BlockId, &wshrpc.RpcOpts{Timeout: 2000})
 		reduced = append(reduced, agentIdempotencyEntry{
 			BlockId:      e.BlockId,
-			Key:          e.Meta.GetString(waveobj.MetaKey_AgentIdempotencyKey, ""),
+			Key:          e.Meta.GetString(remotetermobj.MetaKey_AgentIdempotencyKey, ""),
 			StillRunning: isControllerStillRunning(status, statusErr),
 		})
 	}
 	blockId := findRunningBlockWithIdempotencyKey(reduced, key)
 	if blockId == "" {
-		return waveobj.ORef{}, false, nil
+		return remotetermobj.ORef{}, false, nil
 	}
-	return waveobj.ORef{OType: waveobj.OType_Block, OID: blockId}, true, nil
+	return remotetermobj.ORef{OType: remotetermobj.OType_Block, OID: blockId}, true, nil
 }
 
 // resolveAgentSplitRelativeTo returns the effective relative-to block reference
@@ -308,7 +307,7 @@ func resolveAgentSplitRelativeTo(split, relativeTo, focusedBlockId string) (stri
 func getFocusedBlockId() (string, error) {
 	tabId := getTabIdFromEnv()
 	if tabId == "" {
-		return "", fmt.Errorf("no tab id specified (set WAVETERM_TABID environment variable)")
+		return "", fmt.Errorf("no tab id specified (set REMOTETERM_TABID environment variable)")
 	}
 	focused, err := wshclient.GetFocusedBlockDataCommand(RpcClient, &wshrpc.RpcOpts{
 		Route:   fmt.Sprintf("tab:%s", tabId),
@@ -406,11 +405,11 @@ func buildAgentHelpDoc() agentHelpDoc {
 		Version: agentHelpDocVersion,
 		EnvVars: []agentHelpEnvVar{
 			{Name: "WAVETERM", Description: "set to 1 in every Wave Terminal / RemoteTerm session; detect the app with WAVETERM=1"},
-			{Name: "WAVETERM_BLOCKID", Description: "id of the terminal block running this process"},
-			{Name: "WAVETERM_TABID", Description: "id of the current tab"},
-			{Name: "WAVETERM_CONN", Description: "connection name for this session (empty or local when local)"},
-			{Name: "WAVETERM_VERSION", Description: "Wave Terminal version string"},
-			{Name: "WAVETERM_WORKSPACEID", Description: "id of the current workspace"},
+			{Name: "REMOTETERM_BLOCKID", Description: "id of the terminal block running this process"},
+			{Name: "REMOTETERM_TABID", Description: "id of the current tab"},
+			{Name: "REMOTETERM_CONN", Description: "connection name for this session (empty or local when local)"},
+			{Name: "REMOTETERM_VERSION", Description: "RemoteTerm version string"},
+			{Name: "REMOTETERM_WORKSPACEID", Description: "id of the current workspace"},
 		},
 		Commands: agentHelpCommands,
 	}
@@ -463,11 +462,11 @@ const agentHelpText = `Agent Control Fabric — agent-capable commands
 Detection
 ---------
 WAVETERM=1 is set in every Wave Terminal / RemoteTerm session. Also set:
-  WAVETERM_BLOCKID     this block's id
-  WAVETERM_TABID       this tab's id
-  WAVETERM_CONN        this session's connection name
-  WAVETERM_VERSION     Wave Terminal version
-  WAVETERM_WORKSPACEID this workspace's id
+  REMOTETERM_BLOCKID     this block's id
+  REMOTETERM_TABID       this tab's id
+  REMOTETERM_CONN        this session's connection name
+  REMOTETERM_VERSION     RemoteTerm version
+  REMOTETERM_WORKSPACEID this workspace's id
 
 Start with:
   wsh agent context --json     one-shot orientation (workspace, tabs, blocks, connections)
@@ -585,18 +584,18 @@ wsh list-panes      -> wsh block list
 `
 
 func agentVersion() string {
-	if v := os.Getenv("WAVETERM_VERSION"); v != "" {
+	if v := getEnvNewOrLegacy("REMOTETERM_VERSION", "REMOTETERM_VERSION"); v != "" {
 		return v
 	}
-	return wavebase.WaveVersion
+	return remotetermbase.WaveVersion
 }
 
 func currentWorkspaceId() string {
-	return os.Getenv("WAVETERM_WORKSPACEID")
+	return getEnvNewOrLegacy("REMOTETERM_WORKSPACEID", "REMOTETERM_WORKSPACEID")
 }
 
 func currentConnectionName() string {
-	if conn := os.Getenv("WAVETERM_CONN"); conn != "" {
+	if conn := getEnvNewOrLegacy("REMOTETERM_CONN", "REMOTETERM_CONN"); conn != "" {
 		return conn
 	}
 	return RpcContext.Conn
@@ -634,7 +633,7 @@ func resolveWorkspaceIdForAgent(blocks []wshrpc.BlocksListEntry) string {
 	if ws := currentWorkspaceId(); ws != "" {
 		return ws
 	}
-	blockId := os.Getenv("WAVETERM_BLOCKID")
+	blockId := getEnvNewOrLegacy("REMOTETERM_BLOCKID", "REMOTETERM_BLOCKID")
 	if blockId == "" {
 		return ""
 	}
@@ -646,8 +645,8 @@ func resolveWorkspaceIdForAgent(blocks []wshrpc.BlocksListEntry) string {
 	return ""
 }
 
-func isAgentOwnedMeta(meta waveobj.MetaMapType) bool {
-	return meta.GetBool(waveobj.MetaKey_AgentOwned, false)
+func isAgentOwnedMeta(meta remotetermobj.MetaMapType) bool {
+	return meta.GetBool(remotetermobj.MetaKey_AgentOwned, false)
 }
 
 func agentOwnedEntries(entries []wshrpc.BlocksListEntry) []wshrpc.BlocksListEntry {
@@ -672,11 +671,11 @@ type agentListEntry struct {
 func agentListEntryFromBlock(e wshrpc.BlocksListEntry) agentListEntry {
 	return agentListEntry{
 		BlockId:        e.BlockId,
-		Title:          e.Meta.GetString(waveobj.MetaKey_FrameTitle, ""),
-		Cmd:            e.Meta.GetString(waveobj.MetaKey_AgentCmd, e.Meta.GetString(waveobj.MetaKey_Cmd, "")),
-		Connection:     e.Meta.GetString(waveobj.MetaKey_Connection, ""),
-		Parent:         e.Meta.GetString(waveobj.MetaKey_AgentParent, ""),
-		IdempotencyKey: e.Meta.GetString(waveobj.MetaKey_AgentIdempotencyKey, ""),
+		Title:          e.Meta.GetString(remotetermobj.MetaKey_FrameTitle, ""),
+		Cmd:            e.Meta.GetString(remotetermobj.MetaKey_AgentCmd, e.Meta.GetString(remotetermobj.MetaKey_Cmd, "")),
+		Connection:     e.Meta.GetString(remotetermobj.MetaKey_Connection, ""),
+		Parent:         e.Meta.GetString(remotetermobj.MetaKey_AgentParent, ""),
+		IdempotencyKey: e.Meta.GetString(remotetermobj.MetaKey_AgentIdempotencyKey, ""),
 	}
 }
 
@@ -725,7 +724,7 @@ func agentStopRun(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		if fullORef.OType != waveobj.OType_Block {
+		if fullORef.OType != remotetermobj.OType_Block {
 			return fmt.Errorf("object reference is not a block")
 		}
 		meta, err := wshclient.GetMetaCommand(RpcClient, wshrpc.CommandGetMetaData{ORef: *fullORef}, &wshrpc.RpcOpts{Timeout: 2000})
@@ -750,7 +749,7 @@ func agentStopRun(cmd *cobra.Command, args []string) error {
 		}
 		wsId = resolveWorkspaceIdForAgent(all)
 		if wsId == "" {
-			return fmt.Errorf("no WAVETERM_WORKSPACEID set (cannot stop all owned blocks)")
+			return fmt.Errorf("no REMOTETERM_WORKSPACEID set (cannot stop all owned blocks)")
 		}
 	}
 	entries, err := listBlockEntries(wsId)
@@ -835,8 +834,8 @@ func lookupFocusedForContext() *agentContextFocused {
 	title := ""
 	cwd := ""
 	if focused.BlockMeta != nil {
-		title = focused.BlockMeta.GetString(waveobj.MetaKey_FrameTitle, "")
-		cwd = focused.BlockMeta.GetString(waveobj.MetaKey_CmdCwd, "")
+		title = focused.BlockMeta.GetString(remotetermobj.MetaKey_FrameTitle, "")
+		cwd = focused.BlockMeta.GetString(remotetermobj.MetaKey_CmdCwd, "")
 	}
 	return &agentContextFocused{
 		BlockId: focused.BlockId,
@@ -897,16 +896,16 @@ func bestEffortProcessState(blockId string) string {
 func agentContextBlockFromEntry(e wshrpc.BlocksListEntry) agentContextBlock {
 	meta := e.Meta
 	if meta == nil {
-		meta = waveobj.MetaMapType{}
+		meta = remotetermobj.MetaMapType{}
 	}
 	return agentContextBlock{
 		BlockId:      e.BlockId,
 		Id:           "block:" + e.BlockId,
 		TabId:        e.TabId,
-		View:         meta.GetString(waveobj.MetaKey_View, ""),
-		Title:        meta.GetString(waveobj.MetaKey_FrameTitle, ""),
-		Connection:   meta.GetString(waveobj.MetaKey_Connection, ""),
-		Cwd:          meta.GetString(waveobj.MetaKey_CmdCwd, ""),
+		View:         meta.GetString(remotetermobj.MetaKey_View, ""),
+		Title:        meta.GetString(remotetermobj.MetaKey_FrameTitle, ""),
+		Connection:   meta.GetString(remotetermobj.MetaKey_Connection, ""),
+		Cwd:          meta.GetString(remotetermobj.MetaKey_CmdCwd, ""),
 		Index:        e.Index,
 		Geometry:     e.Geometry,
 		Focused:      e.Focused,
@@ -941,7 +940,7 @@ func agentContextRun(cmd *cobra.Command, args []string) error {
 		Version:     agentVersion(),
 		WorkspaceId: wsId,
 		TabId:       getTabIdFromEnv(),
-		BlockId:     os.Getenv("WAVETERM_BLOCKID"),
+		BlockId:     getEnvNewOrLegacy("REMOTETERM_BLOCKID", "REMOTETERM_BLOCKID"),
 		Connection:  currentConnectionName(),
 		Focused:     lookupFocusedForContext(),
 		Tabs:        lookupTabsForContext(wsId),

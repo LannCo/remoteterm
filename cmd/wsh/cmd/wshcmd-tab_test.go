@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
 )
 
 func TestResolveTabRefFromList(t *testing.T) {

@@ -3,7 +3,7 @@
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { formatRemoteUri } from "@/util/waveutil";
+import { formatRemoteUri } from "@/util/remotetermutil";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "./directorydropdown.scss";

@@ -36,4 +36,4 @@ document.addEventListener("mouseup", (event) => {
     }
 });
 
-console.log("loaded wave preload-webview.ts");
+console.log("loaded remoteterm preload-webview.ts");

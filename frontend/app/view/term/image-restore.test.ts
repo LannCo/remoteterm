@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mocks for heavy dependencies
@@ -30,7 +30,11 @@ vi.mock("@xterm/xterm", () => ({
     },
 }));
 
-vi.mock("@xterm/addon-fit", () => ({ FitAddon: class MockFitAddon { fit = vi.fn(); } }));
+vi.mock("@xterm/addon-fit", () => ({
+    FitAddon: class MockFitAddon {
+        fit = vi.fn();
+    },
+}));
 vi.mock("@xterm/addon-image", () => ({ ImageAddon: class MockImageAddon {} }));
 vi.mock("@xterm/addon-search", () => ({ SearchAddon: class MockSearchAddon {} }));
 vi.mock("@xterm/addon-serialize", () => ({ SerializeAddon: class MockSerializeAddon {} }));
@@ -195,8 +199,30 @@ describe("Manifest JSON format", () => {
         const manifest = {
             version: 1,
             images: [
-                { hash: "aaa", row: 0, viewportRow: 0, col: 0, width: 10, height: 10, layer: "top", zIndex: 0, scrolling: true, cursorPos: "iip" },
-                { hash: "bbb", row: 5, viewportRow: 3, col: 10, width: 20, height: 20, layer: "top", zIndex: 1, scrolling: true, cursorPos: "iip" },
+                {
+                    hash: "aaa",
+                    row: 0,
+                    viewportRow: 0,
+                    col: 0,
+                    width: 10,
+                    height: 10,
+                    layer: "top",
+                    zIndex: 0,
+                    scrolling: true,
+                    cursorPos: "iip",
+                },
+                {
+                    hash: "bbb",
+                    row: 5,
+                    viewportRow: 3,
+                    col: 10,
+                    width: 20,
+                    height: 20,
+                    layer: "top",
+                    zIndex: 1,
+                    scrolling: true,
+                    cursorPos: "iip",
+                },
             ],
         };
 
@@ -211,7 +237,17 @@ describe("Manifest JSON format", () => {
         const manifest = {
             version: 1,
             images: [
-                { hash: "abc", row: 10, col: 0, width: 100, height: 50, layer: "top", zIndex: 0, scrolling: true, cursorPos: "iip" },
+                {
+                    hash: "abc",
+                    row: 10,
+                    col: 0,
+                    width: 100,
+                    height: 50,
+                    layer: "top",
+                    zIndex: 0,
+                    scrolling: true,
+                    cursorPos: "iip",
+                },
             ],
         };
 

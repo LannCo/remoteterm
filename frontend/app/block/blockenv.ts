@@ -7,7 +7,7 @@ import {
     SettingsKeyAtomFnType,
     WaveEnv,
     WaveEnvSubset,
-} from "@/app/waveenv/waveenv";
+} from "@/app/remotetermenv/remotetermenv";
 
 export type BlockEnv = WaveEnvSubset<{
     getSettingsKeyAtom: SettingsKeyAtomFnType<

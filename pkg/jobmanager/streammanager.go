@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wavetermdev/waveterm/pkg/panichandler"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/panichandler"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
 )
 
 // Send retry tuning. A single send failure is treated as transient congestion
@@ -609,7 +609,7 @@ func (sm *StreamManager) activateDiskBuffering() {
 		return // process already exited
 	}
 
-	diskPath := wavebase.GetRemoteJobFilePath(sm.jobId, "stream")
+	diskPath := remotetermbase.GetRemoteJobFilePath(sm.jobId, "stream")
 	f, err := os.Create(diskPath)
 	if err != nil {
 		log.Printf("activateDiskBuffering: failed to create disk file %s: %v", diskPath, err)

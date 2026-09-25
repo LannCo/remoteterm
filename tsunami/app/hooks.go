@@ -9,11 +9,11 @@ import (
 	"log"
 	"time"
 
+	"github.com/LannCo/remoteterm/tsunami/engine"
+	"github.com/LannCo/remoteterm/tsunami/rpctypes"
+	"github.com/LannCo/remoteterm/tsunami/util"
+	"github.com/LannCo/remoteterm/tsunami/vdom"
 	"github.com/google/uuid"
-	"github.com/wavetermdev/waveterm/tsunami/engine"
-	"github.com/wavetermdev/waveterm/tsunami/rpctypes"
-	"github.com/wavetermdev/waveterm/tsunami/util"
-	"github.com/wavetermdev/waveterm/tsunami/vdom"
 )
 
 // UseVDomRef provides a reference to a DOM element in the VDOM tree.
@@ -236,7 +236,7 @@ type ModalConfig struct {
 // UseAlertModal returns a boolean indicating if the modal is open and a function to trigger it
 func UseAlertModal() (modalOpen bool, triggerAlert func(config ModalConfig)) {
 	isOpen := UseLocal(false)
-	
+
 	trigger := func(config ModalConfig) {
 		if isOpen.Get() {
 			log.Printf("warning: UseAlertModal trigger called while modal is already open")
@@ -252,7 +252,7 @@ func UseAlertModal() (modalOpen bool, triggerAlert func(config ModalConfig)) {
 			return
 		}
 		isOpen.Set(true)
-		
+
 		// Create modal config for backend
 		modalId := uuid.New().String()
 		backendConfig := rpctypes.ModalConfig{
@@ -264,7 +264,7 @@ func UseAlertModal() (modalOpen bool, triggerAlert func(config ModalConfig)) {
 			OkText:     config.OkText,
 			CancelText: config.CancelText,
 		}
-		
+
 		// Show modal and wait for result in a goroutine
 		go func() {
 			defer func() {
@@ -278,14 +278,14 @@ func UseAlertModal() (modalOpen bool, triggerAlert func(config ModalConfig)) {
 			}
 		}()
 	}
-	
+
 	return isOpen.Get(), trigger
 }
 
 // UseConfirmModal returns a boolean indicating if the modal is open and a function to trigger it
 func UseConfirmModal() (modalOpen bool, triggerConfirm func(config ModalConfig)) {
 	isOpen := UseLocal(false)
-	
+
 	trigger := func(config ModalConfig) {
 		if isOpen.Get() {
 			log.Printf("warning: UseConfirmModal trigger called while modal is already open")
@@ -301,7 +301,7 @@ func UseConfirmModal() (modalOpen bool, triggerConfirm func(config ModalConfig))
 			return
 		}
 		isOpen.Set(true)
-		
+
 		// Create modal config for backend
 		modalId := uuid.New().String()
 		backendConfig := rpctypes.ModalConfig{
@@ -313,7 +313,7 @@ func UseConfirmModal() (modalOpen bool, triggerConfirm func(config ModalConfig))
 			OkText:     config.OkText,
 			CancelText: config.CancelText,
 		}
-		
+
 		// Show modal and wait for result in a goroutine
 		go func() {
 			defer func() {
@@ -327,7 +327,6 @@ func UseConfirmModal() (modalOpen bool, triggerConfirm func(config ModalConfig))
 			}
 		}()
 	}
-	
+
 	return isOpen.Get(), trigger
 }
-

@@ -14,8 +14,8 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { TermViewModel } from "@/app/view/term/term-model";
 import { atoms, getOverrideConfigAtom, getSettingsPrefixAtom, WOS } from "@/store/global";
+import { computeBgStyleFromMeta } from "@/util/remotetermutil";
 import { fireAndForget, useAtomValueSafe } from "@/util/util";
-import { computeBgStyleFromMeta } from "@/util/waveutil";
 import { ISearchOptions } from "@xterm/addon-search";
 import clsx from "clsx";
 import debug from "debug";
@@ -348,9 +348,9 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
         const handleWaveResize = () => {
             model.termRef.current?.handleResize();
         };
-        window.addEventListener("wave-resize", handleWaveResize);
+        window.addEventListener("remoteterm-resize", handleWaveResize);
         return () => {
-            window.removeEventListener("wave-resize", handleWaveResize);
+            window.removeEventListener("remoteterm-resize", handleWaveResize);
         };
     }, []);
 

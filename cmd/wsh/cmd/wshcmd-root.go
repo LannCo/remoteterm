@@ -9,12 +9,12 @@ import (
 	"os"
 	"runtime/debug"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/util/shellutil"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
 )
 
 var (
@@ -83,9 +83,9 @@ func OutputHelpMessage(cmd *cobra.Command) {
 }
 
 func preRunSetupRpcClient(cmd *cobra.Command, args []string) error {
-	jwtToken := os.Getenv(wshutil.WaveJwtTokenVarName)
+	jwtToken := getEnvNewOrLegacy(wshutil.WaveJwtTokenVarName, wshutil.LegacyWaveJwtTokenVarName)
 	if jwtToken == "" {
-		return fmt.Errorf("wsh must be run inside a Wave-managed SSH session (WAVETERM_JWT not found)")
+		return fmt.Errorf("wsh must be run inside a RemoteTerm-managed SSH session (%s not found)", wshutil.WaveJwtTokenVarName)
 	}
 	err := setupRpcClient(nil, jwtToken)
 	if err != nil {
@@ -103,7 +103,7 @@ func getIsTty() bool {
 
 type RunEFnType = func(*cobra.Command, []string) error
 
-func resolveBlockArg() (*waveobj.ORef, error) {
+func resolveBlockArg() (*remotetermobj.ORef, error) {
 	oref := blockArg
 	if oref == "" {
 		oref = "this"
@@ -115,7 +115,7 @@ func resolveBlockArg() (*waveobj.ORef, error) {
 	return fullORef, nil
 }
 
-func resolveBlockArgWithOverride(override string) (*waveobj.ORef, error) {
+func resolveBlockArgWithOverride(override string) (*remotetermobj.ORef, error) {
 	oref := override
 	if oref == "" {
 		oref = blockArg
@@ -175,7 +175,7 @@ func setupRpcClient(serverImpl wshutil.ServerImpl, jwtToken string) error {
 		return fmt.Errorf("error authenticating: %v", err)
 	}
 	RpcClientRouteId = authRtn.RouteId
-	blockId := os.Getenv("WAVETERM_BLOCKID")
+	blockId := getEnvNewOrLegacy("REMOTETERM_BLOCKID", "WAVETERM_BLOCKID")
 	if blockId != "" {
 		peerInfo := fmt.Sprintf("domain:block:%s", blockId)
 		wshclient.SetPeerInfoCommand(RpcClient, peerInfo, &wshrpc.RpcOpts{Route: wshutil.ControlRoute})
@@ -185,21 +185,21 @@ func setupRpcClient(serverImpl wshutil.ServerImpl, jwtToken string) error {
 }
 
 func isFullORef(orefStr string) bool {
-	_, err := waveobj.ParseORef(orefStr)
+	_, err := remotetermobj.ParseORef(orefStr)
 	return err == nil
 }
 
-func resolveSimpleId(id string) (*waveobj.ORef, error) {
+func resolveSimpleId(id string) (*remotetermobj.ORef, error) {
 	if isFullORef(id) {
-		orefObj, err := waveobj.ParseORef(id)
+		orefObj, err := remotetermobj.ParseORef(id)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing full ORef: %v", err)
 		}
 		return &orefObj, nil
 	}
-	blockId := os.Getenv("WAVETERM_BLOCKID")
+	blockId := getEnvNewOrLegacy("REMOTETERM_BLOCKID", "WAVETERM_BLOCKID")
 	if blockId == "" {
-		return nil, fmt.Errorf("no WAVETERM_BLOCKID env var set")
+		return nil, fmt.Errorf("no REMOTETERM_BLOCKID env var set")
 	}
 	rtnData, err := wshclient.ResolveIdsCommand(RpcClient, wshrpc.CommandResolveIdsData{
 		BlockId: blockId,
@@ -215,8 +215,18 @@ func resolveSimpleId(id string) (*waveobj.ORef, error) {
 	return &oref, nil
 }
 
+// getEnvNewOrLegacy reads a session-scoped env var written by the app into a spawned shell's
+// environment, preferring the new REMOTETERM_ name but falling back to the deprecated WAVETERM_
+// name so wsh keeps working inside a shell pane spawned by a pre-rename app instance.
+func getEnvNewOrLegacy(newName string, legacyName string) string {
+	if val := os.Getenv(newName); val != "" {
+		return val
+	}
+	return os.Getenv(legacyName)
+}
+
 func getTabIdFromEnv() string {
-	return os.Getenv("WAVETERM_TABID")
+	return getEnvNewOrLegacy("REMOTETERM_TABID", "WAVETERM_TABID")
 }
 
 // Execute executes the root command.

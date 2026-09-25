@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
 )
 
 func TestTailLines(t *testing.T) {
@@ -616,19 +616,19 @@ func TestValidateRenameArgs(t *testing.T) {
 func TestBuildBlockNewMeta(t *testing.T) {
 	t.Run("plain terminal block", func(t *testing.T) {
 		meta := buildBlockNewMeta("term", "", "/home/user", "prod")
-		if meta[waveobj.MetaKey_View] != "term" {
-			t.Errorf("view = %v, want %q", meta[waveobj.MetaKey_View], "term")
+		if meta[remotetermobj.MetaKey_View] != "term" {
+			t.Errorf("view = %v, want %q", meta[remotetermobj.MetaKey_View], "term")
 		}
-		if meta[waveobj.MetaKey_Controller] != "shell" {
-			t.Errorf("controller = %v, want %q", meta[waveobj.MetaKey_Controller], "shell")
+		if meta[remotetermobj.MetaKey_Controller] != "shell" {
+			t.Errorf("controller = %v, want %q", meta[remotetermobj.MetaKey_Controller], "shell")
 		}
-		if meta[waveobj.MetaKey_CmdCwd] != "/home/user" {
-			t.Errorf("cmd:cwd = %v, want %q", meta[waveobj.MetaKey_CmdCwd], "/home/user")
+		if meta[remotetermobj.MetaKey_CmdCwd] != "/home/user" {
+			t.Errorf("cmd:cwd = %v, want %q", meta[remotetermobj.MetaKey_CmdCwd], "/home/user")
 		}
-		if meta[waveobj.MetaKey_Connection] != "prod" {
-			t.Errorf("connection = %v, want %q", meta[waveobj.MetaKey_Connection], "prod")
+		if meta[remotetermobj.MetaKey_Connection] != "prod" {
+			t.Errorf("connection = %v, want %q", meta[remotetermobj.MetaKey_Connection], "prod")
 		}
-		for _, key := range []string{waveobj.MetaKey_Cmd, waveobj.MetaKey_CmdRunOnStart, waveobj.MetaKey_CmdRunOnce, waveobj.MetaKey_CmdCloseOnExit} {
+		for _, key := range []string{remotetermobj.MetaKey_Cmd, remotetermobj.MetaKey_CmdRunOnStart, remotetermobj.MetaKey_CmdRunOnce, remotetermobj.MetaKey_CmdCloseOnExit} {
 			if _, ok := meta[key]; ok {
 				t.Errorf("plain term block should not have key %q", key)
 			}
@@ -637,30 +637,30 @@ func TestBuildBlockNewMeta(t *testing.T) {
 
 	t.Run("command block is persistent", func(t *testing.T) {
 		meta := buildBlockNewMeta("term", "tail -f /var/log/syslog", "/home/user", "prod")
-		if meta[waveobj.MetaKey_View] != "term" {
-			t.Errorf("view = %v, want %q", meta[waveobj.MetaKey_View], "term")
+		if meta[remotetermobj.MetaKey_View] != "term" {
+			t.Errorf("view = %v, want %q", meta[remotetermobj.MetaKey_View], "term")
 		}
-		if meta[waveobj.MetaKey_Controller] != "cmd" {
-			t.Errorf("controller = %v, want %q", meta[waveobj.MetaKey_Controller], "cmd")
+		if meta[remotetermobj.MetaKey_Controller] != "cmd" {
+			t.Errorf("controller = %v, want %q", meta[remotetermobj.MetaKey_Controller], "cmd")
 		}
-		if meta[waveobj.MetaKey_Cmd] != "tail -f /var/log/syslog" {
-			t.Errorf("cmd = %v, want %q", meta[waveobj.MetaKey_Cmd], "tail -f /var/log/syslog")
+		if meta[remotetermobj.MetaKey_Cmd] != "tail -f /var/log/syslog" {
+			t.Errorf("cmd = %v, want %q", meta[remotetermobj.MetaKey_Cmd], "tail -f /var/log/syslog")
 		}
-		if meta[waveobj.MetaKey_CmdRunOnStart] != true {
-			t.Errorf("cmd:runonstart = %v, want true", meta[waveobj.MetaKey_CmdRunOnStart])
+		if meta[remotetermobj.MetaKey_CmdRunOnStart] != true {
+			t.Errorf("cmd:runonstart = %v, want true", meta[remotetermobj.MetaKey_CmdRunOnStart])
 		}
-		if meta[waveobj.MetaKey_CmdShell] != true {
-			t.Errorf("cmd:shell = %v, want true", meta[waveobj.MetaKey_CmdShell])
+		if meta[remotetermobj.MetaKey_CmdShell] != true {
+			t.Errorf("cmd:shell = %v, want true", meta[remotetermobj.MetaKey_CmdShell])
 		}
-		if meta[waveobj.MetaKey_CmdClearOnStart] != true {
-			t.Errorf("cmd:clearonstart = %v, want true", meta[waveobj.MetaKey_CmdClearOnStart])
+		if meta[remotetermobj.MetaKey_CmdClearOnStart] != true {
+			t.Errorf("cmd:clearonstart = %v, want true", meta[remotetermobj.MetaKey_CmdClearOnStart])
 		}
-		args, ok := meta[waveobj.MetaKey_CmdArgs].([]string)
+		args, ok := meta[remotetermobj.MetaKey_CmdArgs].([]string)
 		if !ok || len(args) != 0 {
-			t.Errorf("cmd:args = %v (%T), want empty []string", meta[waveobj.MetaKey_CmdArgs], meta[waveobj.MetaKey_CmdArgs])
+			t.Errorf("cmd:args = %v (%T), want empty []string", meta[remotetermobj.MetaKey_CmdArgs], meta[remotetermobj.MetaKey_CmdArgs])
 		}
 		// Persistent: the block stays open after the command exits.
-		for _, key := range []string{waveobj.MetaKey_CmdRunOnce, waveobj.MetaKey_CmdCloseOnExit, waveobj.MetaKey_CmdCloseOnExitForce} {
+		for _, key := range []string{remotetermobj.MetaKey_CmdRunOnce, remotetermobj.MetaKey_CmdCloseOnExit, remotetermobj.MetaKey_CmdCloseOnExitForce} {
 			if _, ok := meta[key]; ok {
 				t.Errorf("persistent command block should not have key %q", key)
 			}
@@ -669,13 +669,13 @@ func TestBuildBlockNewMeta(t *testing.T) {
 
 	t.Run("non-term view without cmd", func(t *testing.T) {
 		meta := buildBlockNewMeta("web", "", "/home/user", "")
-		if meta[waveobj.MetaKey_View] != "web" {
-			t.Errorf("view = %v, want %q", meta[waveobj.MetaKey_View], "web")
+		if meta[remotetermobj.MetaKey_View] != "web" {
+			t.Errorf("view = %v, want %q", meta[remotetermobj.MetaKey_View], "web")
 		}
-		if _, ok := meta[waveobj.MetaKey_Controller]; ok {
-			t.Errorf("non-term view should not have controller, got %v", meta[waveobj.MetaKey_Controller])
+		if _, ok := meta[remotetermobj.MetaKey_Controller]; ok {
+			t.Errorf("non-term view should not have controller, got %v", meta[remotetermobj.MetaKey_Controller])
 		}
-		if _, ok := meta[waveobj.MetaKey_Connection]; ok {
+		if _, ok := meta[remotetermobj.MetaKey_Connection]; ok {
 			t.Errorf("non-term view with empty connection should not have connection key")
 		}
 	})

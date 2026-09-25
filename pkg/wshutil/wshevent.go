@@ -6,8 +6,8 @@ package wshutil
 import (
 	"sync"
 
+	"github.com/LannCo/remoteterm/pkg/wps"
 	"github.com/google/uuid"
-	"github.com/wavetermdev/waveterm/pkg/wps"
 )
 
 // event inverter.  converts WaveEvents to a listener.On() API

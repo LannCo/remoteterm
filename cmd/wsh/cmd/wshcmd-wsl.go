@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
 var distroName string
@@ -45,9 +45,9 @@ func wslRun(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("cannot determine blockid (not in JWT)")
 	}
 	data := wshrpc.CommandSetMetaData{
-		ORef: waveobj.MakeORef(waveobj.OType_Block, blockId),
+		ORef: remotetermobj.MakeORef(remotetermobj.OType_Block, blockId),
 		Meta: map[string]any{
-			waveobj.MetaKey_Connection: distroName,
+			remotetermobj.MetaKey_Connection: distroName,
 		},
 	}
 	err = wshclient.SetMetaCommand(RpcClient, data, nil)

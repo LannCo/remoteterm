@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
 )
 
 const (
@@ -118,7 +118,7 @@ func errNotAWebBlock(blockId string) error {
 	return fmt.Errorf("block %s is not a web block", blockId)
 }
 
-func resolveWebBlockTarget() (*waveobj.ORef, *wshrpc.BlockInfoData, error) {
+func resolveWebBlockTarget() (*remotetermobj.ORef, *wshrpc.BlockInfoData, error) {
 	fullORef, err := resolveBlockArg()
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolving blockid: %w", err)
@@ -127,7 +127,7 @@ func resolveWebBlockTarget() (*waveobj.ORef, *wshrpc.BlockInfoData, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting block info: %w", err)
 	}
-	if blockInfo.Block == nil || blockInfo.Block.Meta.GetString(waveobj.MetaKey_View, "") != "web" {
+	if blockInfo.Block == nil || blockInfo.Block.Meta.GetString(remotetermobj.MetaKey_View, "") != "web" {
 		return nil, nil, errNotAWebBlock(fullORef.OID)
 	}
 	return fullORef, blockInfo, nil
@@ -363,7 +363,7 @@ func isStdinCharDevice() bool {
 }
 
 func webOpenRun(cmd *cobra.Command, args []string) error {
-	var replaceBlockORef *waveobj.ORef
+	var replaceBlockORef *remotetermobj.ORef
 	if webOpenReplaceBlock != "" {
 		var err error
 		replaceBlockORef, err = resolveSimpleId(webOpenReplaceBlock)
@@ -377,15 +377,15 @@ func webOpenRun(cmd *cobra.Command, args []string) error {
 
 	tabId := getTabIdFromEnv()
 	if tabId == "" {
-		return fmt.Errorf("no WAVETERM_TABID env var set")
+		return fmt.Errorf("no REMOTETERM_TABID env var set")
 	}
 
 	wshCmd := wshrpc.CommandCreateBlockData{
 		TabId: tabId,
-		BlockDef: &waveobj.BlockDef{
+		BlockDef: &remotetermobj.BlockDef{
 			Meta: map[string]any{
-				waveobj.MetaKey_View: "web",
-				waveobj.MetaKey_Url:  args[0],
+				remotetermobj.MetaKey_View: "web",
+				remotetermobj.MetaKey_Url:  args[0],
 			},
 		},
 		Magnified: webOpenMagnified,

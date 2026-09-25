@@ -24,10 +24,10 @@ import {
 import { setWasActive } from "./emain-activity";
 import { createBuilderWindow, getAllBuilderWindows, getBuilderWindowByWebContentsId } from "./emain-builder";
 import { callWithOriginalXdgCurrentDesktopAsync, unamePlatform } from "./emain-platform";
-import { getWaveTabViewByWebContentsId } from "./emain-tabview";
+import { getRemoteTermTabViewByWebContentsId } from "./emain-tabview";
 import { handleCtrlShiftState } from "./emain-util";
-import { getWaveVersion } from "./emain-wavesrv";
-import { createNewWaveWindow, getWaveWindowByWebContentsId } from "./emain-window";
+import { getRemoteTermVersion } from "./emain-remotetermsrv";
+import { createNewRemoteTermWindow, getRemoteTermWindowByWebContentsId } from "./emain-window";
 import { ElectronWshClient } from "./emain-wsh";
 
 const electronApp = electron.app;
@@ -249,7 +249,7 @@ export function initIpcHandlers() {
 
     electron.ipcMain.on("webview-image-contextmenu", (event: electron.IpcMainEvent, payload: { src: string }) => {
         const menu = new electron.Menu();
-        const win = getWaveWindowByWebContentsId(event.sender.hostWebContents?.id);
+        const win = getRemoteTermWindowByWebContentsId(event.sender.hostWebContents?.id);
         if (win == null) {
             return;
         }
@@ -347,7 +347,7 @@ export function initIpcHandlers() {
     });
 
     electron.ipcMain.on("get-cursor-point", (event) => {
-        const tabView = getWaveTabViewByWebContentsId(event.sender.id);
+        const tabView = getRemoteTermTabViewByWebContentsId(event.sender.id);
         if (tabView == null) {
             event.returnValue = null;
             return;
@@ -362,7 +362,7 @@ export function initIpcHandlers() {
     });
 
     electron.ipcMain.handle("capture-screenshot", async (event, rect) => {
-        const tabView = getWaveTabViewByWebContentsId(event.sender.id);
+        const tabView = getRemoteTermTabViewByWebContentsId(event.sender.id);
         if (!tabView) {
             throw new Error("No tab view found for the given webContents id");
         }
@@ -376,7 +376,7 @@ export function initIpcHandlers() {
     });
 
     electron.ipcMain.on("get-about-modal-details", (event) => {
-        event.returnValue = getWaveVersion() as AboutModalDetails;
+        event.returnValue = getRemoteTermVersion() as AboutModalDetails;
     });
 
     electron.ipcMain.on("get-zoom-factor", (event) => {
@@ -429,7 +429,7 @@ export function initIpcHandlers() {
 
     electron.ipcMain.on("set-keyboard-chord-mode", (event) => {
         event.returnValue = null;
-        const tabView = getWaveTabViewByWebContentsId(event.sender.id);
+        const tabView = getRemoteTermTabViewByWebContentsId(event.sender.id);
         tabView?.setKeyboardChordMode(true);
     });
 
@@ -455,7 +455,7 @@ export function initIpcHandlers() {
             const overlayBuffer = overlay.toPNG();
             const png = PNG.sync.read(overlayBuffer);
             const color = fac.prepareResult(fac.getColorFromArray4(png.data));
-            const ww = getWaveWindowByWebContentsId(event.sender.id);
+            const ww = getRemoteTermWindowByWebContentsId(event.sender.id);
             if (ww == null) return;
             ww.setTitleBarOverlay({
                 color: unamePlatform === "linux" ? color.rgba : "#00000000",
@@ -500,17 +500,17 @@ export function initIpcHandlers() {
         );
     });
 
-    electron.ipcMain.on("set-window-init-status", (event, status: "ready" | "wave-ready") => {
-        const tabView = getWaveTabViewByWebContentsId(event.sender.id);
+    electron.ipcMain.on("set-window-init-status", (event, status: "ready" | "remoteterm-ready") => {
+        const tabView = getRemoteTermTabViewByWebContentsId(event.sender.id);
         if (tabView != null && tabView.initResolve != null) {
             if (status === "ready") {
                 tabView.initResolve();
                 if (tabView.savedInitOpts) {
-                    console.log("savedInitOpts calling wave-init", tabView.waveTabId);
-                    tabView.webContents.send("wave-init", tabView.savedInitOpts);
+                    console.log("savedInitOpts calling remoteterm-init", tabView.remoteTermTabId);
+                    tabView.webContents.send("remoteterm-init", tabView.savedInitOpts);
                 }
-            } else if (status === "wave-ready") {
-                tabView.waveReadyResolve();
+            } else if (status === "remoteterm-ready") {
+                tabView.remoteTermReadyResolve();
             }
             return;
         }
@@ -550,7 +550,7 @@ export function initIpcHandlers() {
         console.log("set-builder-window-appid", bw.builderId, appId);
     });
 
-    electron.ipcMain.on("open-new-window", () => fireAndForget(createNewWaveWindow));
+    electron.ipcMain.on("open-new-window", () => fireAndForget(createNewRemoteTermWindow));
 
     electron.ipcMain.on("close-builder-window", async (event) => {
         const bw = getBuilderWindowByWebContentsId(event.sender.id);

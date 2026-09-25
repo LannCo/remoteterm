@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
 )
 
 // failThenSucceedSender fails the first N SendData calls, then succeeds.

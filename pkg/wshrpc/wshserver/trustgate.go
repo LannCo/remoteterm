@@ -7,11 +7,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/wavetermdev/waveterm/pkg/remote/conncontroller"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
-	"github.com/wavetermdev/waveterm/pkg/wstore"
+	"github.com/LannCo/remoteterm/pkg/remote/conncontroller"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtconfig"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
+	"github.com/LannCo/remoteterm/pkg/rtstore"
 )
 
 // originConnName returns the connection name the RPC request originated from
@@ -54,7 +54,7 @@ func shouldAllowRemoteLocalControl(originConn, targetConn string, allowSetting b
 // is enabled.
 func checkRemoteToLocalControl(ctx context.Context, targetConnName string) error {
 	origin := originConnName(ctx)
-	allowSetting := wconfig.GetWatcher().GetFullConfig().Settings.AgentAllowRemoteLocalControl
+	allowSetting := rtconfig.GetWatcher().GetFullConfig().Settings.AgentAllowRemoteLocalControl
 	if shouldAllowRemoteLocalControl(origin, targetConnName, allowSetting) {
 		return nil
 	}
@@ -63,9 +63,9 @@ func checkRemoteToLocalControl(ctx context.Context, targetConnName string) error
 
 // getBlockConnName loads the block and returns the connection it runs on ("" means local).
 func getBlockConnName(ctx context.Context, blockId string) (string, error) {
-	block, err := wstore.DBMustGet[*waveobj.Block](ctx, blockId)
+	block, err := rtstore.DBMustGet[*remotetermobj.Block](ctx, blockId)
 	if err != nil {
 		return "", err
 	}
-	return block.Meta.GetString(waveobj.MetaKey_Connection, ""), nil
+	return block.Meta.GetString(remotetermobj.MetaKey_Connection, ""), nil
 }

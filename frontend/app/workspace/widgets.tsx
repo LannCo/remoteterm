@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import LogoTile from "@/app/asset/logo-tile.svg";
 import { Tooltip } from "@/app/element/tooltip";
 import {
     getBlockComponentModel,
@@ -11,10 +12,10 @@ import {
     removeHiddenBlockModel,
 } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
-import { TabRpcClient } from "@/app/store/wshrpcutil";
 import * as WOS from "@/app/store/wos";
-import { useWaveEnv, WaveEnv, WaveEnvSubset } from "@/app/waveenv/waveenv";
-import { shouldIncludeWidgetForWorkspace } from "@/app/workspace/widgetfilter";
+import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { useWaveEnv, WaveEnv, WaveEnvSubset } from "@/app/remotetermenv/remotetermenv";
+import { shouldIncludeWidgetForWorkspace, sortByDisplayOrder } from "@/app/workspace/widgetfilter";
 import { getLayoutModelForStaticTab } from "@/layout/index";
 import { fireAndForget, isBlank, makeIconClass } from "@/util/util";
 import {
@@ -47,24 +48,11 @@ export type WidgetsEnv = WaveEnvSubset<{
     showContextMenu: WaveEnv["showContextMenu"];
 }>;
 
-function sortByDisplayOrder(wmap: { [key: string]: WidgetConfigType }): WidgetConfigType[] {
-    if (wmap == null) {
-        return [];
-    }
-    const wlist = Object.values(wmap);
-    wlist.sort((a, b) => {
-        return (a["display:order"] ?? 0) - (b["display:order"] ?? 0);
-    });
-    return wlist;
-}
-
 type WidgetPropsType = {
     widget: WidgetConfigType;
     mode: "normal" | "compact" | "supercompact";
     env: WidgetsEnv;
 };
-
-
 
 function toggleWidgetVisibility(viewType: string): boolean {
     const layoutModel = getLayoutModelForStaticTab();
@@ -348,7 +336,7 @@ const SettingsFloatingWindow = memo(
                 onClick: () => {
                     const blockDef: BlockDef = {
                         meta: {
-                            view: "waveconfig",
+                            view: "remotetermconfig",
                         },
                     };
                     env.createBlock(blockDef, false, true);
@@ -374,7 +362,7 @@ const SettingsFloatingWindow = memo(
                 onClick: () => {
                     const blockDef: BlockDef = {
                         meta: {
-                            view: "waveconfig",
+                            view: "remotetermconfig",
                             file: "secrets",
                         },
                     };
@@ -437,7 +425,7 @@ const Widgets = memo(() => {
     const containerRef = useRef<HTMLDivElement>(null);
     const measurementRef = useRef<HTMLDivElement>(null);
 
-    const featureWaveAppBuilder = fullConfig?.settings?.["feature:waveappbuilder"] ?? false;
+    const featureRTAppBuilder = fullConfig?.settings?.["feature:rtappbuilder"] ?? false;
     const widgetsMap = fullConfig?.widgets ?? {};
     const filteredWidgets = Object.fromEntries(
         Object.entries(widgetsMap).filter(([_key, widget]) => shouldIncludeWidgetForWorkspace(widget, workspaceId))
@@ -503,7 +491,7 @@ const Widgets = memo(() => {
                     fireAndForget(async () => {
                         const blockDef: BlockDef = {
                             meta: {
-                                view: "waveconfig",
+                                view: "remotetermconfig",
                                 file: "widgets.json",
                             },
                         };
@@ -531,13 +519,13 @@ const Widgets = memo(() => {
                         </div>
                         <div className="flex-grow" />
                         <div className="grid grid-cols-2 gap-0 w-full">
-                            {env.isDev() || featureWaveAppBuilder ? (
+                            {env.isDev() || featureRTAppBuilder ? (
                                 <div
                                     ref={appsButtonRef}
                                     className="flex flex-col justify-center items-center w-full py-1.5 pr-0.5 text-secondary text-sm overflow-hidden rounded-sm hover:bg-hoverbg hover:text-white cursor-pointer"
                                     onClick={() => setIsAppsOpen(!isAppsOpen)}
                                 >
-                                    <Tooltip content="Local WaveApps" placement="left" disable={isAppsOpen}>
+                                    <Tooltip content="Local RTApps" placement="left" disable={isAppsOpen}>
                                         <div>
                                             <i className={makeIconClass("cube", true)}></i>
                                         </div>
@@ -570,13 +558,13 @@ const Widgets = memo(() => {
                             <Widget key={`widget-${idx}`} widget={data} mode={mode} env={env} />
                         ))}
                         <div className="flex-grow" />
-                        {env.isDev() || featureWaveAppBuilder ? (
+                        {env.isDev() || featureRTAppBuilder ? (
                             <div
                                 ref={appsButtonRef}
                                 className="flex flex-col justify-center items-center w-full py-1.5 pr-0.5 text-secondary text-lg overflow-hidden rounded-sm hover:bg-hoverbg hover:text-white cursor-pointer"
                                 onClick={() => setIsAppsOpen(!isAppsOpen)}
                             >
-                                <Tooltip content="Local WaveApps" placement="left" disable={isAppsOpen}>
+                                <Tooltip content="Local RTApps" placement="left" disable={isAppsOpen}>
                                     <div className="flex flex-col items-center w-full">
                                         <div>
                                             <i className={makeIconClass("cube", true)}></i>
@@ -620,15 +608,12 @@ const Widgets = memo(() => {
                     </>
                 )}
                 {env.isDev() ? (
-                    <div
-                        className="flex justify-center items-center w-full py-1 text-accent text-[30px]"
-                        title="Running Wave Dev Build"
-                    >
-                        <i className="fa fa-brands fa-dev fa-fw" />
+                    <div className="flex justify-center items-center w-full py-1" title="Running Wave Dev Build">
+                        <LogoTile />
                     </div>
                 ) : null}
             </div>
-            {(env.isDev() || featureWaveAppBuilder) && appsButtonRef.current && (
+            {(env.isDev() || featureRTAppBuilder) && appsButtonRef.current && (
                 <AppsFloatingWindow
                     isOpen={isAppsOpen}
                     onClose={() => setIsAppsOpen(false)}
@@ -667,11 +652,8 @@ const Widgets = memo(() => {
                     </div>
                 ) : null}
                 {env.isDev() ? (
-                    <div
-                        className="flex justify-center items-center w-full py-1 text-accent text-[30px]"
-                        title="Running Wave Dev Build"
-                    >
-                        <i className="fa fa-brands fa-dev fa-fw" />
+                    <div className="flex justify-center items-center w-full py-1" title="Running Wave Dev Build">
+                        <LogoTile />
                     </div>
                 ) : null}
             </div>

@@ -13,16 +13,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wavetermdev/waveterm/pkg/panichandler"
-	"github.com/wavetermdev/waveterm/pkg/remote"
-	"github.com/wavetermdev/waveterm/pkg/remote/conncontroller"
-	"github.com/wavetermdev/waveterm/pkg/streamclient"
-	"github.com/wavetermdev/waveterm/pkg/util/ds"
-	"github.com/wavetermdev/waveterm/pkg/utilds"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
-	"github.com/wavetermdev/waveterm/pkg/wps"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/panichandler"
+	"github.com/LannCo/remoteterm/pkg/remote"
+	"github.com/LannCo/remoteterm/pkg/remote/conncontroller"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtconfig"
+	"github.com/LannCo/remoteterm/pkg/streamclient"
+	"github.com/LannCo/remoteterm/pkg/util/ds"
+	"github.com/LannCo/remoteterm/pkg/utilds"
+	"github.com/LannCo/remoteterm/pkg/wps"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
 )
 
 func TestShouldAttemptAutoReconnect(t *testing.T) {
@@ -472,7 +472,7 @@ func TestAttemptAutoReconnectSetsCooldownWhenUp(t *testing.T) {
 	}
 	defer func() { isConnectedTestHook = nil }()
 
-	// Stub out ReconnectJobRoute so we don't need wstore / rpc infrastructure
+	// Stub out ReconnectJobRoute so we don't need rtstore / rpc infrastructure
 	var reconnectCalled int32
 	reconnectRouteGroup.Do("job-f", func() (any, error) {
 		atomic.AddInt32(&reconnectCalled, 1)
@@ -504,30 +504,82 @@ func TestOnConnectionDownDeduplication(t *testing.T) {
 	}
 }
 
-// TestHandleSystemResumeSmoke verifies that HandleSystemResume filters correctly
-// and does not panic when processing connections.
-func TestHandleSystemResumeSmoke(t *testing.T) {
-	t.Parallel()
+// TestHandleSystemResumeFastPathFiltering verifies HandleSystemResume fast-path
+// reconnects only disconnected connections with running durable jobs, and skips
+// ones with auto-reconnect suppressed, no durable jobs, interactive auth, or
+// already connected and healthy.
+func TestHandleSystemResumeFastPathFiltering(t *testing.T) {
 	ctx := context.Background()
-
-	// Mock hasRunningDurableJobs to return true for our test connection
-	hasRunningDurableJobsTestHook = func(ctx context.Context, connName string) bool {
-		return connName == "testuser@testhost:2222"
+	makeResumeConn := func(host string, status string, suppress bool) string {
+		conn := conncontroller.GetConn(&remote.SSHOpts{SSHHost: host, SSHUser: "testuser", SSHPort: "2222"})
+		conn.WithLock(func() {
+			conn.Status = status
+			conn.ConnHealthStatus = conncontroller.ConnHealthStatus_Good
+		})
+		conn.SetSuppressAutoReconnect(suppress)
+		connectionReconnectSchedulers.Set(conn.GetName(), true)
+		return conn.GetName()
 	}
-	defer func() { hasRunningDurableJobsTestHook = nil }()
+	eligible := makeResumeConn("resume-eligible", conncontroller.Status_Disconnected, false)
+	suppressed := makeResumeConn("resume-suppressed", conncontroller.Status_Disconnected, true)
+	noJobs := makeResumeConn("resume-nojobs", conncontroller.Status_Disconnected, false)
+	interactive := makeResumeConn("resume-interactive", conncontroller.Status_Disconnected, false)
+	healthy := makeResumeConn("resume-healthy", conncontroller.Status_Connected, false)
 
-	// Create a mock disconnected connection in the controller map
-	testOpts := &remote.SSHOpts{SSHHost: "testhost", SSHUser: "testuser", SSHPort: "2222"}
-	conn := conncontroller.GetConn(testOpts)
-	conn.Status = conncontroller.Status_Disconnected
-	conn.ConnHealthStatus = conncontroller.ConnHealthStatus_Good
+	hasRunningDurableJobsTestHook = func(ctx context.Context, connName string) bool {
+		return connName != noJobs
+	}
+	NeedsInteractiveAuthTestHook = func(connName string) bool {
+		return connName == interactive
+	}
+	attempted := make(chan string, 16)
+	resumeReconnectTestHook = func(ctx context.Context, connName string) error {
+		attempted <- connName
+		return nil
+	}
+	defer func() {
+		hasRunningDurableJobsTestHook = nil
+		NeedsInteractiveAuthTestHook = nil
+		resumeReconnectTestHook = nil
+	}()
 
-	// Call HandleSystemResume — should attempt reconnect for the disconnected conn
-	// (reconnect will fail because mock has no connectInternal hook, but that's expected)
 	HandleSystemResume(ctx)
 
-	// Note: mock connection remains in controller map but uses unique key,
-	// so it won't interfere with other tests.
+	gotEligible := false
+	timeout := time.After(2 * time.Second)
+	for !gotEligible {
+		select {
+		case name := <-attempted:
+			if name == eligible {
+				gotEligible = true
+				continue
+			}
+			if name == suppressed || name == noJobs || name == interactive || name == healthy {
+				t.Fatalf("fast-path reconnect attempted for filtered connection %s", name)
+			}
+		case <-timeout:
+			t.Fatalf("no fast-path reconnect attempted for %s", eligible)
+		}
+	}
+	// Every reconnect goroutine is spawned before HandleSystemResume returns; give
+	// any wrongly spawned ones time to report.
+	time.Sleep(100 * time.Millisecond)
+	for len(attempted) > 0 {
+		name := <-attempted
+		if name == suppressed || name == noJobs || name == interactive || name == healthy {
+			t.Fatalf("fast-path reconnect attempted for filtered connection %s", name)
+		}
+	}
+
+	if _, ok := connectionReconnectSchedulers.GetEx(eligible); ok {
+		t.Errorf("stale scheduler entry not cleared for %s", eligible)
+	}
+	for _, name := range []string{suppressed, noJobs, interactive, healthy} {
+		if _, ok := connectionReconnectSchedulers.GetEx(name); !ok {
+			t.Errorf("scheduler entry cleared for filtered connection %s", name)
+		}
+		connectionReconnectSchedulers.Delete(name)
+	}
 }
 
 // TestIsNetworkUnreachable_ContextDeadline verifies that "context deadline exceeded"
@@ -600,13 +652,13 @@ func TestOnConnectionUpPerJobCtxNoStarvation(t *testing.T) {
 	}()
 
 	connName := "conn:starvation"
-	jobs := []*waveobj.Job{
+	jobs := []*remotetermobj.Job{
 		{OID: "job-1", Connection: connName, JobManagerStatus: JobManagerStatus_Running},
 		{OID: "job-2", Connection: connName, JobManagerStatus: JobManagerStatus_Running},
 		{OID: "job-3", Connection: connName, JobManagerStatus: JobManagerStatus_Running},
 	}
 
-	getAllJobsForConnTestHook = func(connName string) ([]*waveobj.Job, error) {
+	getAllJobsForConnTestHook = func(connName string) ([]*remotetermobj.Job, error) {
 		return jobs, nil
 	}
 
@@ -677,12 +729,12 @@ func TestOnConnectionUpRetryRecoversFailedJobs(t *testing.T) {
 	retryBackoffs = []time.Duration{10 * time.Millisecond, 20 * time.Millisecond, 40 * time.Millisecond}
 
 	connName := "conn:retry"
-	jobs := []*waveobj.Job{
+	jobs := []*remotetermobj.Job{
 		{OID: "job-1", Connection: connName, JobManagerStatus: JobManagerStatus_Running},
 		{OID: "job-2", Connection: connName, JobManagerStatus: JobManagerStatus_Running},
 	}
 
-	getAllJobsForConnTestHook = func(connName string) ([]*waveobj.Job, error) {
+	getAllJobsForConnTestHook = func(connName string) ([]*remotetermobj.Job, error) {
 		return jobs, nil
 	}
 
@@ -708,8 +760,8 @@ func TestOnConnectionUpRetryRecoversFailedJobs(t *testing.T) {
 	}
 
 	// getJobTestHook returns Running so the retry doesn't skip as Done.
-	getJobTestHook = func(jobId string) (*waveobj.Job, error) {
-		return &waveobj.Job{OID: jobId, JobManagerStatus: JobManagerStatus_Running}, nil
+	getJobTestHook = func(jobId string) (*remotetermobj.Job, error) {
+		return &remotetermobj.Job{OID: jobId, JobManagerStatus: JobManagerStatus_Running}, nil
 	}
 
 	onConnectionUp(connName)
@@ -751,11 +803,11 @@ func TestOnConnectionUpRetryAbortsOnConnDown(t *testing.T) {
 	retryBackoffs = []time.Duration{10 * time.Millisecond, 20 * time.Millisecond, 40 * time.Millisecond}
 
 	connName := "conn:abort"
-	jobs := []*waveobj.Job{
+	jobs := []*remotetermobj.Job{
 		{OID: "job-1", Connection: connName, JobManagerStatus: JobManagerStatus_Running},
 	}
 
-	getAllJobsForConnTestHook = func(connName string) ([]*waveobj.Job, error) {
+	getAllJobsForConnTestHook = func(connName string) ([]*remotetermobj.Job, error) {
 		return jobs, nil
 	}
 
@@ -806,11 +858,11 @@ func TestOnConnectionUpRetrySkipsDoneJobs(t *testing.T) {
 	retryBackoffs = []time.Duration{10 * time.Millisecond, 20 * time.Millisecond, 40 * time.Millisecond}
 
 	connName := "conn:skipdone"
-	jobs := []*waveobj.Job{
+	jobs := []*remotetermobj.Job{
 		{OID: "job-1", Connection: connName, JobManagerStatus: JobManagerStatus_Running},
 	}
 
-	getAllJobsForConnTestHook = func(connName string) ([]*waveobj.Job, error) {
+	getAllJobsForConnTestHook = func(connName string) ([]*remotetermobj.Job, error) {
 		return jobs, nil
 	}
 
@@ -827,8 +879,8 @@ func TestOnConnectionUpRetrySkipsDoneJobs(t *testing.T) {
 	}
 
 	// getJobTestHook returns Done so the retry skips it.
-	getJobTestHook = func(jobId string) (*waveobj.Job, error) {
-		return &waveobj.Job{OID: jobId, JobManagerStatus: JobManagerStatus_Done}, nil
+	getJobTestHook = func(jobId string) (*remotetermobj.Job, error) {
+		return &remotetermobj.Job{OID: jobId, JobManagerStatus: JobManagerStatus_Done}, nil
 	}
 
 	onConnectionUp(connName)
@@ -843,8 +895,8 @@ func TestOnConnectionUpRetrySkipsDoneJobs(t *testing.T) {
 // PR #1 fast defaults (5s timeout, 5s interval, 3s aggressive interval) when
 // the connection has no config.
 func TestGetReconnectConfigDefaults(t *testing.T) {
-	reconnectConfigTestHook = func(string) (wconfig.ConnKeywords, bool) {
-		return wconfig.ConnKeywords{}, false
+	reconnectConfigTestHook = func(string) (rtconfig.ConnKeywords, bool) {
+		return rtconfig.ConnKeywords{}, false
 	}
 	defer func() { reconnectConfigTestHook = nil }()
 
@@ -866,8 +918,8 @@ func TestGetReconnectConfigOverrides(t *testing.T) {
 	timeoutSec := 30
 	intervalSec := 30
 	aggressiveSec := 15
-	reconnectConfigTestHook = func(string) (wconfig.ConnKeywords, bool) {
-		return wconfig.ConnKeywords{
+	reconnectConfigTestHook = func(string) (rtconfig.ConnKeywords, bool) {
+		return rtconfig.ConnKeywords{
 			ConnReconnectTimeoutSec:            &timeoutSec,
 			ConnReconnectIntervalSec:           &intervalSec,
 			ConnReconnectAggressiveIntervalSec: &aggressiveSec,
@@ -891,8 +943,8 @@ func TestGetReconnectConfigOverrides(t *testing.T) {
 // configured value is treated as unset and falls back to the default.
 func TestGetReconnectConfigIgnoresNonPositiveOverride(t *testing.T) {
 	zero := 0
-	reconnectConfigTestHook = func(string) (wconfig.ConnKeywords, bool) {
-		return wconfig.ConnKeywords{ConnReconnectIntervalSec: &zero}, true
+	reconnectConfigTestHook = func(string) (rtconfig.ConnKeywords, bool) {
+		return rtconfig.ConnKeywords{ConnReconnectIntervalSec: &zero}, true
 	}
 	defer func() { reconnectConfigTestHook = nil }()
 
@@ -1191,7 +1243,7 @@ func TestRunOutputLoopExitsOnReaderCloseWithSupersession(t *testing.T) {
 	}
 
 	// Verify the loop exited via supersession (health.active == false, streamId matches old).
-	// If it had hit the error path, it would have called wstore.DBUpdateFn / tryTerminateJobManager
+	// If it had hit the error path, it would have called rtstore.DBUpdateFn / tryTerminateJobManager
 	// (which would panic or log without a DB — the test would fail there).
 	health, ok := jobStreamHealth.GetEx(jobId)
 	if !ok {
@@ -1233,8 +1285,8 @@ func TestRestartStreamingClosesPrevReader(t *testing.T) {
 		t.Fatalf("expected to retrieve reader1 from jobReaders")
 	}
 	jobStreamIds.Set(jobId, "stream-2") // update BEFORE closing (supersession check)
-	prevReader.Close()                   // safe — unblocks old runOutputLoop
-	jobReaders.Set(jobId, reader2)       // store new reader
+	prevReader.Close()                  // safe — unblocks old runOutputLoop
+	jobReaders.Set(jobId, reader2)      // store new reader
 
 	// Verify jobReaders now holds reader2.
 	currentReader, ok := jobReaders.GetEx(jobId)
@@ -1370,6 +1422,53 @@ func TestWaitForStreamLoopExit(t *testing.T) {
 	// If the helper never returned, the test would time out — reaching here is success.
 }
 
+// TestHasActiveStream covers the decision used by doReconnectJob's "already connected"
+// guard and by handleRouteEvent's route-up handler to distinguish a genuinely healthy
+// Connected job from failure mode B (Connected-but-no-stream): the job/route reports
+// Connected, but no runOutputLoop is actually pulling data from the remote stream.
+// Before this fix, both callers treated "CheckJobConnected succeeds" as sufficient and
+// skipped/no-opped unconditionally, regardless of stream health — so once a job got
+// wedged Connected-with-no-active-stream (e.g. restartStreaming failing after
+// SetJobConnStatus(Connected), or a route-up event marking Connected without
+// restarting the stream), it stayed wedged forever: every later reconnect attempt hit
+// the "already connected" guard and skipped without ever restarting the stream.
+func TestHasActiveStream(t *testing.T) {
+	tests := []struct {
+		name     string
+		health   streamHealthInfo
+		healthOk bool
+		want     bool
+	}{
+		{
+			name:     "no health entry at all",
+			health:   streamHealthInfo{},
+			healthOk: false,
+			want:     false,
+		},
+		{
+			name:     "health entry present but inactive (failure mode B)",
+			health:   streamHealthInfo{active: false, streamId: "stream-1"},
+			healthOk: true,
+			want:     false,
+		},
+		{
+			name:     "health entry present and active",
+			health:   streamHealthInfo{active: true, streamId: "stream-1"},
+			healthOk: true,
+			want:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := hasActiveStream(tt.health, tt.healthOk)
+			if got != tt.want {
+				t.Errorf("hasActiveStream(%+v, healthOk=%v) = %v, want %v", tt.health, tt.healthOk, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestReconcileClientAheadSeq(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -1431,5 +1530,33 @@ func TestReconcileClientAheadSeq(t *testing.T) {
 				t.Errorf("needsTruncate = %v, want %v", gotTruncate, tt.wantTruncate)
 			}
 		})
+	}
+}
+
+// TestRegisterNewJobStreamSeedsHealthSynchronously guards against a race where
+// StartJob's stream registration and runOutputLoop's health-seed happen in
+// different goroutines: a route-up event landing in the gap between them saw
+// hasActiveStream()==false and fired handleRouteEvent's superseding reconnect
+// against the stream StartJob had just created (dropped/duplicated startup
+// output). registerNewJobStream must make hasActiveStream() true the moment it
+// returns, with no dependency on runOutputLoop ever running.
+func TestRegisterNewJobStreamSeedsHealthSynchronously(t *testing.T) {
+	jobId := "test-job-register-stream"
+	streamId := "stream-register-test"
+
+	registerNewJobStream(jobId, nil, streamId)
+
+	gotStreamId, streamIdOk := jobStreamIds.GetEx(jobId)
+	if !streamIdOk || gotStreamId != streamId {
+		t.Fatalf("jobStreamIds not set: ok=%v got=%q want=%q", streamIdOk, gotStreamId, streamId)
+	}
+
+	health, healthOk := jobStreamHealth.GetEx(jobId)
+	if !hasActiveStream(health, healthOk) {
+		t.Fatalf("hasActiveStream=false immediately after registerNewJobStream (health=%+v, ok=%v) — "+
+			"a route-up event in this window would fire a superseding reconnect", health, healthOk)
+	}
+	if health.streamId != streamId {
+		t.Fatalf("health.streamId = %q, want %q", health.streamId, streamId)
 	}
 }

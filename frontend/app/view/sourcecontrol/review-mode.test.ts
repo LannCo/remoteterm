@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Shared mock atom store — used by both globalStore mock and jotai mock
@@ -189,9 +189,7 @@ describe("SourceControlViewModel — review mode", () => {
         });
 
         it("clears diff cache", () => {
-            model.diffCacheAtom._value = new Map([
-                ["a.ts", { original: "", modified: "", language: "ts" }],
-            ]);
+            model.diffCacheAtom._value = new Map([["a.ts", { original: "", modified: "", language: "ts" }]]);
             model.exitReview();
             expect(model.diffCacheAtom._value.size).toBe(0);
         });
@@ -214,10 +212,7 @@ describe("SourceControlViewModel — review mode", () => {
         });
 
         it("does not affect other files", () => {
-            model.enterReview([
-                makeReviewFile({ path: "a.ts" }),
-                makeReviewFile({ path: "b.ts" }),
-            ]);
+            model.enterReview([makeReviewFile({ path: "a.ts" }), makeReviewFile({ path: "b.ts" })]);
             model.toggleFileCollapse("a.ts");
             expect(model.reviewCollapsedAtom._value.has("b.ts")).toBe(false);
         });
@@ -255,10 +250,7 @@ describe("SourceControlViewModel — review mode", () => {
             const mockEl = { scrollIntoView: mockScroll } as any;
             model.reviewFileRefsAtom._value = new Map([["b.ts", mockEl]]);
 
-            model.enterReview([
-                makeReviewFile({ path: "a.ts" }),
-                makeReviewFile({ path: "b.ts" }),
-            ]);
+            model.enterReview([makeReviewFile({ path: "a.ts" }), makeReviewFile({ path: "b.ts" })]);
             model.jumpToFile(1);
             expect(mockScroll).toHaveBeenCalledWith({ behavior: "smooth", block: "nearest" });
         });
@@ -305,10 +297,7 @@ describe("SourceControlViewModel — review mode", () => {
         });
 
         it("removes files no longer in status", () => {
-            model.enterReview([
-                makeReviewFile({ path: "a.ts" }),
-                makeReviewFile({ path: "b.ts" }),
-            ]);
+            model.enterReview([makeReviewFile({ path: "a.ts" }), makeReviewFile({ path: "b.ts" })]);
             model.statusAtom._value = makeStatusResponse({
                 unstaged: [makeGitFileChange("a.ts")],
             });
@@ -336,9 +325,7 @@ describe("SourceControlViewModel — review mode", () => {
         });
 
         it("handles untracked files", () => {
-            model.enterReview([
-                makeReviewFile({ path: "new.ts", untracked: true }),
-            ]);
+            model.enterReview([makeReviewFile({ path: "new.ts", untracked: true })]);
             model.statusAtom._value = makeStatusResponse({
                 untracked: [makeGitFileChange("new.ts", "?")],
             });
@@ -418,7 +405,12 @@ describe("SourceControlViewModel — review mode", () => {
         });
 
         it("fetches and caches diff on cache miss", async () => {
-            const fresh = { original: "fresh", modified: "new", language: "ts", hunks: [{ modifiedStart: 1, modifiedCount: 2, originalStart: 1, originalCount: 1, header: "@@" }] };
+            const fresh = {
+                original: "fresh",
+                modified: "new",
+                language: "ts",
+                hunks: [{ modifiedStart: 1, modifiedCount: 2, originalStart: 1, originalCount: 1, header: "@@" }],
+            };
             model.env.rpc.GitDiffCommand = vi.fn().mockResolvedValue(fresh);
             model.connStatus._value = { connected: true };
 
@@ -439,7 +431,8 @@ describe("SourceControlViewModel — review mode", () => {
         it("uses different cache keys for staged vs unstaged", async () => {
             const unstagedDiff = { original: "old", modified: "new", language: "ts", hunks: [] };
             const stagedDiff = { original: "old2", modified: "new2", language: "ts", hunks: [] };
-            model.env.rpc.GitDiffCommand = vi.fn()
+            model.env.rpc.GitDiffCommand = vi
+                .fn()
                 .mockResolvedValueOnce(unstagedDiff)
                 .mockResolvedValueOnce(stagedDiff);
             model.connStatus._value = { connected: true };
@@ -510,18 +503,21 @@ describe("SourceControlViewModel — review mode", () => {
     // ---- revertFileFromReview ----
 
     describe("revertFileFromReview", () => {
-        it("invalidates diff cache and calls revertHunk for each hunk", async () => {
+        it("invalidates diff cache and reverts every hunk from last to first", async () => {
             model.enterReview([makeReviewFile({ path: "a.ts", staged: false })]);
             model.diffCacheAtom._value = new Map([
-                ["a.ts|unstaged|", {
-                    original: "old",
-                    modified: "new",
-                    language: "ts",
-                    hunks: [
-                        { modifiedStart: 1, modifiedCount: 2, originalStart: 1, originalCount: 1, header: "@@" },
-                        { modifiedStart: 5, modifiedCount: 3, originalStart: 5, originalCount: 2, header: "@@" },
-                    ],
-                }],
+                [
+                    "a.ts|unstaged|",
+                    {
+                        original: "old",
+                        modified: "new",
+                        language: "ts",
+                        hunks: [
+                            { modifiedStart: 1, modifiedCount: 2, originalStart: 1, originalCount: 1, header: "@@" },
+                            { modifiedStart: 5, modifiedCount: 3, originalStart: 5, originalCount: 2, header: "@@" },
+                        ],
+                    },
+                ],
             ]);
 
             // Spy on revertHunk to verify it's called correctly
@@ -531,10 +527,47 @@ describe("SourceControlViewModel — review mode", () => {
 
             await model.revertFileFromReview("a.ts", false);
 
-            expect(revertHunkSpy).toHaveBeenCalledTimes(2);
-            expect(revertHunkSpy).toHaveBeenCalledWith("a.ts", 0, false);
-            expect(revertHunkSpy).toHaveBeenCalledWith("a.ts", 1, false);
+            // The server re-diffs on every revert, so reverting hunk 0 first would shift
+            // the remaining hunks down and index 1 would then skip one.
+            expect(revertHunkSpy.mock.calls).toEqual([
+                ["a.ts", 1, false],
+                ["a.ts", 0, false],
+            ]);
             expect(model.diffCacheAtom._value.has("a.ts|unstaged|")).toBe(false);
+        });
+    });
+
+    // ---- revertHunk errors ----
+
+    describe("revertHunk errors", () => {
+        const PartialRevertError =
+            "hunk unstaged, but the working tree has since changed and was left as is: git apply failed";
+
+        it("shows a failed staged-hunk revert to the user, and the status refresh after it keeps it", async () => {
+            model.disposed = false;
+            model.env.rpc.GitRevertHunkCommand.mockRejectedValue(new Error(PartialRevertError));
+            model.env.rpc.GitStatusCommand.mockResolvedValue(makeStatusResponse());
+            vi.spyOn(console, "error").mockImplementation(() => {});
+
+            await model.revertHunk("a.ts", 0, true);
+
+            expect(model.env.rpc.GitStatusCommand).toHaveBeenCalled();
+            expect(model.actionErrorAtom?._value).toBe(`Failed to revert hunk: ${PartialRevertError}`);
+            expect(model.stagingAtom._value).toBe(false);
+        });
+
+        it("a later successful revert leaves an earlier error until it is dismissed", async () => {
+            model.disposed = false;
+            model.env.rpc.GitStatusCommand.mockResolvedValue(makeStatusResponse());
+            model.env.rpc.GitRevertHunkCommand.mockRejectedValueOnce(new Error(PartialRevertError));
+            vi.spyOn(console, "error").mockImplementation(() => {});
+
+            await model.revertHunk("a.ts", 1, true);
+            await model.revertHunk("a.ts", 0, true);
+            expect(model.actionErrorAtom._value).toBe(`Failed to revert hunk: ${PartialRevertError}`);
+
+            model.dismissActionError();
+            expect(model.actionErrorAtom._value).toBeNull();
         });
     });
 });

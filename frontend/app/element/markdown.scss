@@ -158,7 +158,7 @@
         .waveblock {
             margin: 1.143em 0;
 
-            .wave-block-content {
+            .remoteterm-block-content {
                 display: flex;
                 align-items: center;
                 padding: 0.857em;
@@ -168,7 +168,7 @@
                 transition: background-color 0.2s ease;
             }
 
-            .wave-block-icon {
+            .remoteterm-block-icon {
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -179,23 +179,23 @@
                 margin-right: 0.857em;
             }
 
-            .wave-block-icon i {
+            .remoteterm-block-icon i {
                 font-size: 1.125em;
                 color: var(--secondary-text-color);
             }
 
-            .wave-block-info {
+            .remoteterm-block-info {
                 display: flex;
                 flex-direction: column;
             }
 
-            .wave-block-filename {
+            .remoteterm-block-filename {
                 font-size: 1em;
                 font-weight: 500;
                 color: var(--main-text-color);
             }
 
-            .wave-block-size {
+            .remoteterm-block-size {
                 font-size: 0.857em;
                 color: var(--secondary-text-color);
             }

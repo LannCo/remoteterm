@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
 	"golang.org/x/sys/unix"
 )
 
@@ -33,7 +33,7 @@ func daemonize(clientId string, jobId string) error {
 	}
 	devNull.Close()
 
-	logPath := wavebase.GetRemoteJobFilePath(jobId, "log")
+	logPath := remotetermbase.GetRemoteJobFilePath(jobId, "log")
 	logDir := filepath.Dir(logPath)
 	err = os.MkdirAll(logDir, 0700)
 	if err != nil {

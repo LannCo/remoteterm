@@ -5,11 +5,10 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
 var focusBlockCmd = &cobra.Command{
@@ -25,9 +24,9 @@ func init() {
 }
 
 func focusBlockRun(cmd *cobra.Command, args []string) error {
-	tabId := os.Getenv("WAVETERM_TABID")
+	tabId := getEnvNewOrLegacy("REMOTETERM_TABID", "WAVETERM_TABID")
 	if tabId == "" {
-		return fmt.Errorf("no tab id specified (set WAVETERM_TABID environment variable)")
+		return fmt.Errorf("no tab id specified (set REMOTETERM_TABID environment variable)")
 	}
 
 	fullORef, err := resolveBlockArg()

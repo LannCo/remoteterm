@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
 )
 
 func TestResolveAgentSplitRelativeTo(t *testing.T) {
@@ -87,7 +87,7 @@ func TestAgentHelpTextUsesWAVETERM(t *testing.T) {
 	if strings.Contains(agentHelpText, "WAVE_TERMINAL") {
 		t.Errorf("agentHelpText still mentions WAVE_TERMINAL")
 	}
-	for _, env := range []string{"WAVETERM_BLOCKID", "WAVETERM_TABID", "WAVETERM_CONN", "WAVETERM_VERSION"} {
+	for _, env := range []string{"REMOTETERM_BLOCKID", "REMOTETERM_TABID", "REMOTETERM_CONN", "REMOTETERM_VERSION"} {
 		if !strings.Contains(agentHelpText, env) {
 			t.Errorf("agentHelpText missing %s", env)
 		}
@@ -165,13 +165,13 @@ func TestBuildAgentSpawnExtraMeta(t *testing.T) {
 			name:   "owned and cmd always set",
 			cmdStr: "claude",
 			wantKeys: map[string]any{
-				waveobj.MetaKey_AgentOwned: true,
-				waveobj.MetaKey_AgentCmd:   "claude",
+				remotetermobj.MetaKey_AgentOwned: true,
+				remotetermobj.MetaKey_AgentCmd:   "claude",
 			},
 			absentKeys: []string{
-				waveobj.MetaKey_AgentParent,
-				waveobj.MetaKey_AgentIdempotencyKey,
-				waveobj.MetaKey_FrameTitle,
+				remotetermobj.MetaKey_AgentParent,
+				remotetermobj.MetaKey_AgentIdempotencyKey,
+				remotetermobj.MetaKey_FrameTitle,
 			},
 		},
 		{
@@ -181,11 +181,11 @@ func TestBuildAgentSpawnExtraMeta(t *testing.T) {
 			parentBlockId:  "parent-block",
 			idempotencyKey: "pi-1",
 			wantKeys: map[string]any{
-				waveobj.MetaKey_AgentOwned:          true,
-				waveobj.MetaKey_AgentCmd:            "pi",
-				waveobj.MetaKey_AgentParent:         "parent-block",
-				waveobj.MetaKey_AgentIdempotencyKey: "pi-1",
-				waveobj.MetaKey_FrameTitle:          "pi-prod",
+				remotetermobj.MetaKey_AgentOwned:          true,
+				remotetermobj.MetaKey_AgentCmd:            "pi",
+				remotetermobj.MetaKey_AgentParent:         "parent-block",
+				remotetermobj.MetaKey_AgentIdempotencyKey: "pi-1",
+				remotetermobj.MetaKey_FrameTitle:          "pi-prod",
 			},
 		},
 		{
@@ -193,10 +193,10 @@ func TestBuildAgentSpawnExtraMeta(t *testing.T) {
 			cmdStr:        "claude",
 			parentBlockId: "",
 			wantKeys: map[string]any{
-				waveobj.MetaKey_AgentOwned: true,
-				waveobj.MetaKey_AgentCmd:   "claude",
+				remotetermobj.MetaKey_AgentOwned: true,
+				remotetermobj.MetaKey_AgentCmd:   "claude",
 			},
-			absentKeys: []string{waveobj.MetaKey_AgentParent},
+			absentKeys: []string{remotetermobj.MetaKey_AgentParent},
 		},
 	}
 	for _, tt := range tests {

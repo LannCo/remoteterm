@@ -4,7 +4,7 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { fireAndForget, isBlank } from "@/util/util";
-import { formatRemoteUri } from "@/util/waveutil";
+import { formatRemoteUri } from "@/util/remotetermutil";
 import dayjs from "dayjs";
 import React from "react";
 import { type PreviewModel } from "./preview-model";

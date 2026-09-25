@@ -10,10 +10,10 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
 // Command-line flags for the blocks commands
@@ -40,7 +40,7 @@ type BlockDetails struct {
 	Geometry    *wshrpc.BlockGeometry `json:"geometry,omitempty"`
 	Focused     bool                  `json:"focused,omitempty"`
 	Magnified   bool                  `json:"magnified,omitempty"`
-	Meta        waveobj.MetaMapType   `json:"meta"` // Block metadata including view type
+	Meta        remotetermobj.MetaMapType   `json:"meta"` // Block metadata including view type
 }
 
 // blocksListCmd represents the 'blocks list' command
@@ -180,7 +180,7 @@ func blocksListRun(cmd *cobra.Command, args []string) error {
 			}
 
 			if blocksView != "" {
-				view := b.Meta.GetString(waveobj.MetaKey_View, "")
+				view := b.Meta.GetString(remotetermobj.MetaKey_View, "")
 
 				// Support view type aliases
 				if !matchesViewType(view, blocksView) {
@@ -188,16 +188,16 @@ func blocksListRun(cmd *cobra.Command, args []string) error {
 				}
 			}
 
-			v := b.Meta.GetString(waveobj.MetaKey_View, "")
+			v := b.Meta.GetString(remotetermobj.MetaKey_View, "")
 			allBlocks = append(allBlocks, BlockDetails{
 				BlockId:     b.BlockId,
 				Id:          "block:" + b.BlockId,
 				WorkspaceId: b.WorkspaceId,
 				TabId:       b.TabId,
 				View:        v,
-				Connection:  b.Meta.GetString(waveobj.MetaKey_Connection, ""),
-				Cwd:         b.Meta.GetString(waveobj.MetaKey_CmdCwd, ""),
-				Title:       b.Meta.GetString(waveobj.MetaKey_FrameTitle, ""),
+				Connection:  b.Meta.GetString(remotetermobj.MetaKey_Connection, ""),
+				Cwd:         b.Meta.GetString(remotetermobj.MetaKey_CmdCwd, ""),
+				Title:       b.Meta.GetString(remotetermobj.MetaKey_FrameTitle, ""),
 				Index:       b.Index,
 				Geometry:    b.Geometry,
 				Focused:     b.Focused,
@@ -253,11 +253,11 @@ func blocksListRun(cmd *cobra.Command, args []string) error {
 
 		switch view {
 		case "preview", "edit":
-			content = b.Meta.GetString(waveobj.MetaKey_File, "<no file>")
+			content = b.Meta.GetString(remotetermobj.MetaKey_File, "<no file>")
 		case "web":
-			content = b.Meta.GetString(waveobj.MetaKey_Url, "<no url>")
+			content = b.Meta.GetString(remotetermobj.MetaKey_Url, "<no url>")
 		case "term":
-			content = b.Meta.GetString(waveobj.MetaKey_CmdCwd, "<no cwd>")
+			content = b.Meta.GetString(remotetermobj.MetaKey_CmdCwd, "<no cwd>")
 		default:
 			content = ""
 		}

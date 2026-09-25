@@ -7,7 +7,7 @@ import { NodeModel } from "@/layout/index";
 import * as jotai from "jotai";
 import * as React from "react";
 import { BlockEnv } from "./blockenv";
-import { useWaveEnv } from "@/app/waveenv/waveenv";
+import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 
 export const UserInputPromptOverlay = React.memo(
     ({

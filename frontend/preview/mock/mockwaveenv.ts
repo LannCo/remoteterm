@@ -1,12 +1,12 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { WaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { makeDefaultConnStatus } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { AllServiceTypes } from "@/app/store/services";
 import { handleWaveEvent } from "@/app/store/wps";
 import { RpcApiType } from "@/app/store/wshclientapi";
-import { WaveEnv } from "@/app/waveenv/waveenv";
 import { PlatformLinux, PlatformMacOS, PlatformWindows } from "@/util/platformutil";
 import { NullAtom } from "@/util/util";
 import { Atom, atom, PrimitiveAtom, useAtomValue } from "jotai";
@@ -404,7 +404,7 @@ export function makeMockWaveEnv(mockEnv?: MockEnv): MockWaveEnv {
             meta: {
                 view: "sysinfo",
                 connection: MockSysinfoConnection,
-                "sysinfo:type": "CPU + Mem",
+                "graph:metrics": ["cpu", "mem:used"],
                 "graph:numpoints": 90,
             },
         } as Block,

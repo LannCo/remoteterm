@@ -8,13 +8,13 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
-// secretNameRegex must match the validation in pkg/wconfig/secretstore.go
+// secretNameRegex must match the validation in pkg/rtconfig/secretstore.go
 var secretNameRegex = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
 
 var secretUiMagnified bool
@@ -158,15 +158,15 @@ func secretDeleteRun(cmd *cobra.Command, args []string) error {
 func secretUiRun(cmd *cobra.Command, args []string) error {
 	tabId := getTabIdFromEnv()
 	if tabId == "" {
-		return fmt.Errorf("no WAVETERM_TABID env var set")
+		return fmt.Errorf("no REMOTETERM_TABID env var set")
 	}
 
 	wshCmd := &wshrpc.CommandCreateBlockData{
 		TabId: tabId,
-		BlockDef: &waveobj.BlockDef{
+		BlockDef: &remotetermobj.BlockDef{
 			Meta: map[string]interface{}{
-				waveobj.MetaKey_View: "waveconfig",
-				waveobj.MetaKey_File: "secrets",
+				remotetermobj.MetaKey_View: "remotetermconfig",
+				remotetermobj.MetaKey_File: "secrets",
 			},
 		},
 		Magnified: secretUiMagnified,

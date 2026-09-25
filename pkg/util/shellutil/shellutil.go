@@ -18,12 +18,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wavetermdev/waveterm/pkg/util/envutil"
-	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
-	"github.com/wavetermdev/waveterm/pkg/utilds"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtconfig"
+	"github.com/LannCo/remoteterm/pkg/util/envutil"
+	"github.com/LannCo/remoteterm/pkg/util/utilfn"
+	"github.com/LannCo/remoteterm/pkg/utilds"
 )
 
 var (
@@ -153,7 +153,7 @@ func hasDirPart(dir string, part string) bool {
 	return false
 }
 
-func FindGitBash(config *wconfig.FullConfigType, rescan bool) string {
+func FindGitBash(config *rtconfig.FullConfigType, rescan bool) string {
 	if runtime.GOOS != "windows" {
 		return ""
 	}
@@ -211,8 +211,8 @@ func findInstalledGitBash() (string, error) {
 	return "", nil
 }
 
-func DefaultTermSize() waveobj.TermSize {
-	return waveobj.TermSize{Rows: DefaultTermRows, Cols: DefaultTermCols}
+func DefaultTermSize() remotetermobj.TermSize {
+	return remotetermobj.TermSize{Rows: DefaultTermRows, Cols: DefaultTermCols}
 }
 
 func WaveshellLocalEnvVars(termType string) map[string]string {
@@ -225,9 +225,11 @@ func WaveshellLocalEnvVars(termType string) map[string]string {
 	if os.Getenv("COLORTERM") == "" {
 		rtn["COLORTERM"] = "truecolor"
 	}
-	rtn["WAVETERM"], _ = os.Executable()
-	rtn["WAVETERM_VERSION"] = wavebase.WaveVersion
-	rtn["WAVETERM_WSHBINDIR"] = filepath.Join(wavebase.GetWaveDataDir(), WaveHomeBinDir)
+	wshExecPath, _ := os.Executable()
+	rtn[remotetermbase.WaveFlagVarName] = wshExecPath
+	rtn[remotetermbase.LegacyWaveFlagVarName] = wshExecPath
+	rtn[remotetermbase.WaveVersionVarName] = remotetermbase.WaveVersion
+	rtn["REMOTETERM_WSHBINDIR"] = filepath.Join(remotetermbase.GetWaveDataDir(), WaveHomeBinDir)
 	return rtn
 }
 
@@ -279,19 +281,19 @@ func InitCustomShellStartupFiles() error {
 }
 
 func GetLocalBashRcFileOverride() string {
-	return filepath.Join(wavebase.GetWaveDataDir(), BashIntegrationDir, ".bashrc")
+	return filepath.Join(remotetermbase.GetWaveDataDir(), BashIntegrationDir, ".bashrc")
 }
 
 func GetLocalWaveFishFilePath() string {
-	return filepath.Join(wavebase.GetWaveDataDir(), FishIntegrationDir, "wave.fish")
+	return filepath.Join(remotetermbase.GetWaveDataDir(), FishIntegrationDir, "remoteterm.fish")
 }
 
 func GetLocalWavePowershellEnv() string {
-	return filepath.Join(wavebase.GetWaveDataDir(), PwshIntegrationDir, "wavepwsh.ps1")
+	return filepath.Join(remotetermbase.GetWaveDataDir(), PwshIntegrationDir, "remotetermpwsh.ps1")
 }
 
 func GetLocalZshZDotDir() string {
-	return filepath.Join(wavebase.GetWaveDataDir(), ZshIntegrationDir)
+	return filepath.Join(remotetermbase.GetWaveDataDir(), ZshIntegrationDir)
 }
 
 func HasWaveZshHistory() (bool, int64) {
@@ -345,11 +347,11 @@ func GetLocalWshBinaryPath(version string, goos string, goarch string) (string, 
 	if goos == "windows" {
 		ext = ".exe"
 	}
-	if !wavebase.SupportedWshBinaries[fmt.Sprintf("%s-%s", goos, goarch)] {
+	if !remotetermbase.SupportedWshBinaries[fmt.Sprintf("%s-%s", goos, goarch)] {
 		return "", fmt.Errorf("unsupported wsh platform: %s-%s", goos, goarch)
 	}
 	baseName := fmt.Sprintf("wsh-%s-%s.%s%s", version, goos, goarch, ext)
-	return filepath.Join(wavebase.GetWaveAppBinPath(), baseName), nil
+	return filepath.Join(remotetermbase.GetWaveAppBinPath(), baseName), nil
 }
 
 // absWshBinDir must be an absolute, expanded path (no ~ or $HOME, etc.)
@@ -357,22 +359,22 @@ func GetLocalWshBinaryPath(version string, goos string, goarch string) (string, 
 func InitRcFiles(waveHome string, absWshBinDir string) error {
 	// ensure directories exist
 	zshDir := filepath.Join(waveHome, ZshIntegrationDir)
-	err := wavebase.CacheEnsureDir(zshDir, ZshIntegrationDir, 0755, ZshIntegrationDir)
+	err := remotetermbase.CacheEnsureDir(zshDir, ZshIntegrationDir, 0755, ZshIntegrationDir)
 	if err != nil {
 		return err
 	}
 	bashDir := filepath.Join(waveHome, BashIntegrationDir)
-	err = wavebase.CacheEnsureDir(bashDir, BashIntegrationDir, 0755, BashIntegrationDir)
+	err = remotetermbase.CacheEnsureDir(bashDir, BashIntegrationDir, 0755, BashIntegrationDir)
 	if err != nil {
 		return err
 	}
 	fishDir := filepath.Join(waveHome, FishIntegrationDir)
-	err = wavebase.CacheEnsureDir(fishDir, FishIntegrationDir, 0755, FishIntegrationDir)
+	err = remotetermbase.CacheEnsureDir(fishDir, FishIntegrationDir, 0755, FishIntegrationDir)
 	if err != nil {
 		return err
 	}
 	pwshDir := filepath.Join(waveHome, PwshIntegrationDir)
-	err = wavebase.CacheEnsureDir(pwshDir, PwshIntegrationDir, 0755, PwshIntegrationDir)
+	err = remotetermbase.CacheEnsureDir(pwshDir, PwshIntegrationDir, 0755, PwshIntegrationDir)
 	if err != nil {
 		return err
 	}
@@ -414,13 +416,13 @@ func InitRcFiles(waveHome string, absWshBinDir string) error {
 	if err != nil {
 		return fmt.Errorf("error writing bash-integration bash_preexec.sh: %v", err)
 	}
-	err = utilfn.WriteTemplateToFile(filepath.Join(fishDir, "wave.fish"), FishStartup_Wavefish, params)
+	err = utilfn.WriteTemplateToFile(filepath.Join(fishDir, "remoteterm.fish"), FishStartup_Wavefish, params)
 	if err != nil {
-		return fmt.Errorf("error writing fish-integration wave.fish: %v", err)
+		return fmt.Errorf("error writing fish-integration remoteterm.fish: %v", err)
 	}
-	err = utilfn.WriteTemplateToFile(filepath.Join(pwshDir, "wavepwsh.ps1"), PwshStartup_wavepwsh, params)
+	err = utilfn.WriteTemplateToFile(filepath.Join(pwshDir, "remotetermpwsh.ps1"), PwshStartup_wavepwsh, params)
 	if err != nil {
-		return fmt.Errorf("error writing pwsh-integration wavepwsh.ps1: %v", err)
+		return fmt.Errorf("error writing pwsh-integration remotetermpwsh.ps1: %v", err)
 	}
 
 	return nil
@@ -428,20 +430,20 @@ func InitRcFiles(waveHome string, absWshBinDir string) error {
 
 func initCustomShellStartupFilesInternal() error {
 	log.Printf("initializing wsh and shell startup files\n")
-	waveDataHome := wavebase.GetWaveDataDir()
+	waveDataHome := remotetermbase.GetWaveDataDir()
 	binDir := filepath.Join(waveDataHome, WaveHomeBinDir)
 	err := InitRcFiles(waveDataHome, binDir)
 	if err != nil {
 		return err
 	}
 
-	err = wavebase.CacheEnsureDir(binDir, WaveHomeBinDir, 0755, WaveHomeBinDir)
+	err = remotetermbase.CacheEnsureDir(binDir, WaveHomeBinDir, 0755, WaveHomeBinDir)
 	if err != nil {
 		return err
 	}
 
 	// copy the correct binary to bin
-	wshFullPath, err := GetLocalWshBinaryPath(wavebase.WaveVersion, runtime.GOOS, runtime.GOARCH)
+	wshFullPath, err := GetLocalWshBinaryPath(remotetermbase.WaveVersion, runtime.GOOS, runtime.GOARCH)
 	if err != nil {
 		log.Printf("error (non-fatal), could not resolve wsh binary path: %v\n", err)
 	}

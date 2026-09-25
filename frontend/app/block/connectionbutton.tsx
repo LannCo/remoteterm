@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { computeConnColorNum } from "@/app/block/blockutil";
-import { useWaveEnv } from "@/app/waveenv/waveenv";
+import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { IconButton } from "@/element/iconbutton";
 import * as util from "@/util/util";
 import * as jotai from "jotai";
@@ -28,7 +28,8 @@ export const ConnectionButton = React.memo(
             let connIconElem: React.ReactNode = null;
             const connColorNum = computeConnColorNum(connStatus);
             let color = `var(--conn-icon-color-${connColorNum})`;
-            const clickHandler = function () {                setConnModalOpen(true);
+            const clickHandler = function () {
+                setConnModalOpen(true);
             };
             let titleText = null;
             let shouldSpin = false;

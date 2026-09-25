@@ -8,12 +8,12 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/wavetermdev/waveterm/pkg/baseds"
-	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
-	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wstore"
+	"github.com/LannCo/remoteterm/pkg/baseds"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtstore"
+	"github.com/LannCo/remoteterm/pkg/util/shellutil"
+	"github.com/LannCo/remoteterm/pkg/util/utilfn"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
 )
 
 type WshRouterControlImpl struct {
@@ -226,7 +226,7 @@ func (impl *WshRouterControlImpl) AuthenticateJobManagerVerifyCommand(ctx contex
 		return fmt.Errorf("no jobauthtoken in authenticatejobmanager message")
 	}
 
-	job, err := wstore.DBMustGet[*waveobj.Job](ctx, data.JobId)
+	job, err := rtstore.DBMustGet[*remotetermobj.Job](ctx, data.JobId)
 	if err != nil {
 		log.Printf("wshrouter authenticate-jobmanager-verify error jobid=%q: failed to get job: %v", data.JobId, err)
 		return fmt.Errorf("failed to get job: %w", err)
@@ -259,7 +259,7 @@ func (impl *WshRouterControlImpl) AuthenticateJobManagerCommand(ctx context.Cont
 	}
 
 	if impl.Router.IsRootRouter() {
-		job, err := wstore.DBMustGet[*waveobj.Job](ctx, data.JobId)
+		job, err := rtstore.DBMustGet[*remotetermobj.Job](ctx, data.JobId)
 		if err != nil {
 			log.Printf("wshrouter authenticate-jobmanager error linkid=%d jobid=%q: failed to get job: %v", linkId, data.JobId, err)
 			return fmt.Errorf("failed to get job: %w", err)

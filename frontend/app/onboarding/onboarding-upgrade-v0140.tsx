@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { useWaveEnv } from "@/app/waveenv/waveenv";
+import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 
 const UpgradeOnboardingModal_v0_14_0_Content = () => {
     const waveEnv = useWaveEnv();
@@ -23,7 +23,7 @@ const UpgradeOnboardingModal_v0_14_0_Content = () => {
                     <div className="text-foreground text-base font-semibold leading-[18px]">
                         Durable SSH Sessions{" "}
                         <button
-                            onClick={() => waveEnv.electron.openExternal("https://docs.waveterm.dev/durable-sessions")}
+                            onClick={() => waveEnv.electron.openExternal("https://docs.rterm.dev/durable-sessions")}
                             className="text-accent text-sm font-normal cursor-pointer hover:underline"
                         >
                             [see docs]

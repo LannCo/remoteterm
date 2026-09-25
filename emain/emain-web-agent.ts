@@ -6,7 +6,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { WebContents } from "electron";
 import { unamePlatform } from "./emain-platform";
 import { getWebContentsByBlockId } from "./emain-web";
-import { getWaveWindowByWorkspaceId } from "./emain-window";
+import { getRemoteTermWindowByWorkspaceId } from "./emain-window";
 import {
     AxRef,
     ERR_WEB_RUN_ABORTED,
@@ -75,7 +75,7 @@ export async function resolveGuestWebContents(data: {
     if (!data.tabid || !data.blockid || !data.workspaceid) {
         throw new Error("tabid and blockid are required");
     }
-    const ww = getWaveWindowByWorkspaceId(data.workspaceid);
+    const ww = getRemoteTermWindowByWorkspaceId(data.workspaceid);
     if (ww == null) {
         throw new Error(`no window found with workspace ${data.workspaceid}`);
     }

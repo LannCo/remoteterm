@@ -9,12 +9,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/util/envutil"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/util/envutil"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
 var runCmd = &cobra.Command{
@@ -121,22 +121,22 @@ func runRun(cmd *cobra.Command, args []string) error {
 	// Convert to null-terminated format
 	envContent := envutil.MapToEnv(envMap)
 	createMeta := map[string]any{
-		waveobj.MetaKey_View:            "term",
-		waveobj.MetaKey_CmdCwd:          cwd,
-		waveobj.MetaKey_Controller:      "cmd",
-		waveobj.MetaKey_CmdClearOnStart: true,
+		remotetermobj.MetaKey_View:            "term",
+		remotetermobj.MetaKey_CmdCwd:          cwd,
+		remotetermobj.MetaKey_Controller:      "cmd",
+		remotetermobj.MetaKey_CmdClearOnStart: true,
 	}
-	createMeta[waveobj.MetaKey_Cmd] = shellCmd
-	createMeta[waveobj.MetaKey_CmdArgs] = cmdArgs
-	createMeta[waveobj.MetaKey_CmdShell] = useShell
+	createMeta[remotetermobj.MetaKey_Cmd] = shellCmd
+	createMeta[remotetermobj.MetaKey_CmdArgs] = cmdArgs
+	createMeta[remotetermobj.MetaKey_CmdShell] = useShell
 	if paused {
-		createMeta[waveobj.MetaKey_CmdRunOnStart] = false
+		createMeta[remotetermobj.MetaKey_CmdRunOnStart] = false
 	} else {
-		createMeta[waveobj.MetaKey_CmdRunOnce] = true
-		createMeta[waveobj.MetaKey_CmdRunOnStart] = true
+		createMeta[remotetermobj.MetaKey_CmdRunOnce] = true
+		createMeta[remotetermobj.MetaKey_CmdRunOnStart] = true
 	}
 	if waitForExit && !keepBlock {
-		createMeta[waveobj.MetaKey_CmdCloseOnExitForce] = true
+		createMeta[remotetermobj.MetaKey_CmdCloseOnExitForce] = true
 		// close-on-exit races with reading the term file (2s settle). Keep a
 		// delay long enough that waitForRunBlock can finish the read; the CLI
 		// then deletes the block itself.
@@ -144,13 +144,13 @@ func runRun(cmd *cobra.Command, args []string) error {
 			delayMs = 5000
 		}
 	} else if forceExit {
-		createMeta[waveobj.MetaKey_CmdCloseOnExitForce] = true
+		createMeta[remotetermobj.MetaKey_CmdCloseOnExitForce] = true
 	} else if exit {
-		createMeta[waveobj.MetaKey_CmdCloseOnExit] = true
+		createMeta[remotetermobj.MetaKey_CmdCloseOnExit] = true
 	}
-	createMeta[waveobj.MetaKey_CmdCloseOnExitDelay] = float64(delayMs)
+	createMeta[remotetermobj.MetaKey_CmdCloseOnExitDelay] = float64(delayMs)
 	if appendOutput {
-		createMeta[waveobj.MetaKey_CmdClearOnStart] = false
+		createMeta[remotetermobj.MetaKey_CmdClearOnStart] = false
 	}
 
 	connName := connection
@@ -158,20 +158,20 @@ func runRun(cmd *cobra.Command, args []string) error {
 		connName = RpcContext.Conn
 	}
 	if connName != "" {
-		createMeta[waveobj.MetaKey_Connection] = connName
+		createMeta[remotetermobj.MetaKey_Connection] = connName
 	}
 
 	tabId := getTabIdFromEnv()
 	if tabId == "" {
-		return fmt.Errorf("no WAVETERM_TABID env var set")
+		return fmt.Errorf("no REMOTETERM_TABID env var set")
 	}
 
 	createBlockData := wshrpc.CommandCreateBlockData{
 		TabId: tabId,
-		BlockDef: &waveobj.BlockDef{
+		BlockDef: &remotetermobj.BlockDef{
 			Meta: createMeta,
-			Files: map[string]*waveobj.FileDef{
-				wavebase.BlockFile_Env: {
+			Files: map[string]*remotetermobj.FileDef{
+				remotetermbase.BlockFile_Env: {
 					Content: envContent,
 				},
 			},

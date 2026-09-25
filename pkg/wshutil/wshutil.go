@@ -17,15 +17,15 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/LannCo/remoteterm/pkg/baseds"
+	"github.com/LannCo/remoteterm/pkg/panichandler"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/remotetermjwt"
+	"github.com/LannCo/remoteterm/pkg/util/packetparser"
+	"github.com/LannCo/remoteterm/pkg/util/shellutil"
+	"github.com/LannCo/remoteterm/pkg/util/utilfn"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/wavetermdev/waveterm/pkg/baseds"
-	"github.com/wavetermdev/waveterm/pkg/panichandler"
-	"github.com/wavetermdev/waveterm/pkg/util/packetparser"
-	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
-	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/wavejwt"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
 // these should both be 5 characters
@@ -44,7 +44,8 @@ const ESC = 0x1b
 const DefaultOutputChSize = 32
 const DefaultInputChSize = 32
 
-const WaveJwtTokenVarName = wavebase.WaveJwtTokenVarName
+const WaveJwtTokenVarName = remotetermbase.WaveJwtTokenVarName
+const LegacyWaveJwtTokenVarName = remotetermbase.LegacyWaveJwtTokenVarName
 
 // OSC escape types
 // OSC 23198 ; (JSON | base64-JSON) ST
@@ -186,7 +187,7 @@ func tryTcpSocket(sockName string) (net.Conn, error) {
 }
 
 func SetupDomainSocketRpcClient(sockName string, serverImpl ServerImpl, debugName string) (*WshRpc, error) {
-	sockName = wavebase.ExpandHomeDirSafe(sockName)
+	sockName = remotetermbase.ExpandHomeDirSafe(sockName)
 	resolvedPath, err := filepath.EvalSymlinks(sockName)
 	if err == nil {
 		sockName = resolvedPath
@@ -217,7 +218,7 @@ func SetupDomainSocketRpcClient(sockName string, serverImpl ServerImpl, debugNam
 }
 
 func MakeClientJWTToken(rpcCtx wshrpc.RpcContext) (string, error) {
-	if wavebase.IsDevMode() {
+	if remotetermbase.IsDevMode() {
 		if rpcCtx.IsRouter && (rpcCtx.RouteId != "" || rpcCtx.ProcRoute) {
 			panic("Invalid RpcCtx, router w/ routeid")
 		}
@@ -225,7 +226,7 @@ func MakeClientJWTToken(rpcCtx wshrpc.RpcContext) (string, error) {
 			panic("Invalid RpcCtx, no routeid")
 		}
 	}
-	claims := &wavejwt.WaveJwtClaims{
+	claims := &remotetermjwt.WaveJwtClaims{
 		Sock:      rpcCtx.SockName,
 		RouteId:   rpcCtx.RouteId,
 		ProcRoute: rpcCtx.ProcRoute,
@@ -233,10 +234,10 @@ func MakeClientJWTToken(rpcCtx wshrpc.RpcContext) (string, error) {
 		Conn:      rpcCtx.Conn,
 		Router:    rpcCtx.IsRouter,
 	}
-	return wavejwt.Sign(claims)
+	return remotetermjwt.Sign(claims)
 }
 
-func claimsToRpcCtx(claims *wavejwt.WaveJwtClaims) *wshrpc.RpcContext {
+func claimsToRpcCtx(claims *remotetermjwt.WaveJwtClaims) *wshrpc.RpcContext {
 	return &wshrpc.RpcContext{
 		SockName:  claims.Sock,
 		RouteId:   claims.RouteId,
@@ -248,7 +249,7 @@ func claimsToRpcCtx(claims *wavejwt.WaveJwtClaims) *wshrpc.RpcContext {
 }
 
 func ValidateAndExtractRpcContextFromToken(tokenStr string) (*wshrpc.RpcContext, error) {
-	claims, err := wavejwt.ValidateAndExtract(tokenStr)
+	claims, err := remotetermjwt.ValidateAndExtract(tokenStr)
 	if err != nil {
 		return nil, err
 	}
@@ -358,11 +359,11 @@ func handleDomainSocketClient(conn net.Conn, readCallback func()) {
 
 // only for use on client
 func ExtractUnverifiedRpcContext(tokenStr string) (*wshrpc.RpcContext, error) {
-	token, _, err := new(jwt.Parser).ParseUnverified(tokenStr, &wavejwt.WaveJwtClaims{})
+	token, _, err := new(jwt.Parser).ParseUnverified(tokenStr, &remotetermjwt.WaveJwtClaims{})
 	if err != nil {
 		return nil, fmt.Errorf("error parsing token: %w", err)
 	}
-	claims, ok := token.Claims.(*wavejwt.WaveJwtClaims)
+	claims, ok := token.Claims.(*remotetermjwt.WaveJwtClaims)
 	if !ok {
 		return nil, fmt.Errorf("error getting claims from token")
 	}
@@ -371,11 +372,11 @@ func ExtractUnverifiedRpcContext(tokenStr string) (*wshrpc.RpcContext, error) {
 
 // only for use on client
 func ExtractUnverifiedSocketName(tokenStr string) (string, error) {
-	token, _, err := new(jwt.Parser).ParseUnverified(tokenStr, &wavejwt.WaveJwtClaims{})
+	token, _, err := new(jwt.Parser).ParseUnverified(tokenStr, &remotetermjwt.WaveJwtClaims{})
 	if err != nil {
 		return "", fmt.Errorf("error parsing token: %w", err)
 	}
-	claims, ok := token.Claims.(*wavejwt.WaveJwtClaims)
+	claims, ok := token.Claims.(*remotetermjwt.WaveJwtClaims)
 	if !ok {
 		return "", fmt.Errorf("error getting claims from token")
 	}
@@ -383,7 +384,7 @@ func ExtractUnverifiedSocketName(tokenStr string) (string, error) {
 	if sockName == "" {
 		return "", fmt.Errorf("sock claim is missing or invalid")
 	}
-	sockName = wavebase.ExpandHomeDirSafe(sockName)
+	sockName = remotetermbase.ExpandHomeDirSafe(sockName)
 	return sockName, nil
 }
 
@@ -402,16 +403,16 @@ func GetInfo() wshrpc.RemoteInfo {
 	return wshrpc.RemoteInfo{
 		ClientArch:    runtime.GOARCH,
 		ClientOs:      runtime.GOOS,
-		ClientVersion: wavebase.WaveVersion,
+		ClientVersion: remotetermbase.WaveVersion,
 		Shell:         getShell(),
-		HomeDir:       wavebase.GetHomeDir(),
+		HomeDir:       remotetermbase.GetHomeDir(),
 	}
 }
 
 func InstallRcFiles() error {
-	home := wavebase.GetHomeDir()
-	waveDir := filepath.Join(home, wavebase.RemoteWaveHomeDirName)
-	wshBinDir := filepath.Join(waveDir, wavebase.RemoteWshBinDirName)
+	home := remotetermbase.GetHomeDir()
+	waveDir := filepath.Join(home, remotetermbase.RemoteWaveHomeDirName)
+	wshBinDir := filepath.Join(waveDir, remotetermbase.RemoteWshBinDirName)
 	return shellutil.InitRcFiles(waveDir, wshBinDir)
 }
 

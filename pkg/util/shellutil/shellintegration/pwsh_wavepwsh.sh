@@ -2,12 +2,12 @@
 $env:PATH = {{.WSHBINDIR_PWSH}} + "{{.PATHSEP}}" + $env:PATH
 
 # Source dynamic script from wsh token
-$waveterm_swaptoken_output = wsh token $env:WAVETERM_SWAPTOKEN pwsh 2>$null | Out-String
+$waveterm_swaptoken_output = wsh token $env:REMOTETERM_SWAPTOKEN pwsh 2>$null | Out-String
 if ($waveterm_swaptoken_output -and $waveterm_swaptoken_output -ne "") {
     Invoke-Expression $waveterm_swaptoken_output
 }
 Remove-Variable -Name waveterm_swaptoken_output
-Remove-Item Env:WAVETERM_SWAPTOKEN
+Remove-Item Env:REMOTETERM_SWAPTOKEN
 
 # Load Wave completions
 wsh completion powershell | Out-String | Invoke-Expression
@@ -20,7 +20,7 @@ if ($PSStyle.FileInfo.Directory -eq "`e[44;1m") {
     $PSStyle.FileInfo.Directory = "`e[34;1m"
 }
 
-$Global:_WAVETERM_SI_FIRSTPROMPT = $true
+$Global:_REMOTETERM_SI_FIRSTPROMPT = $true
 
 # shell integration
 function Global:_waveterm_si_blocked {
@@ -51,11 +51,11 @@ function Global:_waveterm_si_prompt {
         return
     }
     
-    if ($Global:_WAVETERM_SI_FIRSTPROMPT) {
+    if ($Global:_REMOTETERM_SI_FIRSTPROMPT) {
 		# not sending uname
 		       $shellversion = $PSVersionTable.PSVersion.ToString()
 		       Write-Host -NoNewline "`e]16162;M;{`"shell`":`"pwsh`",`"shellversion`":`"$shellversion`",`"integration`":false}`a"
-        $Global:_WAVETERM_SI_FIRSTPROMPT = $false
+        $Global:_REMOTETERM_SI_FIRSTPROMPT = $false
     }
     
     _waveterm_si_osc7

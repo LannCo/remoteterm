@@ -52,7 +52,7 @@ function initGlobal(initOpts: GlobalInitOptions) {
     }
 }
 
-function initGlobalWaveEventSubs(initOpts: WaveInitOpts) {
+function initGlobalWaveEventSubs(initOpts: RemoteTermInitOpts) {
     waveEventSubscribeSingle({
         eventType: "waveobj:update",
         handler: (event) => {

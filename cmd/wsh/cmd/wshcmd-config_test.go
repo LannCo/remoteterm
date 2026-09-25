@@ -7,11 +7,11 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
+	"github.com/LannCo/remoteterm/pkg/rtconfig"
 )
 
 func TestBuildConfigFieldIndexSettings(t *testing.T) {
-	idx := buildConfigFieldIndex(reflect.TypeOf(wconfig.SettingsType{}))
+	idx := buildConfigFieldIndex(reflect.TypeOf(rtconfig.SettingsType{}))
 
 	tests := []struct {
 		name      string
@@ -52,7 +52,7 @@ func TestBuildConfigFieldIndexSettings(t *testing.T) {
 }
 
 func TestBuildConfigFieldIndexConnKeywords(t *testing.T) {
-	idx := buildConfigFieldIndex(reflect.TypeOf(wconfig.ConnKeywords{}))
+	idx := buildConfigFieldIndex(reflect.TypeOf(rtconfig.ConnKeywords{}))
 
 	tests := []struct {
 		name     string
@@ -138,9 +138,9 @@ func TestParseConfigValue(t *testing.T) {
 }
 
 func TestReadConfigFieldValue(t *testing.T) {
-	idx := buildConfigFieldIndex(reflect.TypeOf(wconfig.SettingsType{}))
+	idx := buildConfigFieldIndex(reflect.TypeOf(rtconfig.SettingsType{}))
 
-	settings := wconfig.SettingsType{
+	settings := rtconfig.SettingsType{
 		TermFontFamily: "JetBrains Mono",
 		TermFontSize:   14,
 	}
@@ -203,7 +203,7 @@ type configTagTestStruct struct {
 }
 
 func TestBuildConfigFieldIndexMetadata(t *testing.T) {
-	idx := buildConfigFieldIndex(reflect.TypeOf(wconfig.SettingsType{}))
+	idx := buildConfigFieldIndex(reflect.TypeOf(rtconfig.SettingsType{}))
 
 	tests := []struct {
 		name       string

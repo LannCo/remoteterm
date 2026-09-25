@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/wavetermdev/waveterm/pkg/panichandler"
+	"github.com/LannCo/remoteterm/pkg/panichandler"
 	"golang.org/x/crypto/ssh"
 )
 

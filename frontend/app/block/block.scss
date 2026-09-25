@@ -209,12 +209,12 @@
                             }
                         }
 
-                        .wave-button {
+                        .remoteterm-button {
                             margin-left: 3px;
                         }
 
                         // webview specific. for refresh button
-                        .wave-iconbutton {
+                        .remoteterm-iconbutton {
                             height: 100%;
                             width: 27px;
                             display: flex;
@@ -224,7 +224,7 @@
                     }
 
                     .menubutton {
-                        .wave-button {
+                        .remoteterm-button {
                             font-size: 11px;
                         }
                     }
@@ -249,7 +249,7 @@
                         opacity: 0.85;
                     }
 
-                    .wave-iconbutton {
+                    .remoteterm-iconbutton {
                         display: flex;
                         width: 24px;
                         padding: 4px 6px;
@@ -281,7 +281,7 @@
                 align-items: center;
                 justify-content: center;
 
-                .wave-iconbutton {
+                .remoteterm-iconbutton {
                     opacity: 0.7;
                     font-size: 45px;
                     margin: -30px 0 0 0;
@@ -407,7 +407,7 @@
                         }
                     }
 
-                    .wave-button:last-child {
+                    .remoteterm-button:last-child {
                         margin-top: 1.5px;
                     }
                 }

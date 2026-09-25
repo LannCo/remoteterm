@@ -6,13 +6,13 @@
 package wshclient
 
 import (
-	"github.com/wavetermdev/waveterm/pkg/baseds"
-	"github.com/wavetermdev/waveterm/pkg/vdom"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
-	"github.com/wavetermdev/waveterm/pkg/wps"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
+	"github.com/LannCo/remoteterm/pkg/baseds"
+	"github.com/LannCo/remoteterm/pkg/vdom"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtconfig"
+	"github.com/LannCo/remoteterm/pkg/wps"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
 )
 
 // command "authenticate", wshserver.AuthenticateCommand
@@ -190,14 +190,14 @@ func ControllerResyncCommand(w *wshutil.WshRpc, data wshrpc.CommandControllerRes
 }
 
 // command "createblock", wshserver.CreateBlockCommand
-func CreateBlockCommand(w *wshutil.WshRpc, data wshrpc.CommandCreateBlockData, opts *wshrpc.RpcOpts) (waveobj.ORef, error) {
-	resp, err := sendRpcRequestCallHelper[waveobj.ORef](w, "createblock", data, opts)
+func CreateBlockCommand(w *wshutil.WshRpc, data wshrpc.CommandCreateBlockData, opts *wshrpc.RpcOpts) (remotetermobj.ORef, error) {
+	resp, err := sendRpcRequestCallHelper[remotetermobj.ORef](w, "createblock", data, opts)
 	return resp, err
 }
 
 // command "createsubblock", wshserver.CreateSubBlockCommand
-func CreateSubBlockCommand(w *wshutil.WshRpc, data wshrpc.CommandCreateSubBlockData, opts *wshrpc.RpcOpts) (waveobj.ORef, error) {
-	resp, err := sendRpcRequestCallHelper[waveobj.ORef](w, "createsubblock", data, opts)
+func CreateSubBlockCommand(w *wshutil.WshRpc, data wshrpc.CommandCreateSubBlockData, opts *wshrpc.RpcOpts) (remotetermobj.ORef, error) {
+	resp, err := sendRpcRequestCallHelper[remotetermobj.ORef](w, "createsubblock", data, opts)
 	return resp, err
 }
 
@@ -453,8 +453,8 @@ func GetFocusedBlockDataCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrp
 }
 
 // command "getfullconfig", wshserver.GetFullConfigCommand
-func GetFullConfigCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (wconfig.FullConfigType, error) {
-	resp, err := sendRpcRequestCallHelper[wconfig.FullConfigType](w, "getfullconfig", nil, opts)
+func GetFullConfigCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (rtconfig.FullConfigType, error) {
+	resp, err := sendRpcRequestCallHelper[rtconfig.FullConfigType](w, "getfullconfig", nil, opts)
 	return resp, err
 }
 
@@ -465,14 +465,14 @@ func GetJwtPublicKeyCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (string, er
 }
 
 // command "getmeta", wshserver.GetMetaCommand
-func GetMetaCommand(w *wshutil.WshRpc, data wshrpc.CommandGetMetaData, opts *wshrpc.RpcOpts) (waveobj.MetaMapType, error) {
-	resp, err := sendRpcRequestCallHelper[waveobj.MetaMapType](w, "getmeta", data, opts)
+func GetMetaCommand(w *wshutil.WshRpc, data wshrpc.CommandGetMetaData, opts *wshrpc.RpcOpts) (remotetermobj.MetaMapType, error) {
+	resp, err := sendRpcRequestCallHelper[remotetermobj.MetaMapType](w, "getmeta", data, opts)
 	return resp, err
 }
 
 // command "getrtinfo", wshserver.GetRTInfoCommand
-func GetRTInfoCommand(w *wshutil.WshRpc, data wshrpc.CommandGetRTInfoData, opts *wshrpc.RpcOpts) (*waveobj.ObjRTInfo, error) {
-	resp, err := sendRpcRequestCallHelper[*waveobj.ObjRTInfo](w, "getrtinfo", data, opts)
+func GetRTInfoCommand(w *wshutil.WshRpc, data wshrpc.CommandGetRTInfoData, opts *wshrpc.RpcOpts) (*remotetermobj.ObjRTInfo, error) {
+	resp, err := sendRpcRequestCallHelper[*remotetermobj.ObjRTInfo](w, "getrtinfo", data, opts)
 	return resp, err
 }
 
@@ -494,9 +494,15 @@ func GetSecretsNamesCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) ([]string, 
 	return resp, err
 }
 
+// command "getsysinfometrics", wshserver.GetSysInfoMetricsCommand
+func GetSysInfoMetricsCommand(w *wshutil.WshRpc, data wshrpc.CommandSysInfoMetricsData, opts *wshrpc.RpcOpts) (map[string]wshrpc.MetricMeta, error) {
+	resp, err := sendRpcRequestCallHelper[map[string]wshrpc.MetricMeta](w, "getsysinfometrics", data, opts)
+	return resp, err
+}
+
 // command "gettab", wshserver.GetTabCommand
-func GetTabCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (*waveobj.Tab, error) {
-	resp, err := sendRpcRequestCallHelper[*waveobj.Tab](w, "gettab", data, opts)
+func GetTabCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (*remotetermobj.Tab, error) {
+	resp, err := sendRpcRequestCallHelper[*remotetermobj.Tab](w, "gettab", data, opts)
 	return resp, err
 }
 
@@ -621,8 +627,8 @@ func JobControllerGetAllJobManagerStatusCommand(w *wshutil.WshRpc, opts *wshrpc.
 }
 
 // command "jobcontrollerlist", wshserver.JobControllerListCommand
-func JobControllerListCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) ([]*waveobj.Job, error) {
-	resp, err := sendRpcRequestCallHelper[[]*waveobj.Job](w, "jobcontrollerlist", nil, opts)
+func JobControllerListCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) ([]*remotetermobj.Job, error) {
+	resp, err := sendRpcRequestCallHelper[[]*remotetermobj.Job](w, "jobcontrollerlist", nil, opts)
 	return resp, err
 }
 
@@ -871,8 +877,8 @@ func RenameAppFileCommand(w *wshutil.WshRpc, data wshrpc.CommandRenameAppFileDat
 }
 
 // command "resolvedirectional", wshserver.ResolveDirectionalCommand
-func ResolveDirectionalCommand(w *wshutil.WshRpc, data wshrpc.CommandResolveDirectionalData, opts *wshrpc.RpcOpts) (*waveobj.ORef, error) {
-	resp, err := sendRpcRequestCallHelper[*waveobj.ORef](w, "resolvedirectional", data, opts)
+func ResolveDirectionalCommand(w *wshutil.WshRpc, data wshrpc.CommandResolveDirectionalData, opts *wshrpc.RpcOpts) (*remotetermobj.ORef, error) {
+	resp, err := sendRpcRequestCallHelper[*remotetermobj.ORef](w, "resolvedirectional", data, opts)
 	return resp, err
 }
 
@@ -1000,6 +1006,12 @@ func StreamTestCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) chan wshrpc.Resp
 	return sendRpcRequestResponseStreamHelper[int](w, "streamtest", nil, opts)
 }
 
+// command "sysinforeprobe", wshserver.SysInfoReprobeCommand
+func SysInfoReprobeCommand(w *wshutil.WshRpc, data wshrpc.CommandSysInfoReprobeData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "sysinforeprobe", data, opts)
+	return err
+}
+
 // command "termgetscrollbacklines", wshserver.TermGetScrollbackLinesCommand
 func TermGetScrollbackLinesCommand(w *wshutil.WshRpc, data wshrpc.CommandTermGetScrollbackLinesData, opts *wshrpc.RpcOpts) (*wshrpc.CommandTermGetScrollbackLinesRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandTermGetScrollbackLinesRtnData](w, "termgetscrollbacklines", data, opts)
@@ -1037,8 +1049,8 @@ func VDomAsyncInitiationCommand(w *wshutil.WshRpc, data vdom.VDomAsyncInitiation
 }
 
 // command "vdomcreatecontext", wshserver.VDomCreateContextCommand
-func VDomCreateContextCommand(w *wshutil.WshRpc, data vdom.VDomCreateContext, opts *wshrpc.RpcOpts) (*waveobj.ORef, error) {
-	resp, err := sendRpcRequestCallHelper[*waveobj.ORef](w, "vdomcreatecontext", data, opts)
+func VDomCreateContextCommand(w *wshutil.WshRpc, data vdom.VDomCreateContext, opts *wshrpc.RpcOpts) (*remotetermobj.ORef, error) {
+	resp, err := sendRpcRequestCallHelper[*remotetermobj.ORef](w, "vdomcreatecontext", data, opts)
 	return resp, err
 }
 

@@ -48,6 +48,9 @@
         "conn:authpromptused": {
           "type": "boolean"
         },
+        "sysinfo:heavyinterval": {
+          "type": "integer"
+        },
         "display:hidden": {
           "type": "boolean"
         },

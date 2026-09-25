@@ -53,7 +53,7 @@ contextBridge.exposeInMainWorld("api", {
     createTab: (connName?: string) => ipcRenderer.send("create-tab", connName),
     closeTab: (workspaceId, tabId, confirmClose) => ipcRenderer.invoke("close-tab", workspaceId, tabId, confirmClose),
     setWindowInitStatus: (status) => ipcRenderer.send("set-window-init-status", status),
-    onWaveInit: (callback) => ipcRenderer.on("wave-init", (_event, initOpts) => callback(initOpts)),
+    onRemoteTermInit: (callback) => ipcRenderer.on("remoteterm-init", (_event, initOpts) => callback(initOpts)),
     onBuilderInit: (callback) => ipcRenderer.on("builder-init", (_event, initOpts) => callback(initOpts)),
     sendLog: (log) => ipcRenderer.send("fe-log", log),
     onQuicklook: (filePath: string) => ipcRenderer.send("quicklook", filePath),
@@ -69,7 +69,7 @@ contextBridge.exposeInMainWorld("api", {
     getPathForFile: (file: File): string => webUtils.getPathForFile(file),
     saveTextFile: (fileName: string, content: string) => ipcRenderer.invoke("save-text-file", fileName, content),
     setIsActive: () => ipcRenderer.invoke("set-is-active"),
-    onWaveResize: (callback) => ipcRenderer.on("wave-resize", (_event) => callback()),
+    onRemoteTermResize: (callback) => ipcRenderer.on("remoteterm-resize", (_event) => callback()),
 });
 
 // Custom event for "new-window"

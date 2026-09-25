@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/wavetermdev/waveterm/tsunami/app"
-	"github.com/wavetermdev/waveterm/tsunami/vdom"
+	"github.com/LannCo/remoteterm/tsunami/app"
+	"github.com/LannCo/remoteterm/tsunami/vdom"
 )
 
 // Core table types
@@ -226,7 +226,6 @@ func genTableRenderFunc[T any](props TableProps[T]) any {
 		initialSelection = []int{}
 	}
 	selectedRowsAtom := app.UseLocal(initialSelection)
-
 
 	// Handle sorting
 	handleSort := func(column string) {
@@ -521,11 +520,11 @@ func renderPagination(totalRows int, config *PaginationConfig, onPageChange func
 					}
 				},
 			}, "Previous"),
-	
+
 			vdom.H("span", map[string]any{
 				"className": "text-sm text-gray-400 px-2",
 			}, fmt.Sprintf("Page %d of %d", currentPage+1, totalPages)),
-	
+
 			vdom.H("button", map[string]any{
 				"className": vdom.Classes(
 					"px-3 py-1.5 rounded text-sm transition-colors",

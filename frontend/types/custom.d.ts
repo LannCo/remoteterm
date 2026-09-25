@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { WaveEnv } from "@/app/waveenv/waveenv";
+import type { WaveEnv } from "@/app/remotetermenv/remotetermenv";
 import type { DownloadProgress } from "@/app/view/preview/preview-model-upload";
 import { type Placement } from "@floating-ui/react";
 import type * as jotai from "jotai";
@@ -61,7 +61,7 @@ declare global {
         isPreview?: boolean;
     };
 
-    type WaveInitOpts = {
+    type RemoteTermInitOpts = {
         tabId: string;
         clientId: string;
         windowId: string;
@@ -114,8 +114,8 @@ declare global {
         setActiveTab: (tabId: string) => void; // set-active-tab
         createTab: (connName?: string) => void; // create-tab
         closeTab: (workspaceId: string, tabId: string, confirmClose: boolean) => Promise<boolean>; // close-tab
-        setWindowInitStatus: (status: "ready" | "wave-ready") => void; // set-window-init-status
-        onWaveInit: (callback: (initOpts: WaveInitOpts) => void) => void; // wave-init
+        setWindowInitStatus: (status: "ready" | "remoteterm-ready") => void; // set-window-init-status
+        onRemoteTermInit: (callback: (initOpts: RemoteTermInitOpts) => void) => void; // remoteterm-init
         onBuilderInit: (callback: (initOpts: BuilderInitOpts) => void) => void; // builder-init
         sendLog: (log: string) => void; // fe-log
         onQuicklook: (filePath: string) => void; // quicklook
@@ -131,7 +131,7 @@ declare global {
         getPathForFile: (file: File) => string; // webUtils.getPathForFile
         saveTextFile: (fileName: string, content: string) => Promise<boolean>; // save-text-file
         setIsActive: () => Promise<void>; // set-is-active
-        onWaveResize: (callback: () => void) => void; // wave-resize
+        onRemoteTermResize: (callback: () => void) => void; // remoteterm-resize
     };
 
     type ElectronContextMenuItem = {

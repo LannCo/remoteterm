@@ -11,11 +11,11 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/wavetermdev/waveterm/pkg/baseds"
-	"github.com/wavetermdev/waveterm/pkg/wavejwt"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
+	"github.com/LannCo/remoteterm/pkg/baseds"
+	"github.com/LannCo/remoteterm/pkg/remotetermjwt"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
 )
 
 type MainServerConn struct {
@@ -75,7 +75,7 @@ func (msc *MainServerConn) authenticateSelfToServer(jobAuthToken string) error {
 func (msc *MainServerConn) AuthenticateToJobManagerCommand(ctx context.Context, data wshrpc.CommandAuthenticateToJobData) error {
 	jobId, jobAuthToken := WshCmdJobManager.GetJobAuthInfo()
 
-	claims, err := wavejwt.ValidateAndExtract(data.JobAccessToken)
+	claims, err := remotetermjwt.ValidateAndExtract(data.JobAccessToken)
 	if err != nil {
 		log.Printf("AuthenticateToJobManager: failed to validate token: %v\n", err)
 		return fmt.Errorf("failed to validate token: %w", err)

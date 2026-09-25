@@ -498,6 +498,12 @@ export class RpcApiType {
         return client.wshRpcCall("getsecretsnames", null, opts);
     }
 
+    // command "getsysinfometrics" [call]
+    GetSysInfoMetricsCommand(client: WshClient, data: CommandSysInfoMetricsData, opts?: RpcOpts): Promise<{[key: string]: MetricMeta}> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getsysinfometrics", data, opts);
+        return client.wshRpcCall("getsysinfometrics", data, opts);
+    }
+
     // command "gettab" [call]
     GetTabCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<Tab> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gettab", data, opts);
@@ -1006,6 +1012,12 @@ export class RpcApiType {
 	StreamTestCommand(client: WshClient, opts?: RpcOpts): AsyncGenerator<number, void, boolean> {
         if (this.mockClient) return this.mockClient.mockWshRpcStream(client, "streamtest", null, opts);
         return client.wshRpcStream("streamtest", null, opts);
+    }
+
+    // command "sysinforeprobe" [call]
+    SysInfoReprobeCommand(client: WshClient, data: CommandSysInfoReprobeData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "sysinforeprobe", data, opts);
+        return client.wshRpcCall("sysinforeprobe", data, opts);
     }
 
     // command "termgetscrollbacklines" [call]
