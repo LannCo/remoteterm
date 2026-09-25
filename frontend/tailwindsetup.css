@@ -35,6 +35,10 @@
     --color-highlightbg: rgba(255, 255, 255, 0.2);
     --color-accent: rgb(88, 193, 66);
     --color-accenthover: rgb(118, 223, 96);
+    /* deliberately mode-invariant: dark text reads on the accent green in both modes */
+    --color-onaccent: rgb(34, 34, 34);
+    --color-accent-text: rgb(88, 193, 66);
+    --color-inputbg: rgba(0, 0, 0, 0.2);
     --color-surface: rgba(255, 255, 255, 0.05);
     --color-activebg: rgba(88, 193, 66, 0.15);
 
@@ -86,7 +90,9 @@
     --color-primary: #1a1a1a;
     --color-muted-foreground: rgb(107, 111, 106);
     --color-secondary: rgb(107, 111, 106);
-    --color-muted: rgb(150, 155, 150);
+    --color-muted: rgb(112, 117, 112);
+    --color-accent-text: rgb(47, 133, 47);
+    --color-inputbg: rgba(0, 0, 0, 0.06);
     --color-panel: rgba(245, 246, 245, 0.9);
     --color-hover: rgba(0, 0, 0, 0.06);
     --color-border: rgba(0, 0, 0, 0.14);

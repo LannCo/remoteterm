@@ -142,11 +142,11 @@ const StalledOverlay = React.memo(
                         className="fa-solid fa-triangle-exclamation text-warning text-base shrink-0"
                         title="Connection Stalled"
                     ></i>
-                    <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-white min-w-0 flex-1 break-words @max-xxs:hidden">
+                    <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-primary min-w-0 flex-1 break-words @max-xxs:hidden">
                         Connection to "{connName}" is stalled
                         {elapsedTime && ` (no activity for ${elapsedTime})`}
                         {connStatus.canautoreconnect && !connStatus.suppressautoreconnect && (
-                            <div className="text-[10px] text-white/70 mt-0.5">
+                            <div className="text-[10px] text-primary/70 mt-0.5">
                                 Attempting to recover automatically…
                             </div>
                         )}
@@ -229,32 +229,32 @@ const DisconnectedOverlay = React.memo(
                         )}
                         title={permanentTitle ?? "Disconnected"}
                     ></i>
-                    <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-white min-w-0 flex-1 break-words @max-xxs:hidden">
+                    <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-primary min-w-0 flex-1 break-words @max-xxs:hidden">
                         {permanentTitle ? (
                             <>
                                 <div>
                                     {permanentTitle} — "{connName}"
                                 </div>
                                 {permanentHint && (
-                                    <div className="text-[10px] text-white/70 mt-0.5">{permanentHint}</div>
+                                    <div className="text-[10px] text-primary/70 mt-0.5">{permanentHint}</div>
                                 )}
                                 {connStatus.error && (
-                                    <div className="text-[10px] text-white/50 mt-0.5 truncate">{connStatus.error}</div>
+                                    <div className="text-[10px] text-primary/50 mt-0.5 truncate">{connStatus.error}</div>
                                 )}
                             </>
                         ) : (
                             <>
                                 <div>Disconnected from "{connName}"</div>
                                 {connStatus.error && (
-                                    <div className="text-[10px] text-white/70 mt-0.5 truncate">{connStatus.error}</div>
+                                    <div className="text-[10px] text-primary/70 mt-0.5 truncate">{connStatus.error}</div>
                                 )}
                                 {hasCountdown && countdown !== "now" && (
-                                    <div className="text-[10px] text-white/70 mt-0.5">
+                                    <div className="text-[10px] text-primary/70 mt-0.5">
                                         Auto-retrying in {countdown}
                                     </div>
                                 )}
                                 {connStatus.suppressautoreconnect && !hasCountdown && (
-                                    <div className="text-[10px] text-white/70 mt-0.5">
+                                    <div className="text-[10px] text-primary/70 mt-0.5">
                                         Auto-retry stopped — click Reconnect when ready
                                     </div>
                                 )}
@@ -264,7 +264,7 @@ const DisconnectedOverlay = React.memo(
                                 {!connStatus.canautoreconnect &&
                                     !connStatus.suppressautoreconnect &&
                                     !hasCountdown && (
-                                        <div className="text-[10px] text-white/70 mt-0.5">
+                                        <div className="text-[10px] text-primary/70 mt-0.5">
                                             Sign in required — click Reconnect or focus this tab to enter your
                                             credentials
                                         </div>
@@ -309,7 +309,7 @@ const RetryingOverlay = React.memo(
             <div className={overlayShellClass} ref={overlayRefCallback} aria-live="polite">
                 <div className="flex items-center gap-3 w-full pt-2.5 pb-2.5 pr-2 pl-3">
                     <i className="fa-solid fa-spinner fa-spin text-warning text-base shrink-0" title="Connecting"></i>
-                    <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-white min-w-0 flex-1 break-words @max-xxs:hidden">
+                    <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-primary min-w-0 flex-1 break-words @max-xxs:hidden">
                         Attempt {attempt} — connecting to "{connName}"…
                     </div>
                     <div className="flex-1 hidden @max-xxs:block"></div>
@@ -353,9 +353,9 @@ const CountdownOverlay = React.memo(
             <div className={overlayShellClass} ref={overlayRefCallback} aria-live="polite">
                 <div className="flex items-center gap-3 w-full pt-2.5 pb-2.5 pr-2 pl-3">
                     <i className="fa-solid fa-clock text-grey-text text-base shrink-0" title="Waiting to retry"></i>
-                    <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-white min-w-0 flex-1 break-words @max-xxs:hidden">
+                    <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-primary min-w-0 flex-1 break-words @max-xxs:hidden">
                         {connStatus.reconnecterror && (
-                            <div className="text-[10px] text-white/70 mb-0.5 truncate">
+                            <div className="text-[10px] text-primary/70 mb-0.5 truncate">
                                 Last attempt failed: {connStatus.reconnecterror}
                             </div>
                         )}
@@ -411,9 +411,9 @@ const JobSessionOverlay = React.memo(
             <div className={overlayShellClass} ref={overlayRefCallback}>
                 <div className="flex items-center gap-3 w-full pt-2.5 pb-2.5 pr-2 pl-3">
                     <i className={clsx(icon, "text-base shrink-0")} title={title}></i>
-                    <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-white min-w-0 flex-1 break-words @max-xxs:hidden">
+                    <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-primary min-w-0 flex-1 break-words @max-xxs:hidden">
                         <div>{title}</div>
-                        {detail && <div className="text-[10px] text-white/70 mt-0.5">{detail}</div>}
+                        {detail && <div className="text-[10px] text-primary/70 mt-0.5">{detail}</div>}
                     </div>
                     <div className="flex-1 hidden @max-xxs:block"></div>
                     <div className="flex items-center gap-1.5 shrink-0">
@@ -463,7 +463,7 @@ const DrainCatchUpOverlay = React.memo(
             <div className={overlayShellClass} ref={overlayRefCallback}>
                 <div className="flex items-center gap-3 w-full pt-2.5 pb-2.5 pr-2 pl-3">
                     <i className="fa-solid fa-spinner fa-spin text-warning text-base shrink-0" title="Catching up"></i>
-                    <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-white min-w-0 flex-1 break-words @max-xxs:hidden">
+                    <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-primary min-w-0 flex-1 break-words @max-xxs:hidden">
                         {detail}
                     </div>
                     <div className="flex-1 hidden @max-xxs:block"></div>
@@ -528,13 +528,13 @@ const GaveUpOverlay = React.memo(
             <div className={overlayShellClass} ref={overlayRefCallback}>
                 <div className="flex items-center gap-3 w-full pt-2.5 pb-2.5 pr-2 pl-3">
                     <i className={clsx(icon, "text-base shrink-0")} title={title}></i>
-                    <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-white min-w-0 flex-1 break-words @max-xxs:hidden">
+                    <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-primary min-w-0 flex-1 break-words @max-xxs:hidden">
                         <div>{title} — "{connName}"</div>
-                        {detail && <div className="text-[10px] text-white/70 mt-0.5">{detail}</div>}
+                        {detail && <div className="text-[10px] text-primary/70 mt-0.5">{detail}</div>}
                         {/* UX-2.5: after sleep/resume an agent-based connection that
                             failed auth surfaces a specific agent/keychain hint here. */}
                         {stopReason === "auth-failed" && connStatus.error && (
-                            <div className="text-[10px] text-white/50 mt-0.5">{connStatus.error}</div>
+                            <div className="text-[10px] text-primary/50 mt-0.5">{connStatus.error}</div>
                         )}
                     </div>
                     <div className="flex-1 hidden @max-xxs:block"></div>
@@ -574,9 +574,9 @@ const FlappingOverlay = React.memo(
             >
                 <div className="flex items-center gap-3 w-full pt-2.5 pb-2.5 pr-2 pl-3">
                     <i className="fa-solid fa-spinner fa-spin text-warning text-base shrink-0" title="Network unstable"></i>
-                    <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-white min-w-0 flex-1 break-words @max-xxs:hidden">
+                    <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-primary min-w-0 flex-1 break-words @max-xxs:hidden">
                         Network unstable — retrying…
-                        {attempt > 0 && <span className="text-white/70"> (attempt {attempt})</span>}
+                        {attempt > 0 && <span className="text-primary/70"> (attempt {attempt})</span>}
                     </div>
                     <div className="flex-1 hidden @max-xxs:block"></div>
                 </div>
@@ -929,9 +929,9 @@ export const ConnStatusOverlay = React.memo(
                 <div className={overlayShellClass} ref={overlayRefCallback}>
                     <div className="flex items-center gap-3 w-full pt-2.5 pb-2.5 pr-2 pl-3">
                         <i className="fa-solid fa-hourglass-half text-warning text-base shrink-0" title="Waiting"></i>
-                        <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-white min-w-0 flex-1 break-words @max-xxs:hidden">
+                        <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-primary min-w-0 flex-1 break-words @max-xxs:hidden">
                             Waiting to sign in to "{connName}"…
-                            <div className="text-[10px] text-white/70 mt-0.5">
+                            <div className="text-[10px] text-primary/70 mt-0.5">
                                 Waiting for another sign-in to finish…
                             </div>
                         </div>

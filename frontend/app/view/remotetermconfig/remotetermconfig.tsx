@@ -249,7 +249,7 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
                                                         className={`px-3 py-1 rounded transition-colors text-sm ${
                                                             !hasChanges || isSaving
                                                                 ? "border border-border text-muted-foreground opacity-50"
-                                                                : "bg-accent/80 text-background hover:bg-accent cursor-pointer"
+                                                                : "bg-accent/80 text-onaccent hover:bg-accent cursor-pointer"
                                                         }`}
                                                     >
                                                         {isSaving ? "Saving..." : "Save"}

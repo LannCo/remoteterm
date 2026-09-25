@@ -21,6 +21,7 @@
     --markdown-fixed-font-size: 12px;
     --error-color: rgb(229, 77, 46);
     --warning-color: rgb(224, 185, 86);
+    --warning-text-color: rgb(224, 185, 86);
     --success-color: rgb(78, 154, 6);
     --hover-bg-color: rgba(255, 255, 255, 0.1);
     --block-bg-color: rgba(0, 0, 0, 0.5);
@@ -85,6 +86,7 @@
     --toggle-bg-color: var(--border-color);
     --modal-shadow-color: rgba(0, 0, 0, 0.8);
     --modal-backdrop-color: rgba(21, 23, 21, 0.7);
+    --tabbar-scrim-color: rgba(0, 0, 0, 0.35);
     --dropdown-shadow-color: rgba(0, 0, 0, 0.4);
     --modal-box-shadow: 0px 8px 24px 0px var(--modal-shadow-color);
 
@@ -184,6 +186,8 @@
     --modal-border-color: rgba(0, 0, 0, 0.12);
     --modal-shadow-color: rgba(0, 0, 0, 0.25);
     --modal-backdrop-color: rgba(20, 20, 20, 0.35);
+    --tabbar-scrim-color: rgba(0, 0, 0, 0.06);
+    --warning-text-color: rgb(154, 108, 8);
 
     --form-element-border-color: rgba(20, 24, 20, 0.14);
     --form-element-secondary-color: rgba(0, 0, 0, 0.12);

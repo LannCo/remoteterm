@@ -956,7 +956,7 @@ const SegmentedControl = memo(({ value, options, onChange, labelledBy, described
         role="group"
         aria-labelledby={labelledBy}
         aria-describedby={describedBy}
-        className="flex bg-black/25 border border-border rounded-md p-0.5 shrink-0"
+        className="flex bg-inputbg border border-border rounded-md p-0.5 shrink-0"
     >
         {options.map((opt) => (
             <button
@@ -990,7 +990,7 @@ const SelectControl = memo(({ value, options, onChange, labelledBy, describedBy 
         onChange={(e) => onChange(e.target.value)}
         aria-labelledby={labelledBy}
         aria-describedby={describedBy}
-        className="shrink-0 bg-black/25 border border-border rounded-md px-2.5 py-1.5 text-xs text-primary cursor-pointer"
+        className="shrink-0 bg-inputbg border border-border rounded-md px-2.5 py-1.5 text-xs text-primary cursor-pointer"
     >
         {options.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -1041,7 +1041,7 @@ const TextControl = memo(({ value, placeholder, onCommit, labelledBy, describedB
                     (e.target as HTMLInputElement).blur();
                 }
             }}
-            className="w-[170px] shrink-0 bg-black/25 border border-border rounded-md px-2.5 py-1.5 text-xs font-mono text-right text-primary focus:outline-none focus:border-accent"
+            className="w-[170px] shrink-0 bg-inputbg border border-border rounded-md px-2.5 py-1.5 text-xs font-mono text-right text-primary focus:outline-none focus:border-accent"
         />
     );
 });
@@ -1168,7 +1168,7 @@ const NumberControl = memo(
         return (
             <div
                 onBlur={onControlBlur}
-                className="flex items-center gap-1 shrink-0 bg-black/25 border border-border rounded-md pl-2.5 pr-1 py-0.5"
+                className="flex items-center gap-1 shrink-0 bg-inputbg border border-border rounded-md pl-2.5 pr-1 py-0.5"
             >
                 <input
                     type="number"
@@ -1538,7 +1538,7 @@ export const GeneralContent = memo(({ model }: GeneralContentProps) => {
                 <input
                     type="search"
                     aria-label="Search settings"
-                    className="w-full max-w-[300px] bg-black/20 border border-border rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:border-accent"
+                    className="w-full max-w-[300px] bg-inputbg border border-border rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:border-accent"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search settings..."
