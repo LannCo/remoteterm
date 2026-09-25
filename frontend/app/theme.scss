@@ -84,6 +84,8 @@
     --modal-border-radius: 6px;
     --toggle-bg-color: var(--border-color);
     --modal-shadow-color: rgba(0, 0, 0, 0.8);
+    --modal-backdrop-color: rgba(21, 23, 21, 0.7);
+    --dropdown-shadow-color: rgba(0, 0, 0, 0.4);
     --modal-box-shadow: 0px 8px 24px 0px var(--modal-shadow-color);
 
     --toggle-thumb-color: var(--main-text-color);
@@ -155,4 +157,41 @@
     --button-red-outlined-color: #ff3c3c;
     --button-yellow-bg: #c4a000;
     --button-yellow-hover-bg: #fce94f;
+}
+
+:root[data-theme="light"] {
+    --main-text-color: #1a1a1a;
+    --secondary-text-color: rgb(107, 111, 106);
+    --grey-text-color: #6b6f6a;
+    --main-bg-color: rgb(255, 255, 255);
+    --border-color: rgba(0, 0, 0, 0.14);
+    --panel-bg-color: rgba(245, 246, 245, 0.9);
+    --highlight-bg-color: rgba(0, 0, 0, 0.08);
+    --hover-bg-color: rgba(0, 0, 0, 0.06);
+    --block-bg-color: rgba(255, 255, 255, 0.6);
+    --block-bg-solid-color: rgb(255, 255, 255);
+
+    --keybinding-color: #2a2a2a;
+    --keybinding-bg-color: #e8e8e8;
+    --keybinding-border-color: #cfcfcf;
+
+    --scrollbar-thumb-color: rgba(0, 0, 0, 0.18);
+    --scrollbar-thumb-hover-color: rgba(0, 0, 0, 0.35);
+    --scrollbar-thumb-active-color: rgba(0, 0, 0, 0.45);
+
+    --modal-bg-color: #ffffff;
+    --modal-header-bottom-border-color: rgba(20, 24, 20, 0.12);
+    --modal-border-color: rgba(0, 0, 0, 0.12);
+    --modal-shadow-color: rgba(0, 0, 0, 0.25);
+    --modal-backdrop-color: rgba(20, 20, 20, 0.35);
+
+    --form-element-border-color: rgba(20, 24, 20, 0.14);
+    --form-element-secondary-color: rgba(0, 0, 0, 0.12);
+
+    --button-grey-bg: rgba(0, 0, 0, 0.04);
+    --button-grey-hover-bg: rgba(0, 0, 0, 0.08);
+    --button-grey-border-color: rgba(0, 0, 0, 0.12);
+    --button-grey-outlined-color: rgba(0, 0, 0, 0.65);
+
+    --dropdown-shadow-color: rgba(0, 0, 0, 0.18);
 }
