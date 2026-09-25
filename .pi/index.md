@@ -27,6 +27,7 @@ Most developer terminals assume code is installed, built, and tested locally. Th
 ## Current branch / handoff
 
 - **Branch:** `feat/agent-control-fabric` (worktree `waveterm-remote-agent-fabric`; based on `feat/files-widget`)
+- **2026-09-25:** merged main (reconnect config, rename phase 1, upstream sync) — brand ratified to main's identity (`remoteterm.dev` / `LannCo`); CI-build smoke test pending before web v1 work
 - **Landed:** Agent Control Fabric v2 — see [[specs/agent-control-fabric-v2.md]] (connection gate unchanged)
 - **Next session:** implement **Web CDP useful v1** — [[specs/web-agent-api-v1.md]] (Status = Locked). Paste the implement starter prompt at the bottom of that file.
 - **⚠️ ACTION (Jeremy):** run the reconnection UX-3.2 QA matrix (Q1–Q17) — manual tests, see [[specs/reconnection-p1-p2-verification.md]] for steps/expected results and [[todos.md]] for the recommended order

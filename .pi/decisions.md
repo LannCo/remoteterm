@@ -711,3 +711,11 @@ Gates are soft (delay/retry, user Connect can bypass). They do not prove the SSH
 **Split:** crawlers ingest **URLs** into text. Wave v1 drives the **user’s logged-in `<webview>`** so an agent can click, fill, and submit. An agent that only needs public-page markdown can already run `crwl` on the remote machine as a user-installed tool.
 
 **Later (not v1):** if article-style reading of the *current widget* is painful, add a thin `wsh web markdown` that runs Readability/html2text/pruning on HTML taken from the guest. Steal the extraction idea, not the crawler.
+
+## 2026-09-25: Main merge + brand ratification (main wins)
+
+**Decision:** Canonical fork identity is main's: domain `remoteterm.dev`, GitHub `LannCo/remoteterm`, appId `dev.remoteterm.app`. This supersedes the 2026-08-24 rename entries above (`remoteterm.io` / `whoisjeremylam`) — those stay as historical record, not live config.
+
+**Merge:** main (`eaa223cd`: upstream sync, configurable reconnect #19, rename phase 1, audit + telemetry-scaffolding cleanup) merged into `feat/agent-control-fabric` (`0134a84e`) after a sandbox-verified trial merge. Resolutions: brand = main everywhere; kept deletions (README.ko/zh-TW, ROADMAP, wshcmd-termscrollback.go); ConnKeywords = union (branch realignment + main's 5 reconnect/keepalive fields); wshcmd-web.go = branch snapshot/screenshot commands + main's demoted webOpenRun signature; preview-directory native-drag rewrite subsumes main's fireAndForget fix; reconnect.mdx = main. Verified: go build, targeted go tests, generators no-op, tsc delta vs baseline = zero.
+
+**Also:** origin remote URL updated to `https://github.com/LannCo/remoteterm` (redirect made the old URL work; now canonical). rerere enabled. Version stays 0.19.0. Pending: CI-build smoke test (dev boxes are headless — `task dev` not runnable there).
