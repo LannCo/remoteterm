@@ -80,6 +80,23 @@
     --z-window-drag: 100;
 }
 
+:root[data-theme="light"] {
+    --color-background: rgb(255, 255, 255);
+    --color-foreground: #1a1a1a;
+    --color-primary: #1a1a1a;
+    --color-muted-foreground: rgb(107, 111, 106);
+    --color-secondary: rgb(107, 111, 106);
+    --color-muted: rgb(150, 155, 150);
+    --color-panel: rgba(245, 246, 245, 0.9);
+    --color-hover: rgba(0, 0, 0, 0.06);
+    --color-border: rgba(0, 0, 0, 0.14);
+    --color-modalbg: #ffffff;
+    --color-hoverbg: rgba(0, 0, 0, 0.08);
+    --color-highlightbg: rgba(0, 0, 0, 0.08);
+    --color-surface: rgba(0, 0, 0, 0.04);
+    --color-activebg: rgba(88, 193, 66, 0.12);
+}
+
 /* Applied when body.nohover is set — used to suppress hover effects during tab remount to prevent ghost-hover flicker */
 @custom-variant nohover {
     body.nohover & {
