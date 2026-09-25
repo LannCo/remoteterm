@@ -128,6 +128,8 @@ declare global {
         saveTextFile: (fileName: string, content: string) => Promise<boolean>; // save-text-file
         setIsActive: () => Promise<void>; // set-is-active
         onRemoteTermResize: (callback: () => void) => void; // remoteterm-resize
+        getNativeTheme: () => boolean; // get-native-theme
+        onNativeThemeChange: (callback: (shouldUseDarkColors: boolean) => void) => void; // native-theme-change
     };
 
     type ElectronContextMenuItem = {

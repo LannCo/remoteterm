@@ -23,6 +23,7 @@ import {
     setWasInFg,
 } from "./emain-activity";
 import { initIpcHandlers } from "./emain-ipc";
+import { registerNativeThemeListener } from "./emain-native-theme";
 import { log } from "./emain-log";
 import { initMenuEventSubscriptions, makeAndSetAppMenu, makeDockTaskbar } from "./emain-menu";
 import { formatRssSampleLine, summarizeProcessMetrics } from "./emain-rss-monitor";
@@ -65,7 +66,8 @@ let confirmQuit = true;
 const remoteTermDataDir = getRemoteTermDataDir();
 const remoteTermConfigDir = getRemoteTermConfigDir();
 
-electron.nativeTheme.themeSource = "dark";
+electron.nativeTheme.themeSource = "system";
+registerNativeThemeListener();
 
 console.log = log;
 console.log(
