@@ -59,6 +59,18 @@ export const FieldSchemas: FieldSchema[] = [
         ],
     },
     {
+        key: "window:appearancemode",
+        label: "Appearance",
+        category: "Appearance",
+        control: "segmented",
+        description: "Controls app-wide light/dark appearance: follow the OS preference, or force light/dark.",
+        options: [
+            { value: "system", label: "System" },
+            { value: "light", label: "Light" },
+            { value: "dark", label: "Dark" },
+        ],
+    },
+    {
         key: "app:confirmquit",
         label: "Confirm before quitting",
         category: "Appearance",
