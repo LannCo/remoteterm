@@ -10,6 +10,7 @@ import path from "path";
 import { configureAuthKeyRequestInjection } from "./authkey";
 import { setWasActive } from "./emain-activity";
 import { getElectronAppBasePath, isDevVite, unamePlatform } from "./emain-platform";
+import { handleTabDidFailLoad, handleTabRenderProcessGone, handleTabUnresponsive } from "./emain-tab-lifecycle";
 import {
     decreaseZoomLevel,
     handleCtrlShiftFocus,
@@ -167,6 +168,11 @@ export class RemoteTermTabView extends WebContentsView {
             removeRemoteTermTabView(this.remoteTermTabId);
             this.isDestroyed = true;
         });
+        this.webContents.on("render-process-gone", (_event, details) => handleTabRenderProcessGone(this, details));
+        this.webContents.on("unresponsive", () => handleTabUnresponsive(this));
+        this.webContents.on("did-fail-load", (_event, errorCode, errorDescription, _validatedURL, isMainFrame) =>
+            handleTabDidFailLoad(this, errorCode, errorDescription, isMainFrame)
+        );
         this.setBackgroundColor(computeBgColor(fullConfig));
     }
 
