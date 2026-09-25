@@ -5,7 +5,7 @@ A fork of [Wave Terminal](https://github.com/wavetermdev/waveterm) optimized for
 ## Upstream
 
 - Original: `https://github.com/wavetermdev/waveterm`
-- This fork: `https://github.com/whoisjeremylam/remoteterm`
+- This fork: `https://github.com/LannCo/remoteterm`
 - CWD origin points to this fork
 
 ## Purpose

@@ -48,6 +48,7 @@ golang-*/
 zig-*/
 .pi/delegate-results/
 .pi/phase-state.md
+.pi/webfetch-cache/
 
 # Local tooling / accidental artifacts (never commit)
 server

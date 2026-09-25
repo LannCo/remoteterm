@@ -76,7 +76,7 @@ Test cases:
 ### Phase 7 — Small features
 - **Cmd+R refresh**: bind `Cmd:r` in `directoryKeyDownHandler` → same refresh as header button (block-scoped dispatch prevents cross-block collision; verify editor/webview blocks unaffected when they have focus).
 - **Editable path input**: clicking the directory name in the selector turns it into an inline input; Enter navigates (support absolute paths, `~` expansion, relative segments); Escape cancels. Type-to-filter for the dropdown list is dropped per product decision.
-- **About dialog**: GitHub link → `https://github.com/whoisjeremylam/waveterm-remote`; Website link → fork GitHub; Sponsor → fork GitHub (placeholder until sponsorship exists); acknowledgements → credit upstream WaveTerm (`wavetermdev/waveterm`); copyright → `2026 LannaCo Contributors`.
+- **About dialog**: GitHub link → `https://github.com/LannCo/remoteterm`; Website link → fork GitHub; Sponsor → fork GitHub (placeholder until sponsorship exists); acknowledgements → credit upstream WaveTerm (`wavetermdev/waveterm`); copyright → `2026 LannaCo Contributors`.
 
 Test cases:
 - Manual QA: Cmd+R refreshes directory and clears nothing unexpectedly; typed path navigation incl. `~/x`, `/abs/path`, bad path → clean error; About dialog links point where specified.

@@ -1,6 +1,6 @@
 # Fork Features vs. Upstream — High-Level Summary
 
-- **Fork:** `whoisjeremylam/remoteterm` (RemoteTerm)
+- **Fork:** `LannCo/remoteterm` (RemoteTerm)
 - **Upstream:** `wavetermdev/waveterm` (Wave Terminal)
 - **Compiled:** 2026-08-13
 - **Scope:** User-visible features and notable architectural changes introduced in this fork that are **not** in upstream Wave Terminal.
