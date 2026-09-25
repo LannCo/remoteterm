@@ -12,7 +12,7 @@
     border-radius: 8px;
     border: 0.5px solid var(--modal-border-color);
     background: var(--modal-bg-color);
-    box-shadow: 0px 8px 32px 0px rgba(0, 0, 0, 0.25);
+    box-shadow: 0px 8px 32px 0px var(--modal-shadow-color);
     min-width: 360px;
     max-width: 480px;
     max-height: 80%;
@@ -39,7 +39,7 @@
     justify-content: flex-end;
     width: 100%;
     padding: 8px 12px;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid var(--modal-border-color);
 
     .remoteterm-button:last-child {
         margin-left: 8px;
