@@ -156,6 +156,7 @@ var (
 	// RemoteReconnectToJobManager publishes the route-up that spawns ReconnectJobRoute;
 	// without this, both would run restartStreaming at once and each close the
 	// other's fresh reader while sending JobPrepareConnect to the job manager.
+	// RestartBlockStream takes the same lock for the same reason.
 	jobReconnectLocks = ds.MakeSyncMap[*sync.Mutex]()
 
 	// test hooks for unit testing auto-reconnect behavior
@@ -2352,6 +2353,9 @@ func RestartBlockStream(ctx context.Context, blockId string) error {
 		return fmt.Errorf("block %q has no attached job", blockId)
 	}
 	log.Printf("[block:%s] reconnect stream requested for job %s", blockId, block.JobId)
+	lock := jobReconnectLocks.GetOrCreate(block.JobId, func() *sync.Mutex { return &sync.Mutex{} })
+	lock.Lock()
+	defer lock.Unlock()
 	if err := restartStreaming(ctx, block.JobId, false, nil); err != nil {
 		return fmt.Errorf("failed to restart stream: %w", err)
 	}

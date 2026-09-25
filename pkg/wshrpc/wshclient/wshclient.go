@@ -63,16 +63,16 @@ func BlockInfoCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (*ws
 	return resp, err
 }
 
-// command "blockrestartstream", wshserver.BlockRestartStreamCommand
-func BlockRestartStreamCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) error {
-	_, err := sendRpcRequestCallHelper[any](w, "blockrestartstream", data, opts)
-	return err
-}
-
 // command "blockjobstatus", wshserver.BlockJobStatusCommand
 func BlockJobStatusCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (*wshrpc.BlockJobStatusData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.BlockJobStatusData](w, "blockjobstatus", data, opts)
 	return resp, err
+}
+
+// command "blockrestartstream", wshserver.BlockRestartStreamCommand
+func BlockRestartStreamCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "blockrestartstream", data, opts)
+	return err
 }
 
 // command "blockslist", wshserver.BlocksListCommand

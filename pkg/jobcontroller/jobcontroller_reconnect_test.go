@@ -293,6 +293,38 @@ func TestReconnectEntrypointsSerializeRestartStreaming(t *testing.T) {
 	}
 }
 
+// TestRestartBlockStreamSerializesWithReconnect: the manual "Reconnect Stream" RPC
+// must share the job's reconnect lock, or it races an in-flight reconnect exactly as
+// the two reconnect entrypoints would without it.
+func TestRestartBlockStreamSerializesWithReconnect(t *testing.T) {
+	initStoreFixture(t)
+	ctx := context.Background()
+	jobId, blockId := makeRunningLocalJob(t)
+	fake := &fakeJobManager{jobId: jobId, prepareHold: 300 * time.Millisecond, prepareErr: fmt.Errorf("fake prepare failure")}
+	registerFakeJobManager(t, fake)
+	SetJobConnStatus(jobId, JobConnStatus_Connected)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		ReconnectJob(ctx, jobId, nil)
+	}()
+	go func() {
+		defer wg.Done()
+		RestartBlockStream(ctx, blockId)
+	}()
+	wg.Wait()
+
+	st := fake.stats()
+	if st.prepareCount == 0 {
+		t.Fatalf("expected at least one JobPrepareConnect")
+	}
+	if st.maxInflight > 1 {
+		t.Fatalf("%d restartStreaming calls in flight at once for one job", st.maxInflight)
+	}
+}
+
 // TestReconnectWaiterSkipsAfterHolderRestoresStream: a reconnect that waited on the
 // job's reconnect lock must see the stream the previous holder just started and
 // skip, rather than superseding it with a second JobPrepareConnect.
