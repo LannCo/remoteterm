@@ -53,7 +53,7 @@ const BackgroundTile = memo(({ label, bg, active, onClick }: BackgroundTileProps
             {active && (
                 <i
                     aria-hidden="true"
-                    className="fa-sharp fa-solid fa-check absolute top-1 right-1 text-xxs bg-accent text-background rounded-full p-1"
+                    className="fa-sharp fa-solid fa-check absolute top-1 right-1 text-xxs bg-accent text-onaccent rounded-full p-1"
                 />
             )}
         </button>
@@ -79,7 +79,7 @@ const AddBackgroundForm = memo(({ model }: AddBackgroundFormProps) => {
                     type="text"
                     autoFocus
                     aria-label="Background name"
-                    className="flex-1 max-w-[180px] bg-black/20 border border-border rounded px-2 py-1 text-xs focus:outline-none focus:border-accent"
+                    className="flex-1 max-w-[180px] bg-inputbg border border-border rounded px-2 py-1 text-xs focus:outline-none focus:border-accent"
                     placeholder="Name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
@@ -88,7 +88,7 @@ const AddBackgroundForm = memo(({ model }: AddBackgroundFormProps) => {
                 <input
                     type="text"
                     aria-label="Background CSS value"
-                    className="flex-1 bg-black/20 border border-border rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-accent"
+                    className="flex-1 bg-inputbg border border-border rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-accent"
                     placeholder="CSS background value, e.g. linear-gradient(135deg, purple, blue)"
                     value={bg}
                     onChange={(e) => setBg(e.target.value)}
@@ -98,7 +98,7 @@ const AddBackgroundForm = memo(({ model }: AddBackgroundFormProps) => {
                     }}
                 />
                 <button
-                    className="px-3 py-1.5 text-xs rounded bg-accent/80 text-background hover:bg-accent transition-colors cursor-pointer shrink-0"
+                    className="px-3 py-1.5 text-xs rounded bg-accent/80 text-onaccent hover:bg-accent transition-colors cursor-pointer shrink-0"
                     onClick={() => model.submitBackgroundAdd()}
                 >
                     Add

@@ -124,6 +124,7 @@ type SettingsType struct {
 	WindowSaveLastWindow                bool     `json:"window:savelastwindow,omitempty"`
 	WindowDimensions                    string   `json:"window:dimensions,omitempty"`
 	WindowZoom                          *float64 `json:"window:zoom,omitempty"`
+	WindowAppearanceMode                string   `json:"window:appearancemode,omitempty" jsonschema:"enum=system,enum=light,enum=dark"`
 
 	ConnClear                bool    `json:"conn:*,omitempty"`
 	ConnAskBeforeWshInstall  *bool   `json:"conn:askbeforewshinstall,omitempty"`

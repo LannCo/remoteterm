@@ -87,7 +87,7 @@
         }
 
         a {
-            color: #32afff;
+            color: var(--term-bright-blue);
         }
 
         ul {
@@ -174,7 +174,7 @@
                 justify-content: center;
                 width: 2.857em;
                 height: 2.857em;
-                background-color: black;
+                background-color: var(--block-bg-solid-color);
                 border-radius: 8px;
                 margin-right: 0.857em;
             }

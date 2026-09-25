@@ -1215,6 +1215,7 @@ declare global {
         "sysinfo:type"?: string;
         "tab:flagcolor"?: string;
         "tab:background"?: string;
+        "tab:appearancemode"?: string;
         "bg:*"?: boolean;
         bg?: string;
         "bg:opacity"?: number;
@@ -1504,6 +1505,7 @@ declare global {
         "window:savelastwindow"?: boolean;
         "window:dimensions"?: string;
         "window:zoom"?: number;
+        "window:appearancemode"?: string;
         "conn:*"?: boolean;
         "conn:askbeforewshinstall"?: boolean;
         "conn:wshenabled"?: boolean;

@@ -80,7 +80,7 @@ const QuickAddRow = memo(({ model }: QuickAddRowProps) => {
                     type="text"
                     autoFocus
                     aria-label="New connection, user@host:port"
-                    className="flex-1 max-w-[260px] bg-black/20 border border-dashed border-accent/40 rounded-md px-2.5 py-1.5 text-xs font-mono text-accent focus:outline-none focus:border-accent"
+                    className="flex-1 max-w-[260px] bg-inputbg border border-dashed border-accent/40 rounded-md px-2.5 py-1.5 text-xs font-mono text-accent focus:outline-none focus:border-accent"
                     value={value}
                     onChange={(e) => {
                         setValue(e.target.value);
@@ -96,7 +96,7 @@ const QuickAddRow = memo(({ model }: QuickAddRowProps) => {
                     placeholder="user@host:port"
                 />
                 <button
-                    className="px-3 py-1.5 text-xs rounded bg-accent/80 text-background hover:bg-accent transition-colors cursor-pointer"
+                    className="px-3 py-1.5 text-xs rounded bg-accent/80 text-onaccent hover:bg-accent transition-colors cursor-pointer"
                     onClick={() => model.submitConnectionQuickAdd()}
                 >
                     Add
@@ -137,14 +137,14 @@ const HostsHeader = memo(({ model, view, quickAddOpen }: HostsHeaderProps) => {
                 <input
                     type="search"
                     aria-label="Search connections"
-                    className="max-w-[260px] flex-1 bg-black/20 border border-border rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:border-accent"
+                    className="max-w-[260px] flex-1 bg-inputbg border border-border rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:border-accent"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search connections..."
                 />
                 <div className="flex-1" />
                 <button
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded bg-accent/80 text-background hover:bg-accent transition-colors cursor-pointer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded bg-accent/80 text-onaccent hover:bg-accent transition-colors cursor-pointer"
                     onClick={() => model.openConnectionQuickAdd()}
                 >
                     <i aria-hidden="true" className="fa-sharp fa-solid fa-plus" />
@@ -224,7 +224,7 @@ const HostsList = memo(({ names, connStatusMap, connKeywordsMap, onSetHeavyInter
                                     max={60}
                                     value={currentInterval}
                                     onChange={(e) => onSetHeavyInterval(name, Number(e.target.value))}
-                                    className="w-16 bg-black/20 border border-border rounded px-1.5 py-0.5 text-xs"
+                                    className="w-16 bg-inputbg border border-border rounded px-1.5 py-0.5 text-xs"
                                 />
                             </div>
                         )}
