@@ -91,7 +91,7 @@ In `docs/docs/config.mdx`, add a row to the settings table for `window:appearanc
 
 - [ ] **Step 4: Regenerate and verify**
 
-Run: `cd /media/owner/Workspace/remoteterm/remoteterm-daily && task generate`
+Run: `cd /media/owner/Workspace/remoteterm/remoteterm-appearance-mode && task generate`
 
 Then verify:
 ```bash
@@ -139,7 +139,7 @@ In `pkg/remotetermobj/metaconsts.go`, near `MetaKey_TabBackground = "tab:backgro
 
 - [ ] **Step 3: Regenerate and verify**
 
-Run: `cd /media/owner/Workspace/remoteterm/remoteterm-daily && task generate`
+Run: `cd /media/owner/Workspace/remoteterm/remoteterm-appearance-mode && task generate`
 
 Then verify:
 ```bash
@@ -314,7 +314,7 @@ Note the last case (`resolveAppearanceMode(null, null, false)` isn't listed abov
 
 - [ ] **Step 2: Run tests, verify they fail**
 
-Run: `cd /media/owner/Workspace/remoteterm/remoteterm-daily && npx vitest run frontend/app/store/appearance-atoms.test.ts`
+Run: `cd /media/owner/Workspace/remoteterm/remoteterm-appearance-mode && npx vitest run frontend/app/store/appearance-atoms.test.ts`
 Expected: FAIL — `Cannot find module './appearance-atoms'` or similar.
 
 - [ ] **Step 3: Implement the module**
@@ -384,7 +384,7 @@ If `settingsAtom` in `frontend/app/store/global-atoms.ts` is not currently expor
 
 - [ ] **Step 4: Run tests, verify they pass**
 
-Run: `cd /media/owner/Workspace/remoteterm/remoteterm-daily && npx vitest run frontend/app/store/appearance-atoms.test.ts`
+Run: `cd /media/owner/Workspace/remoteterm/remoteterm-appearance-mode && npx vitest run frontend/app/store/appearance-atoms.test.ts`
 Expected: PASS, 4/4 (the pure-function tests only — `osPrefersDarkAtom`'s `getApi()` init isn't exercised by this file's tests since it runs at module-import time under a test environment where `getApi()` will throw and get caught, which is itself correct/expected behavior, not a bug to chase).
 
 - [ ] **Step 5: Commit**
@@ -452,7 +452,7 @@ describe("AppThemeUpdater", () => {
 
 - [ ] **Step 2: Run test, verify it fails**
 
-Run: `cd /media/owner/Workspace/remoteterm/remoteterm-daily && npx vitest run frontend/app/appearance-theme-updater.test.tsx`
+Run: `cd /media/owner/Workspace/remoteterm/remoteterm-appearance-mode && npx vitest run frontend/app/appearance-theme-updater.test.tsx`
 Expected: FAIL — `Cannot find module './appearance-theme-updater'`.
 
 - [ ] **Step 3: Implement the component**
@@ -497,7 +497,7 @@ and mount it as a sibling of `<AppSettingsUpdater />` (currently at line 370):
 
 - [ ] **Step 5: Run tests, verify they pass**
 
-Run: `cd /media/owner/Workspace/remoteterm/remoteterm-daily && npx vitest run frontend/app/appearance-theme-updater.test.tsx`
+Run: `cd /media/owner/Workspace/remoteterm/remoteterm-appearance-mode && npx vitest run frontend/app/appearance-theme-updater.test.tsx`
 Expected: PASS, 2/2.
 
 - [ ] **Step 6: Commit**
@@ -547,7 +547,7 @@ Contrast check (manual, same method as the accent-button precedent in `.kilocode
 
 - [ ] **Step 2: Check for arbitrary-value Tailwind classes that would bypass the tokens**
 
-Run: `cd /media/owner/Workspace/remoteterm/remoteterm-daily && grep -rn -- '-\[#' frontend/app frontend/layout frontend/preview 2>/dev/null`
+Run: `cd /media/owner/Workspace/remoteterm/remoteterm-appearance-mode && grep -rn -- '-\[#' frontend/app frontend/layout frontend/preview 2>/dev/null`
 
 If this returns hits, list them in the commit message as a follow-up (don't fix in this task unless trivial) — they're components that read a literal hex color via Tailwind's arbitrary-value syntax instead of a `--color-*` token, and won't repaint under `data-theme="light"` no matter what this task does.
 
@@ -839,7 +839,7 @@ line 51: background: rgba(255, 255, 255, 0.08);
 - [ ] **Step 17: Verify no stray literals or specificity blockers remain**
 
 ```bash
-cd /media/owner/Workspace/remoteterm/remoteterm-daily
+cd /media/owner/Workspace/remoteterm/remoteterm-appearance-mode
 grep -rn '!important' frontend/app/element/directorydropdown.scss frontend/app/view/preview/directorypreview.scss frontend/app/element/flyoutmenu.scss frontend/app/element/popover.scss frontend/app/modals/modal.scss frontend/app/element/modal.scss frontend/app/block/block.scss frontend/app/element/emojipalette.scss frontend/app/element/markdown.scss frontend/app/modals/typeaheadmodal.scss frontend/app/modals/userinputprompt.scss frontend/app/view/webview/webview.scss frontend/app/tab/connectiondropdown.scss frontend/app/tab/tabbar.scss frontend/app/tab/tab.scss frontend/app/tab/workspaceswitcher.scss
 ```
 Expected: no output (no `!important` in any touched file — confirms Task 7/8's `:root[data-theme="light"]` overrides won't be silently defeated by higher-specificity rules elsewhere in these same files).
@@ -886,7 +886,7 @@ This follows the exact `segmented`-control, tri-state-enum shape already used by
 
 No new automated test needed — `generalcontent.test.ts` (existing, per Task recon: 8 tests) already exercises the `FieldSchemas`-driven rendering generically; confirm it still passes (it validates structure, not per-field content) rather than adding a redundant per-field test:
 
-Run: `cd /media/owner/Workspace/remoteterm/remoteterm-daily && npx vitest run frontend/app/view/remotetermconfig/generalcontent.test.ts`
+Run: `cd /media/owner/Workspace/remoteterm/remoteterm-appearance-mode && npx vitest run frontend/app/view/remotetermconfig/generalcontent.test.ts`
 Expected: PASS, same count as before this change (no new failures introduced by the new array entry).
 
 - [ ] **Step 3: Commit**
@@ -970,14 +970,14 @@ git commit -m "feat(appearance): add tab:appearancemode context-menu submenu"
 
 - [ ] **Step 1: Full typecheck**
 
-Run: `cd /media/owner/Workspace/remoteterm/remoteterm-daily && npx tsc --noEmit -p .`
+Run: `cd /media/owner/Workspace/remoteterm/remoteterm-appearance-mode && npx tsc --noEmit -p .`
 Expected: same pre-existing 18-error baseline as the last recorded handoff (`daily-driver/combined-2026-09-21` HEAD `be1bc300`) — no new errors introduced by this arc. If the count differs, diagnose before proceeding; don't assume it's pre-existing without checking which files the new errors are in.
 
 - [ ] **Step 2: Full test run of touched files**
 
 Run:
 ```bash
-cd /media/owner/Workspace/remoteterm/remoteterm-daily
+cd /media/owner/Workspace/remoteterm/remoteterm-appearance-mode
 npx vitest run frontend/app/store/appearance-atoms.test.ts frontend/app/appearance-theme-updater.test.tsx frontend/app/view/remotetermconfig/generalcontent.test.ts
 ```
 Expected: all green.
