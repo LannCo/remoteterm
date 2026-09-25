@@ -225,7 +225,7 @@ func testWshExec(connName string, cmd string, timeout time.Duration) error {
 		Env:   make(map[string]string),
 		Exp:   time.Now().Add(5 * time.Minute),
 	}
-	swapToken.Env["TERM_PROGRAM"] = "waveterm"
+	swapToken.Env["TERM_PROGRAM"] = "remoteterm"
 	remotetermbase.SetDualEnv(swapToken.Env, remotetermbase.WaveFlagVarName, remotetermbase.LegacyWaveFlagVarName, "1")
 	swapToken.Env[remotetermbase.WaveVersionVarName] = remotetermbase.WaveVersion
 	remotetermbase.SetDualEnv(swapToken.Env, remotetermbase.WaveConnVarName, remotetermbase.LegacyWaveConnVarName, connName)

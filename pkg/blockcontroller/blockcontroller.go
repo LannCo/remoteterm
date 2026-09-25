@@ -611,7 +611,7 @@ func makeSwapToken(ctx context.Context, logCtx context.Context, blockId string, 
 		Env:   make(map[string]string),
 		Exp:   time.Now().Add(5 * time.Minute),
 	}
-	token.Env["TERM_PROGRAM"] = "waveterm"
+	token.Env["TERM_PROGRAM"] = "remoteterm"
 	remotetermbase.SetDualEnv(token.Env, remotetermbase.WaveBlockIdVarName, remotetermbase.LegacyWaveBlockIdVarName, blockId)
 	token.Env[remotetermbase.WaveVersionVarName] = remotetermbase.WaveVersion
 	remotetermbase.SetDualEnv(token.Env, remotetermbase.WaveFlagVarName, remotetermbase.LegacyWaveFlagVarName, "1")
