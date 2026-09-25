@@ -604,3 +604,118 @@ Gates are soft (delay/retry, user Connect can bypass). They do not prove the SSH
 **Files:** `pkg/jobcontroller/jobcontroller.go`, `pkg/jobmanager/streammanager.go`, `pkg/streamclient/streamreader.go`, `pkg/streamclient/streambroker.go`, `pkg/wshrpc/{wshrpctypes,wshserver,wshclient}`, `frontend/app/store/wshclientapi.ts`, `frontend/app/view/term/term-model.ts`.
 
 **Open:** root cause not yet identified; the instrumentation is intended to capture the exact stuck state on the next occurrence (likely seq drift or an ACK deadlock in the durable-shell stream path).
+
+## 2026-08-16: Files-widget transfer transport — application-layer tar.gz, SSH compression deferred
+
+**Context:** The files widget (preview block in directory mode) transfers files over the WSH RPC protocol, which is JSON text; binary payloads are base64-encoded (`Data64`). The whole-file write/upload path carries a 32 MB cap and ships the entire file as one base64 blob in a single RPC; there is no progress, cancel, or recursive (directory) transfer. We considered enabling SSH channel compression to reclaim base64's ~33% overhead. `golang.org/x/crypto/ssh` (vendored via `local_crypto_patch/contents`) does not implement compression — `supportedCompressions = []string{compressionNone}` — so SSH compression would require implementing the `zlib@openssh.com` codec in the local crypto patch, and it taxes every byte on the connection (terminal traffic included) and gives no benefit on already-compressed files.
+
+**Decision:**
+
+1. **Application-layer compression only.** Use tar.gz streaming on the transfer path for recursive (directory) transfers and bulk multi-file transfers. This compresses only where it helps, doubles as the recursive-transfer mechanism, and leaves the SSH layer untouched.
+2. **Do not implement SSH channel compression** (`zlib@openssh.com`) for now. Revisit only if profile data shows base64 overhead on non-archive (single-file) transfers is the bottleneck after window/chunk tuning.
+3. **Stream-broker transport for all transfers.** Move upload/write off the whole-file base64 RPC onto the existing stream broker (chunked, ACK flow-controlled, no total-size limit). Progress and cancellation derive from `Writer.GetAckState()` / `Writer.GetCanceledChan()`.
+4. **Transparency requirement:** archive/bulk transfers must be surfaced distinctly from single-file transfers (phase: preparing → transferring → extracting, with file count and totals) so users do not expect scp-style per-file appearance.
+5. **Hybrid archive strategy:** pre-archive to a temp tar.gz when the tree crosses **either** a size threshold or a file-count threshold (OR-trigger: `totalSize > sizeThreshold` OR `fileCount > fileCountThreshold`), giving a determinate progress bar for large or many-file trees; stream-compress on the fly otherwise (faster start, indeterminate bar). Defaults ~64 MB / ~1,000 files, TBD. Size predicts network time; file count predicts archive/extract syscall time — either can dominate (e.g. `node_modules`-shaped trees).
+
+**Files:** (new) `.pi/specs/files-widget-transfer-engine.md`; code changes tracked there.
+
+## 2026-08-16: wsh Agent API ("Agent Control Fabric") — design decisions
+
+**Decision:** Expose terminal orchestration to AI agents via `wsh`, modeled on tmux, with two execution modes and flat geometry for layout understanding.
+
+**Context:** Agents (pi, Claude Code, Cursor) run inside terminals but can't see/control other blocks, understand spatial layout, configure the app, or prompt the user. tmux is the de-facto standard agents are already trained on, so naming should transfer from tmux (session→workspace, window→tab, pane→block).
+
+**Decisions:**
+
+1. **Two execution modes** — Mode A synchronous (`wsh run --wait --json`, the 90% workhorse: stdout+stderr+exit code+duration) vs Mode B asynchronous tmux-style block control (create / send-keys / capture / status / select / kill).
+2. **tmux-transferable naming** — grouped noun forms (`wsh block capture`, `send-keys`, `split`, `select`, `kill`, `rename`) plus top-level tmux aliases (`wsh capture-pane`, `send-keys`, `split-pane`, ...). `termscrollback` → `block capture`.
+3. **Flat geometry for v1** — per-block `x/y/w/h` fractions in `block list --json`; raw layout tree deferred. Directional (`--left-of` etc.) + title-substring addressing added to the existing resolver.
+4. **Prompt surface** — `wsh prompt` uses a UI modal (works for hidden/background orchestrators); stdin deferred.
+5. **Trust gate** — `agent:allowremotelocalcontrol` default **off**; remote-origin `wsh` targeting the `local` connection is rejected unless the user opts in.
+6. **`block status`** minimal for v1 (running/exited/exit-code); `--tail` capture (not `--since`) for v1.
+
+**Files:** `.pi/specs/wsh-agent-api.md` (full command reference + 28 test cases).
+
+**Consequences:**
+- Build order: Mode A → Mode B → layout → settings → prompt → trust gate.
+- Requires new RPCs (geometry, process state, input injection, prompt) and CLI surface; the existing `ResolveIds` resolver already covers most addressing forms (blocknum, `view:N`, `tab:N`, `this`, uuid).
+
+## 2026-08-22: Stream freeze — A1 ACK retry + B2 lock-free recv metadata
+
+**Context:** Recurring "connected but frozen" terminal is a flow-control deadlock: the backend drops a stream ACK after `timeout sending request` (5s wait on bare-client `OutputCh`, cap 32), the remote 64 KB window never advances, and the remote does not probe. Diagnosis: `.pi/stream-freeze-diagnosis.md` (on `odds-and-ends`). Review rejected the diagnosis's "snapshot trust/source at recv-loop start" (loop starts untrusted) and deferred BlockFile coalescing (frontend paints `data64`; dropping chunks corrupts the terminal).
+
+**Decision:** Implement A1 + B2 on `feat/files-widget` (already merged with `odds-and-ends` stream code). Not B1 (snapshot at start), not C1 (drop BlockFile events).
+
+1. **A1 — never drop the last ACK.** On send failure, keep one pending ACK per stream (highest seq + rwnd; Fin/Cancel OR'd). Retry on a short interval. ACK enqueue uses a 10ms fail-fast timeout so the single send worker is not blocked for 5s. Cleanup of the reader happens only after a successful Fin/Cancel send. Missing writer-route ACKs are still dropped (nowhere to send).
+2. **B2 — lock-free recv-loop metadata.** `trusted` / `sourceRouteId` / `alive` are atomics, loaded every message. Recv loop no longer takes `router.lock` via `getLinkMeta`. Trust/bind after loop start is still observed. `UnregisterLink` sets `alive=false`.
+
+**Deferred:** B3 (non-blocking `inputCh` send), B4 (per-link sender / don't hold `router.lock` around `SendRpcMessage`), C2 (concatenating BlockFile flush).
+
+**Files:** `pkg/streamclient/streambroker.go`, `pkg/wshutil/wshstreamadapter.go`, `pkg/wshutil/wshrouter.go`, tests in `pkg/streamclient/ack_retry_test.go` and `pkg/wshutil/wshrouter_recvloop_test.go`.
+
+## 2026-08-24: RemoteTerm external rename — external surfaces only, upstream identifiers kept
+
+**Context:** The fork's public identity is **RemoteTerm**. A partial rename had already landed (`package.json` name/productName/appId, `app.setName()`, window titles, About modal, app menu, TERM_PROGRAM). The review spec (`.pi/specs/remoteterm-rename-review.md`) tiered the remaining work: Tier A (user-facing) renames, Tier B (internal/upstream identifiers) kept as-is to preserve clean upstream merges.
+
+**Decision:**
+
+1. **External-only rename.** Rename UI strings, window titles, menus, dialogs, onboarding, packaging metadata, and repo docs. Do NOT rename Go import paths, internal TS identifiers, `WAVETERM_*` env vars, or the on-disk `~/.waveterm` data dir — merge friction and user-data migration risk outweigh branding purity.
+2. **GitHub repo renamed** to `github.com/whoisjeremylam/remoteterm`; all docs/links updated. (GitHub redirects the old `waveterm-remote` URL.)
+3. **Domain is `remoteterm.io`** (`remoteterm.dev` was taken). `package.json` `homepage` and the About modal "Website" button point at it; the domain is not yet registered — accepted as a temporary dead link. `appId` changed `dev.remoteterm.app` → `io.remoteterm.app` (correct reverse-DNS while install base is small; changes macOS bundle ID / Windows AppUserModelID / Linux desktop file identity).
+4. **Upgrade modals suppressed.** `onboarding-upgrade-*` (Wave AI feature history) no longer opens on version bump, and the widgets-bar "Release Notes" entry is removed. Files left on disk unreferenced to avoid upstream delete-conflicts.
+5. **Onboarding:** GitHub star links → fork repo; upstream Discord section removed.
+6. **Stale upstream docs deleted:** `README.ko.md`, `README.zh-TW.md`, `ROADMAP.md`. CONTRIBUTING/SECURITY/BUILD/CODE_OF_CONDUCT left as upstream.
+
+**Deferred (with rationale):** `docs/` Docusaurus site (no fork docs host — in-app links stay on `docs.waveterm.dev`, accurate for the shared codebase); `build/deb-postinstall.tpl` `/opt/Wave` paths and `Taskfile.yml` `APP_NAME` (packaging identity / migration risk); `wsh` CLI help and Go dialog strings (code, not chrome); logo artwork (wave motif acceptable; `aria-label` already RemoteTerm); data-dir/env-var rename (needs tested migration, own spec).
+
+**Files:** `package.json`, `index.html`, `electron-builder.config.cjs`, `frontend/app/{onboarding/onboarding.tsx, modals/{about,modalsrenderer,modalregistry}.tsx, workspace/widgets.tsx, element/quicktips.tsx}`, `README.md`, `AGENTS.md`, `.pi/`, `.github/ISSUE_TEMPLATE/bug-report.yml`.
+
+## 2026-09-02: Web CDP companion — useful v1 cut (spec next)
+
+**Decision:** Treat Wave’s existing web widget (Electron `<webview>`, `wsh web open`) as the agent browser. Do not add a separate Chrome, cloud browser, or Playwright/Puppeteer dependency. Ship a **useful v1** smaller than [[specs/web-agent-api.md]], specified in [[specs/web-agent-api-v1.md]] before any implementation.
+
+**Context:** Agent Control Fabric v2 is implemented on `feat/agent-control-fabric`. Agents still cannot drive the embedded browser. The parent web spec is the ego-lite-shaped full vision (code-first mini-API over `webContents.debugger`, AX `@N` refs, partitions, locators). Effort for that full surface is ~3–5 weeks; a useful first ship is ~1.5–2.5 weeks.
+
+**v1 includes:** CDP attach in emain; compact AX snapshot with `@N` refs; `click`/`fill`/`type` via `Input.*`; `js` / optional `cdp` escape hatch; `secret(name)` from the Wave secret store; `wsh web snapshot` / `screenshot`; un-hide `wsh web get`; setting `agent:allowbrowsercontrol` default **off**, stacked with existing `agent:allowremotelocalcontrol`. Connection gate is **not** widened.
+
+**v1 excludes:** Playwright locators (`getByRole` etc.), downloads, `--background` / partition CLI flags, MCP, passkeys (already deferred 2026-08-16).
+
+**Next:** implement from the locked spec. Do not start from the parent vision doc.
+
+**Reuse:** `emain/emain-web.ts` (`getWebContentsByBlockId`, `webGetSelector`), `cmd/wsh/cmd/wshcmd-web.go`, `web:partition`, `clear-webview-storage`. Block-layout screenshots are not page CDP screenshots.
+
+## 2026-09-02: Web CDP v1 surface — asymmetric hybrid (locked)
+
+**Decision:** Surface the embedded `<webview>` to agents as **discrete observation + code-first action**, not as ego-lite’s product CLI and not as Playwright MCP.
+
+**Context:** ego-lite’s agent API is a Node heredoc (`ego-browser nodejs <<'EOF'`) with injected JS helpers, not `ego-browser click 3`. That is the right *mechanism* (CDP + AX `@N` + `Input.*` in a host runtime). Wave already has `wsh` as the agent CLI, emain as a long-lived host, and a remote-first RPC path. Cloning task spaces, a fake `page` object, locators, or a discrete click CLI would either lie to agents or add ref-cache work we do not need for v1.
+
+**Surface:**
+
+1. **Look** with `wsh web snapshot` / `screenshot` / un-hidden `get` — one RPC, data out, no action refs that survive the process.
+2. **Act** with `wsh web run` and a small function mini-API (`navigate`, `snapshot`, `click`/`fill`/`type`, `js`, `cdp`, `secret`, `sleep`, `print`, `pageInfo`). `@N` refs live for that run only.
+3. **Do not ship** discrete `web click` / `fill` / top-level `cdp`, Playwright locators, `--background`, MCP, or ego-lite task spaces.
+
+**Gates:** `agent:allowbrowsercontrol` default off on `run`/`snapshot`/`screenshot`/`get` (not `open`). Stack with existing `agent:allowremotelocalcontrol` for remote-origin → local webview. Connection gate unchanged.
+
+**Other locks:** refuse DevTools conflict (do not steal); detach debugger after every command; fix `getWebContentsByBlockId` to the block’s tab (no auto-focus); `sleep` + snapshot loop (no `waitFor`); any secret name, audit the name; 256 KiB / 60s default / 5m max on `web run`.
+
+**Files:** `.pi/specs/web-agent-api-v1.md` (locked). Parent vision remains draft: `.pi/specs/web-agent-api.md`.
+
+## 2026-09-02: Crawl4AI is not the Wave web-agent surface
+
+**Decision:** Do not vendor Crawl4AI (`crwl`), Firecrawl, or Playwright-as-a-crawler into Wave. Do not pivot v1 off `webContents.debugger` + AX `@N` + `web run`.
+
+**Context:** Reading a page well (boilerplate, shadow DOM, iframes, cookie banners, markdown-for-LLM) is a real problem. Crawl4AI is built for that: Playwright crawler → cleaned HTML → markdown / `fit_markdown` / CSS-or-LLM extraction. Identity crawling uses **its** Chromium `user_data_dir`, not Wave’s web widget. Connecting it to Electron would mean `--remote-debugging-port`, which v1 already forbids.
+
+**Split:** crawlers ingest **URLs** into text. Wave v1 drives the **user’s logged-in `<webview>`** so an agent can click, fill, and submit. An agent that only needs public-page markdown can already run `crwl` on the remote machine as a user-installed tool.
+
+**Later (not v1):** if article-style reading of the *current widget* is painful, add a thin `wsh web markdown` that runs Readability/html2text/pruning on HTML taken from the guest. Steal the extraction idea, not the crawler.
+
+## 2026-09-25: Main merge + brand ratification (main wins)
+
+**Decision:** Canonical fork identity is main's: domain `remoteterm.dev`, GitHub `LannCo/remoteterm`, appId `dev.remoteterm.app`. This supersedes the 2026-08-24 rename entries above (`remoteterm.io` / `whoisjeremylam`) — those stay as historical record, not live config.
+
+**Merge:** main (`eaa223cd`: upstream sync, configurable reconnect #19, rename phase 1, audit + telemetry-scaffolding cleanup) merged into `feat/agent-control-fabric` (`0134a84e`) after a sandbox-verified trial merge. Resolutions: brand = main everywhere; kept deletions (README.ko/zh-TW, ROADMAP, wshcmd-termscrollback.go); ConnKeywords = union (branch realignment + main's 5 reconnect/keepalive fields); wshcmd-web.go = branch snapshot/screenshot commands + main's demoted webOpenRun signature; preview-directory native-drag rewrite subsumes main's fireAndForget fix; reconnect.mdx = main. Verified: go build, targeted go tests, generators no-op, tsc delta vs baseline = zero.
+
+**Also:** origin remote URL updated to `https://github.com/LannCo/remoteterm` (redirect made the old URL work; now canonical). rerere enabled. Version stays 0.19.0. Pending: CI-build smoke test (dev boxes are headless — `task dev` not runnable there).

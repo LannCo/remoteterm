@@ -46,6 +46,7 @@ type WshRpcInterface interface {
 	GetJwtPublicKeyCommand(ctx context.Context) (string, error) // (special) gets the public JWT signing key
 
 	MessageCommand(ctx context.Context, data CommandMessageData) error
+	PromptCommand(ctx context.Context, data CommandPromptData) (string, error)
 	GetMetaCommand(ctx context.Context, data CommandGetMetaData) (remotetermobj.MetaMapType, error)
 	SetMetaCommand(ctx context.Context, data CommandSetMetaData) error
 	ControllerInputCommand(ctx context.Context, data CommandBlockInputData) error
@@ -91,6 +92,9 @@ type WshRpcInterface interface {
 	GetTabCommand(ctx context.Context, tabId string) (*remotetermobj.Tab, error)
 	UpdateTabNameCommand(ctx context.Context, tabId string, newName string) error
 	UpdateWorkspaceTabIdsCommand(ctx context.Context, workspaceId string, tabIds []string) error
+	CreateTabCommand(ctx context.Context, data CommandCreateTabData) (CommandCreateTabRtnData, error)
+	SetActiveTabCommand(ctx context.Context, data CommandSetActiveTabData) error
+	DeleteTabCommand(ctx context.Context, data CommandDeleteTabData) (CommandDeleteTabRtnData, error)
 	GetAllBadgesCommand(ctx context.Context) ([]baseds.BadgeEvent, error)
 
 	// connection functions
@@ -143,6 +147,9 @@ type WshRpcInterface interface {
 
 	// emain
 	WebSelectorCommand(ctx context.Context, data CommandWebSelectorData) ([]string, error)
+	WebRunCommand(ctx context.Context, data CommandWebRunData) (*WebRunResult, error)
+	WebSnapshotCommand(ctx context.Context, data CommandWebSnapshotData) (*WebSnapshotResult, error)
+	WebScreenshotCommand(ctx context.Context, data CommandWebScreenshotData) (*WebScreenshotResult, error)
 	NotifyCommand(ctx context.Context, notificationOptions WaveNotificationOptions) error
 	FocusWindowCommand(ctx context.Context, windowId string) error
 	ElectronEncryptCommand(ctx context.Context, data CommandElectronEncryptData) (*CommandElectronEncryptRtnData, error)
@@ -168,6 +175,8 @@ type WshRpcInterface interface {
 	// block focus
 	SetBlockFocusCommand(ctx context.Context, blockId string) error
 	GetFocusedBlockDataCommand(ctx context.Context) (*FocusedBlockData, error)
+	GetBlockInputStateCommand(ctx context.Context, blockId string) (*BlockInputState, error)
+	ResolveDirectionalCommand(ctx context.Context, data CommandResolveDirectionalData) (*remotetermobj.ORef, error)
 
 	// rtinfo
 	GetRTInfoCommand(ctx context.Context, data CommandGetRTInfoData) (*remotetermobj.ObjRTInfo, error)
@@ -175,6 +184,10 @@ type WshRpcInterface interface {
 
 	// terminal
 	TermGetScrollbackLinesCommand(ctx context.Context, data CommandTermGetScrollbackLinesData) (*CommandTermGetScrollbackLinesRtnData, error)
+
+	// block runtime status + term file read (used by `wsh run --wait`)
+	BlockControllerStatusCommand(ctx context.Context, blockId string) (*BlockControllerStatusData, error)
+	BlockReadTermFileCommand(ctx context.Context, blockId string) (string, error)
 
 	// file
 	WshRpcFileInterface
@@ -190,6 +203,7 @@ type WshRpcInterface interface {
 	// streams
 	StreamDataCommand(ctx context.Context, data CommandStreamData) error
 	StreamDataAckCommand(ctx context.Context, data CommandStreamAckData) error
+	StreamStatusReportCommand(ctx context.Context, data CommandStreamStatusData) error
 
 	// jobs
 	AuthenticateToJobManagerCommand(ctx context.Context, data CommandAuthenticateToJobData) error
@@ -266,6 +280,45 @@ type CommandMessageData struct {
 	Message string `json:"message"`
 }
 
+type CommandPromptData struct {
+	Question      string   `json:"question"`
+	Options       []string `json:"options,omitempty"`
+	Title         string   `json:"title,omitempty"`
+	TimeoutMs     int      `json:"timeoutms,omitempty"`
+	DefaultOption string   `json:"defaultoption,omitempty"`
+}
+
+type CommandCreateTabData struct {
+	WorkspaceId string `json:"workspaceid,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Connection  string `json:"connection,omitempty"`
+	Activate    bool   `json:"activate"`
+}
+
+type CommandCreateTabRtnData struct {
+	TabId string `json:"tabid"`
+	Name  string `json:"name,omitempty"`
+}
+
+type CommandSetActiveTabData struct {
+	WorkspaceId string `json:"workspaceid"`
+	TabId       string `json:"tabid"`
+}
+
+type CommandDeleteTabData struct {
+	WorkspaceId string `json:"workspaceid"`
+	TabId       string `json:"tabid"`
+}
+
+type CommandDeleteTabRtnData struct {
+	NewActiveTabId string `json:"newactivetabid,omitempty"`
+}
+
+type BlockInputState struct {
+	BlockId         string `json:"blockid"`
+	LastUserInputMs int64  `json:"lastuserinputms"`
+}
+
 type CommandGetMetaData struct {
 	ORef remotetermobj.ORef `json:"oref"`
 }
@@ -282,6 +335,13 @@ type CommandResolveIdsData struct {
 
 type CommandResolveIdsRtnData struct {
 	ResolvedIds map[string]remotetermobj.ORef `json:"resolvedids"`
+}
+
+// CommandResolveDirectionalData resolves the block geometrically adjacent to
+// BlockId in the given Direction ("left", "right", "above", or "below").
+type CommandResolveDirectionalData struct {
+	BlockId   string `json:"blockid"`
+	Direction string `json:"direction"` // "left", "right", "above", "below"
 }
 
 type CommandCreateBlockData struct {
@@ -489,6 +549,48 @@ type CommandWebSelectorData struct {
 	Opts        *WebSelectorOpts `json:"opts,omitempty"`
 }
 
+type CommandWebRunData struct {
+	WorkspaceId string `json:"workspaceid"`
+	BlockId     string `json:"blockid"`
+	TabId       string `json:"tabid"`
+	Script      string `json:"script"`
+	TimeoutMs   int64  `json:"timeoutms,omitempty"` // default 60000
+}
+
+type WebRunResult struct {
+	BlockId   string          `json:"blockid"`
+	URL       string          `json:"url,omitempty"`
+	Title     string          `json:"title,omitempty"`
+	Stdout    string          `json:"stdout"`
+	Result    json.RawMessage `json:"result,omitempty"` // script return value, if any
+	Truncated bool            `json:"truncated,omitempty"`
+}
+
+type CommandWebSnapshotData struct {
+	WorkspaceId string `json:"workspaceid"`
+	BlockId     string `json:"blockid"`
+	TabId       string `json:"tabid"`
+}
+
+type WebSnapshotResult struct {
+	BlockId   string `json:"blockid"`
+	URL       string `json:"url,omitempty"`
+	Title     string `json:"title,omitempty"`
+	Snapshot  string `json:"snapshot"`
+	Truncated bool   `json:"truncated,omitempty"`
+}
+
+type CommandWebScreenshotData struct {
+	WorkspaceId string `json:"workspaceid"`
+	BlockId     string `json:"blockid"`
+	TabId       string `json:"tabid"`
+}
+
+type WebScreenshotResult struct {
+	BlockId string `json:"blockid"`
+	Data64  string `json:"data64"` // raw PNG base64, no data: URL prefix
+}
+
 type BlockInfoData struct {
 	BlockId     string               `json:"blockid"`
 	TabId       string               `json:"tabid"`
@@ -534,12 +636,25 @@ type BlocksListRequest struct {
 	WorkspaceId string `json:"workspaceid,omitempty"`
 }
 
+// BlockGeometry describes a block's position and size within its tab as
+// fractions of the tab's full extent (0..1), resolution-independent.
+type BlockGeometry struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+	W float64 `json:"w"`
+	H float64 `json:"h"`
+}
+
 type BlocksListEntry struct {
-	WindowId    string                    `json:"windowid"`
-	WorkspaceId string                    `json:"workspaceid"`
-	TabId       string                    `json:"tabid"`
-	BlockId     string                    `json:"blockid"`
+	WindowId    string              `json:"windowid"`
+	WorkspaceId string              `json:"workspaceid"`
+	TabId       string              `json:"tabid"`
+	BlockId     string              `json:"blockid"`
 	Meta        remotetermobj.MetaMapType `json:"meta"`
+	Index       int                 `json:"index,omitempty"`
+	Geometry    *BlockGeometry      `json:"geometry,omitempty"`
+	Focused     bool                `json:"focused,omitempty"`
+	Magnified   bool                `json:"magnified,omitempty"`
 }
 
 type CommandCaptureBlockScreenshotData struct {
@@ -641,6 +756,19 @@ type CommandTermGetScrollbackLinesRtnData struct {
 	LastUpdated int64    `json:"lastupdated"`
 }
 
+// BlockControllerStatusData is the wshrpc-level mirror of
+// blockcontroller.BlockControllerRuntimeStatus. It is kept in wshrpc (rather than
+// importing pkg/blockcontroller) to avoid an import cycle: pkg/blockcontroller
+// depends on pkg/wshrpc.
+type BlockControllerStatusData struct {
+	BlockId           string `json:"blockid"`
+	Version           int64  `json:"version"`
+	ShellProcStatus   string `json:"shellprocstatus,omitempty"`
+	ShellProcConnName string `json:"shellprocconnname,omitempty"`
+	ShellProcExitCode int    `json:"shellprocexitcode"`
+	TsunamiPort       int    `json:"tsunamiport,omitempty"`
+}
+
 type CommandTermUpdateAttachedJobData struct {
 	BlockId string `json:"blockid"`
 	JobId   string `json:"jobid,omitempty"`
@@ -680,6 +808,28 @@ type CommandStreamAckData struct {
 	Delay  int64  `json:"delay,omitempty"`  // ack delay in microseconds (from when data was received to when we sent out ack -- monotonic clock)
 	Cancel bool   `json:"cancel,omitempty"` // used to cancel the stream
 	Error  string `json:"error,omitempty"`  // reason for cancel (may only be set if cancel is true)
+}
+
+// Stream state values for CommandStreamStatusData.State. Reported by the
+// remote jobmanager so wavesrv can distinguish idle from wedged from
+// disconnected (spec: .pi/specs/stream-data-path-resilience.md).
+const (
+	StreamStateConnected  = "connected"
+	StreamStateRetrying   = "retrying"
+	StreamStateStalled    = "stalled"
+	StreamStateDiskBuffer = "disconnected-diskbuffer"
+)
+
+type CommandStreamStatusData struct {
+	JobId        string `json:"jobid"`
+	StreamId     string `json:"streamid,omitempty"`
+	State        string `json:"state"` // StreamState* constant
+	SentNotAcked int64  `json:"sentnotacked"`
+	BufCount     int64  `json:"bufcount"`
+	RWnd         int    `json:"rwnd"`
+	LastAckAgeMs int64  `json:"lastackagems,omitempty"`
+	RetryCount   int    `json:"retrycount,omitempty"`
+	DiskBufBytes int64  `json:"diskbufbytes,omitempty"`
 }
 
 type StreamMeta struct {

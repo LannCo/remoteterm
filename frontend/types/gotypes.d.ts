@@ -77,10 +77,28 @@ declare global {
         tsunamiport?: number;
     };
 
+    // wshrpc.BlockControllerStatusData
+    type BlockControllerStatusData = {
+        blockid: string;
+        version: number;
+        shellprocstatus?: string;
+        shellprocconnname?: string;
+        shellprocexitcode: number;
+        tsunamiport?: number;
+    };
+
     // remotetermobj.BlockDef
     type BlockDef = {
         files?: {[key: string]: FileDef};
         meta?: MetaType;
+    };
+
+    // wshrpc.BlockGeometry
+    type BlockGeometry = {
+        x: number;
+        y: number;
+        w: number;
+        h: number;
     };
 
     // wshrpc.BlockInfoData
@@ -90,6 +108,12 @@ declare global {
         workspaceid: string;
         block: Block;
         files: WaveFileInfo[];
+    };
+
+    // wshrpc.BlockInputState
+    type BlockInputState = {
+        blockid: string;
+        lastuserinputms: number;
     };
 
     // wshrpc.BlockJobStatusData
@@ -115,6 +139,10 @@ declare global {
         tabid: string;
         blockid: string;
         meta: MetaType;
+        index?: number;
+        geometry?: BlockGeometry;
+        focused?: boolean;
+        magnified?: boolean;
     };
 
     // wshrpc.BlocksListRequest
@@ -240,6 +268,20 @@ declare global {
         blockdef: BlockDef;
     };
 
+    // wshrpc.CommandCreateTabData
+    type CommandCreateTabData = {
+        workspaceid?: string;
+        name?: string;
+        connection?: string;
+        activate: boolean;
+    };
+
+    // wshrpc.CommandCreateTabRtnData
+    type CommandCreateTabRtnData = {
+        tabid: string;
+        name?: string;
+    };
+
     // wshrpc.CommandDebugTermData
     type CommandDebugTermData = {
         blockid: string;
@@ -267,6 +309,17 @@ declare global {
     type CommandDeleteFileData = {
         path: string;
         recursive: boolean;
+    };
+
+    // wshrpc.CommandDeleteTabData
+    type CommandDeleteTabData = {
+        workspaceid: string;
+        tabid: string;
+    };
+
+    // wshrpc.CommandDeleteTabRtnData
+    type CommandDeleteTabRtnData = {
+        newactivetabid?: string;
     };
 
     // wshrpc.CommandDisposeData
@@ -500,6 +553,15 @@ declare global {
         message: string;
     };
 
+    // wshrpc.CommandPromptData
+    type CommandPromptData = {
+        question: string;
+        options?: string[];
+        title?: string;
+        timeoutms?: number;
+        defaultoption?: string;
+    };
+
     // wshrpc.CommandPublishAppData
     type CommandPublishAppData = {
         appid: string;
@@ -620,6 +682,12 @@ declare global {
         tofilename: string;
     };
 
+    // wshrpc.CommandResolveDirectionalData
+    type CommandResolveDirectionalData = {
+        blockid: string;
+        direction: string;
+    };
+
     // wshrpc.CommandResolveIdsData
     type CommandResolveIdsData = {
         blockid: string;
@@ -634,6 +702,12 @@ declare global {
     // wshrpc.CommandRestartBuilderAndWaitData
     type CommandRestartBuilderAndWaitData = {
         builderid: string;
+    };
+
+    // wshrpc.CommandSetActiveTabData
+    type CommandSetActiveTabData = {
+        workspaceid: string;
+        tabid: string;
     };
 
     // wshrpc.CommandSetMetaData
@@ -691,6 +765,19 @@ declare global {
         error?: string;
     };
 
+    // wshrpc.CommandStreamStatusData
+    type CommandStreamStatusData = {
+        jobid: string;
+        streamid?: string;
+        state: string;
+        sentnotacked: number;
+        bufcount: number;
+        rwnd: number;
+        lastackagems?: number;
+        retrycount?: number;
+        diskbufbytes?: number;
+    };
+
     // wshrpc.CommandSysInfoMetricsData
     type CommandSysInfoMetricsData = {
         connname: string;
@@ -745,6 +832,22 @@ declare global {
         streammeta: StreamMeta;
     };
 
+    // wshrpc.CommandWebRunData
+    type CommandWebRunData = {
+        workspaceid: string;
+        blockid: string;
+        tabid: string;
+        script: string;
+        timeoutms?: number;
+    };
+
+    // wshrpc.CommandWebScreenshotData
+    type CommandWebScreenshotData = {
+        workspaceid: string;
+        blockid: string;
+        tabid: string;
+    };
+
     // wshrpc.CommandWebSelectorData
     type CommandWebSelectorData = {
         workspaceid: string;
@@ -752,6 +855,13 @@ declare global {
         tabid: string;
         selector: string;
         opts?: WebSelectorOpts;
+    };
+
+    // wshrpc.CommandWebSnapshotData
+    type CommandWebSnapshotData = {
+        workspaceid: string;
+        blockid: string;
+        tabid: string;
     };
 
     // wshrpc.CommandWriteAppFileData
@@ -1180,6 +1290,10 @@ declare global {
         "frame:title"?: string;
         "frame:icon"?: string;
         "frame:text"?: string;
+        "agent:owned"?: boolean;
+        "agent:parent"?: string;
+        "agent:cmd"?: string;
+        "agent:idempotency-key"?: string;
         "cmd:*"?: boolean;
         cmd?: string;
         "cmd:interactive"?: boolean;
@@ -1439,6 +1553,8 @@ declare global {
         "app:focusfollowscursor"?: string;
         "app:tabbar"?: string;
         "feature:rtappbuilder"?: boolean;
+        "agent:allowremotelocalcontrol"?: boolean;
+        "agent:allowbrowsercontrol"?: boolean;
         "term:*"?: boolean;
         "term:fontsize"?: number;
         "term:fontfamily"?: string;
@@ -1479,6 +1595,7 @@ declare global {
         "markdown:fixedfontsize"?: number;
         "preview:showhiddenfiles"?: boolean;
         "preview:defaultsort"?: string;
+        "files:maxuploadsize"?: number;
         "tab:preset"?: string;
         "tab:confirmclose"?: boolean;
         "tab:background"?: string;
@@ -1641,6 +1758,8 @@ declare global {
         cancellabel?: string;
         connname?: string;
         prompttype?: string;
+        options?: string[];
+        defaultoption?: string;
         queueposition?: number;
         queuetotal?: number;
     };
@@ -2004,10 +2123,35 @@ declare global {
         updates?: WaveObjUpdate[];
     };
 
+    // wshrpc.WebRunResult
+    type WebRunResult = {
+        blockid: string;
+        url?: string;
+        title?: string;
+        stdout: string;
+        result?: string;
+        truncated?: boolean;
+    };
+
+    // wshrpc.WebScreenshotResult
+    type WebScreenshotResult = {
+        blockid: string;
+        data64: string;
+    };
+
     // wshrpc.WebSelectorOpts
     type WebSelectorOpts = {
         all?: boolean;
         inner?: boolean;
+    };
+
+    // wshrpc.WebSnapshotResult
+    type WebSnapshotResult = {
+        blockid: string;
+        url?: string;
+        title?: string;
+        snapshot: string;
+        truncated?: boolean;
     };
 
     // rtconfig.WidgetConfigType

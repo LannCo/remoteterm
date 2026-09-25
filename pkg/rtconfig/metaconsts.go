@@ -20,6 +20,9 @@ const (
 
 	ConfigKey_FeatureRTAppBuilder            = "feature:rtappbuilder"
 
+	ConfigKey_AgentAllowRemoteLocalControl   = "agent:allowremotelocalcontrol"
+	ConfigKey_AgentAllowBrowserControl       = "agent:allowbrowsercontrol"
+
 	ConfigKey_TermClear                      = "term:*"
 	ConfigKey_TermFontSize                   = "term:fontsize"
 	ConfigKey_TermFontFamily                 = "term:fontfamily"
@@ -65,6 +68,8 @@ const (
 
 	ConfigKey_PreviewShowHiddenFiles         = "preview:showhiddenfiles"
 	ConfigKey_PreviewDefaultSort             = "preview:defaultsort"
+
+	ConfigKey_FilesMaxUploadSize             = "files:maxuploadsize"
 
 	ConfigKey_TabPreset                      = "tab:preset"
 	ConfigKey_TabConfirmClose                = "tab:confirmclose"

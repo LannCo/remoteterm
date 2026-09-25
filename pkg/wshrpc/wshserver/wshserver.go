@@ -41,6 +41,7 @@ import (
 	"github.com/LannCo/remoteterm/pkg/rtstore"
 	"github.com/LannCo/remoteterm/pkg/secretstore"
 	"github.com/LannCo/remoteterm/pkg/suggestion"
+	"github.com/LannCo/remoteterm/pkg/userinput"
 	"github.com/LannCo/remoteterm/pkg/util/envutil"
 	"github.com/LannCo/remoteterm/pkg/util/shellutil"
 	"github.com/LannCo/remoteterm/pkg/util/utilfn"
@@ -88,6 +89,52 @@ func (ws *WshServer) TestMultiArgCommand(ctx context.Context, arg1 string, arg2 
 func (ws *WshServer) MessageCommand(ctx context.Context, data wshrpc.CommandMessageData) error {
 	log.Printf("MESSAGE: %s\n", data.Message)
 	return nil
+}
+
+// buildPromptRequest builds the userinput.UserInputRequest for the `wsh prompt`
+// RPC. Pure function kept separate for testability. When options is empty the
+// prompt is a free-text input; otherwise it becomes an N-option picker.
+func buildPromptRequest(question string, title string, options []string, timeoutMs int, defaultOption string) *userinput.UserInputRequest {
+	if title == "" {
+		title = "Wave Terminal"
+	}
+	request := &userinput.UserInputRequest{
+		QueryText:     question,
+		Title:         title,
+		ResponseType:  "text",
+		Markdown:      false,
+		PublicText:    true,
+		PromptType:    "confirm",
+		TimeoutMs:     timeoutMs,
+		DefaultOption: defaultOption,
+	}
+	if len(options) > 0 {
+		request.ResponseType = "options"
+		request.Options = options
+	}
+	return request
+}
+
+// PromptCommand asks the user a question via a UI modal and blocks until the
+// user answers (or cancels/times out), returning the answer. PromptType is
+// "confirm" (not an SSH auth prompt) so the request is not serialized per-window.
+func (ws *WshServer) PromptCommand(ctx context.Context, data wshrpc.CommandPromptData) (string, error) {
+	defer func() {
+		panichandler.PanicHandler("PromptCommand", recover())
+	}()
+	request := buildPromptRequest(data.Question, data.Title, data.Options, data.TimeoutMs, data.DefaultOption)
+	log.Printf("[agent-audit] prompt shown timeoutms=%d hasdefault=%v\n", request.TimeoutMs, request.DefaultOption != "")
+	response, err := userinput.GetUserInput(ctx, request)
+	if err != nil {
+		return "", err
+	}
+	if response == nil {
+		return "", fmt.Errorf("no response received for prompt")
+	}
+	if response.ErrorMsg != "" {
+		return "", fmt.Errorf("%s", response.ErrorMsg)
+	}
+	return response.Text, nil
 }
 
 // for testing
@@ -168,6 +215,69 @@ func (ws *WshServer) UpdateWorkspaceTabIdsCommand(ctx context.Context, workspace
 	return nil
 }
 
+func sendWorkspaceUpdates(ctx context.Context, label string) {
+	updates := remotetermobj.ContextGetUpdatesRtn(ctx)
+	go func() {
+		defer func() {
+			panichandler.PanicHandler(label, recover())
+		}()
+		wps.Broker.SendUpdateEvents(updates)
+	}()
+}
+
+func (ws *WshServer) CreateTabCommand(ctx context.Context, data wshrpc.CommandCreateTabData) (wshrpc.CommandCreateTabRtnData, error) {
+	if data.WorkspaceId == "" {
+		return wshrpc.CommandCreateTabRtnData{}, fmt.Errorf("workspaceid is required")
+	}
+	ctx = remotetermobj.ContextWithUpdates(ctx)
+	tabId, err := rtcore.CreateTab(ctx, data.WorkspaceId, data.Name, data.Activate, false, data.Connection)
+	if err != nil {
+		return wshrpc.CommandCreateTabRtnData{}, fmt.Errorf("creating tab: %w", err)
+	}
+	sendWorkspaceUpdates(ctx, "CreateTabCommand:SendUpdateEvents")
+	tab, err := rtstore.DBMustGet[*remotetermobj.Tab](ctx, tabId)
+	name := data.Name
+	if err == nil && tab != nil {
+		name = tab.Name
+	}
+	log.Printf("[agent-audit] tab create workspace=%s tab=%s name=%q\n", data.WorkspaceId, tabId, name)
+	return wshrpc.CommandCreateTabRtnData{TabId: tabId, Name: name}, nil
+}
+
+func (ws *WshServer) SetActiveTabCommand(ctx context.Context, data wshrpc.CommandSetActiveTabData) error {
+	if data.WorkspaceId == "" || data.TabId == "" {
+		return fmt.Errorf("workspaceid and tabid are required")
+	}
+	ctx = remotetermobj.ContextWithUpdates(ctx)
+	err := rtcore.SetActiveTab(ctx, data.WorkspaceId, data.TabId)
+	if err != nil {
+		return fmt.Errorf("setting active tab: %w", err)
+	}
+	sendWorkspaceUpdates(ctx, "SetActiveTabCommand:SendUpdateEvents")
+	return nil
+}
+
+func (ws *WshServer) DeleteTabCommand(ctx context.Context, data wshrpc.CommandDeleteTabData) (wshrpc.CommandDeleteTabRtnData, error) {
+	if data.WorkspaceId == "" || data.TabId == "" {
+		return wshrpc.CommandDeleteTabRtnData{}, fmt.Errorf("workspaceid and tabid are required")
+	}
+	wsObj, err := rtcore.GetWorkspace(ctx, data.WorkspaceId)
+	if err != nil {
+		return wshrpc.CommandDeleteTabRtnData{}, err
+	}
+	if len(wsObj.TabIds) <= 1 {
+		return wshrpc.CommandDeleteTabRtnData{}, fmt.Errorf("refusing to close the last tab in the workspace")
+	}
+	ctx = remotetermobj.ContextWithUpdates(ctx)
+	newActive, err := rtcore.DeleteTab(ctx, data.WorkspaceId, data.TabId, true)
+	if err != nil {
+		return wshrpc.CommandDeleteTabRtnData{}, fmt.Errorf("closing tab: %w", err)
+	}
+	sendWorkspaceUpdates(ctx, "DeleteTabCommand:SendUpdateEvents")
+	log.Printf("[agent-audit] tab close workspace=%s tab=%s newactive=%s\n", data.WorkspaceId, data.TabId, newActive)
+	return wshrpc.CommandDeleteTabRtnData{NewActiveTabId: newActive}, nil
+}
+
 func (ws *WshServer) SetMetaCommand(ctx context.Context, data wshrpc.CommandSetMetaData) error {
 	log.Printf("SetMetaCommand: %s | %v\n", data.ORef, data.Meta)
 	oref := data.ORef
@@ -216,6 +326,13 @@ func (ws *WshServer) ResolveIdsCommand(ctx context.Context, data wshrpc.CommandR
 }
 
 func (ws *WshServer) CreateBlockCommand(ctx context.Context, data wshrpc.CommandCreateBlockData) (*remotetermobj.ORef, error) {
+	var targetConn string
+	if data.BlockDef != nil {
+		targetConn = data.BlockDef.Meta.GetString(remotetermobj.MetaKey_Connection, "")
+	}
+	if err := checkRemoteToLocalControl(ctx, targetConn); err != nil {
+		return nil, err
+	}
 	ctx = remotetermobj.ContextWithUpdates(ctx)
 	tabId := data.TabId
 	blockData, err := rtcore.CreateBlock(ctx, tabId, data.BlockDef, data.RtOpts)
@@ -311,6 +428,13 @@ func (ws *WshServer) ControllerResyncCommand(ctx context.Context, data wshrpc.Co
 }
 
 func (ws *WshServer) ControllerInputCommand(ctx context.Context, data wshrpc.CommandBlockInputData) error {
+	targetConn, err := getBlockConnName(ctx, data.BlockId)
+	if err != nil {
+		return err
+	}
+	if err := checkRemoteToLocalControl(ctx, targetConn); err != nil {
+		return err
+	}
 	inputUnion := &blockcontroller.BlockInputUnion{
 		SigName:  data.SigName,
 		TermSize: data.TermSize,
@@ -468,6 +592,13 @@ func (ws *WshServer) DeleteBlockCommand(ctx context.Context, data wshrpc.Command
 	if data.BlockId == "" {
 		return fmt.Errorf("blockid is required")
 	}
+	targetConn, err := getBlockConnName(ctx, data.BlockId)
+	if err != nil {
+		return err
+	}
+	if err := checkRemoteToLocalControl(ctx, targetConn); err != nil {
+		return err
+	}
 	ctx = remotetermobj.ContextWithUpdates(ctx)
 	tabId, err := rtstore.DBFindTabForBlockId(ctx, data.BlockId)
 	if err != nil {
@@ -593,6 +724,9 @@ func (ws *WshServer) ConnEnsureCommand(ctx context.Context, data wshrpc.ConnExtD
 }
 
 func (ws *WshServer) ConnDisconnectCommand(ctx context.Context, connName string) error {
+	if err := checkRemoteToLocalControl(ctx, connName); err != nil {
+		return err
+	}
 	if conncontroller.IsLocalConnName(connName) {
 		return nil
 	}
@@ -643,6 +777,9 @@ func (ws *WshServer) ConnStopAutoRetryCommand(ctx context.Context, connName stri
 }
 
 func (ws *WshServer) ConnConnectCommand(ctx context.Context, connRequest wshrpc.ConnRequest) error {
+	if err := checkRemoteToLocalControl(ctx, connRequest.Host); err != nil {
+		return err
+	}
 	if conncontroller.IsLocalConnName(connRequest.Host) {
 		return nil
 	}
@@ -947,18 +1084,30 @@ func (ws *WshServer) BlocksListCommand(
 			if err != nil {
 				return nil, err
 			}
+			layoutInfo, layoutErr := rtcore.ComputeBlockGeometry(ctx, tabID)
+			if layoutErr != nil {
+				log.Printf("error computing block geometry for tab %s: %v", tabID, layoutErr)
+				layoutInfo = nil
+			}
 			for _, blkID := range tab.BlockIds {
 				blk, err := rtstore.DBMustGet[*remotetermobj.Block](ctx, blkID)
 				if err != nil {
 					return nil, err
 				}
-				results = append(results, wshrpc.BlocksListEntry{
+				entry := wshrpc.BlocksListEntry{
 					WindowId:    windowId,
 					WorkspaceId: wsID,
 					TabId:       tabID,
 					BlockId:     blkID,
 					Meta:        blk.Meta,
-				})
+				}
+				if layoutInfo != nil {
+					entry.Index = layoutInfo.Index[blkID]
+					entry.Geometry = layoutInfo.Geometry[blkID]
+					entry.Focused = layoutInfo.Focused[blkID]
+					entry.Magnified = layoutInfo.Magnified[blkID]
+				}
+				results = append(results, entry)
 			}
 		}
 	}
@@ -1466,6 +1615,13 @@ func (ws *WshServer) JobControllerReconnectJobCommand(ctx context.Context, jobId
 	return jobcontroller.ReconnectJob(ctx, jobId, nil)
 }
 
+// StreamStatusReportCommand consumes fire-and-forget state reports from a
+// remote jobmanager (spec: .pi/specs/stream-data-path-resilience.md).
+func (ws *WshServer) StreamStatusReportCommand(ctx context.Context, data wshrpc.CommandStreamStatusData) error {
+	jobcontroller.HandleStreamStatusReport(data)
+	return nil
+}
+
 func (ws *WshServer) JobControllerReconnectJobsForConnCommand(ctx context.Context, connName string) error {
 	return jobcontroller.ReconnectJobsForConn(ctx, connName)
 }
@@ -1488,4 +1644,66 @@ func (ws *WshServer) BlockJobStatusCommand(ctx context.Context, blockId string) 
 
 func (ws *WshServer) BlockRestartStreamCommand(ctx context.Context, blockId string) error {
 	return jobcontroller.RestartBlockStream(ctx, blockId)
+}
+
+func (ws *WshServer) BlockControllerStatusCommand(ctx context.Context, blockId string) (*wshrpc.BlockControllerStatusData, error) {
+	status := blockcontroller.GetBlockControllerRuntimeStatus(blockId)
+	if status == nil {
+		return nil, fmt.Errorf("no block controller found for block %s", blockId)
+	}
+	return &wshrpc.BlockControllerStatusData{
+		BlockId:           status.BlockId,
+		Version:           status.Version,
+		ShellProcStatus:   status.ShellProcStatus,
+		ShellProcConnName: status.ShellProcConnName,
+		ShellProcExitCode: status.ShellProcExitCode,
+		TsunamiPort:       status.TsunamiPort,
+	}, nil
+}
+
+func (ws *WshServer) BlockReadTermFileCommand(ctx context.Context, blockId string) (string, error) {
+	readCtx, cancelFn := context.WithTimeout(context.Background(), blockcontroller.DefaultTimeout)
+	defer cancelFn()
+	_, data, err := filestore.WFS.ReadFile(readCtx, blockId, remotetermbase.BlockFile_Term)
+	if err != nil {
+		return "", fmt.Errorf("error reading block term file: %w", err)
+	}
+	return string(data), nil
+}
+
+// ResolveDirectionalCommand returns the block geometrically adjacent to
+// data.BlockId in data.Direction (left/right/above/below). Geometry is computed
+// server-side from the tab's layout tree, so directional addressing is exact
+// rather than derived from a client's estimate of block positions.
+func (ws *WshServer) ResolveDirectionalCommand(ctx context.Context, data wshrpc.CommandResolveDirectionalData) (*remotetermobj.ORef, error) {
+	switch data.Direction {
+	case "left", "right", "above", "below":
+	default:
+		return nil, fmt.Errorf("invalid direction %q (must be one of: left, right, above, below)", data.Direction)
+	}
+	if data.BlockId == "" {
+		return nil, fmt.Errorf("blockid is required")
+	}
+
+	tabId, err := rtstore.DBFindTabForBlockId(ctx, data.BlockId)
+	if err != nil {
+		return nil, fmt.Errorf("error finding tab for block: %w", err)
+	}
+	if tabId == "" {
+		return nil, fmt.Errorf("no tab found for block %s", data.BlockId)
+	}
+
+	info, err := rtcore.ComputeBlockGeometry(ctx, tabId)
+	if err != nil {
+		return nil, fmt.Errorf("computing block geometry: %w", err)
+	}
+	if info.Geometry[data.BlockId] == nil {
+		return nil, fmt.Errorf("no geometry for block %s", data.BlockId)
+	}
+
+	targetId := rtcore.FindBlockInDirection(info.Geometry, data.BlockId, data.Direction)
+	if targetId == "" {
+		return nil, fmt.Errorf("no block %s of block %s", data.Direction, data.BlockId)
+	}
+	return &remotetermobj.ORef{OType: remotetermobj.OType_Block, OID: targetId}, nil
 }

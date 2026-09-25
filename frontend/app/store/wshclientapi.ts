@@ -60,6 +60,12 @@ export class RpcApiType {
         return client.wshRpcCall("badgewatchpid", data, opts);
     }
 
+    // command "blockcontrollerstatus" [call]
+    BlockControllerStatusCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<BlockControllerStatusData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "blockcontrollerstatus", data, opts);
+        return client.wshRpcCall("blockcontrollerstatus", data, opts);
+    }
+
     // command "blockinfo" [call]
     BlockInfoCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<BlockInfoData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "blockinfo", data, opts);
@@ -70,6 +76,12 @@ export class RpcApiType {
     BlockJobStatusCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<BlockJobStatusData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "blockjobstatus", data, opts);
         return client.wshRpcCall("blockjobstatus", data, opts);
+    }
+
+    // command "blockreadtermfile" [call]
+    BlockReadTermFileCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<string> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "blockreadtermfile", data, opts);
+        return client.wshRpcCall("blockreadtermfile", data, opts);
     }
 
     // command "blockrestartstream" [call]
@@ -192,6 +204,12 @@ export class RpcApiType {
         return client.wshRpcCall("createsubblock", data, opts);
     }
 
+    // command "createtab" [call]
+    CreateTabCommand(client: WshClient, data: CommandCreateTabData, opts?: RpcOpts): Promise<CommandCreateTabRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "createtab", data, opts);
+        return client.wshRpcCall("createtab", data, opts);
+    }
+
     // command "debugterm" [call]
     DebugTermCommand(client: WshClient, data: CommandDebugTermData, opts?: RpcOpts): Promise<CommandDebugTermRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "debugterm", data, opts);
@@ -220,6 +238,12 @@ export class RpcApiType {
     DeleteSubBlockCommand(client: WshClient, data: CommandDeleteBlockData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "deletesubblock", data, opts);
         return client.wshRpcCall("deletesubblock", data, opts);
+    }
+
+    // command "deletetab" [call]
+    DeleteTabCommand(client: WshClient, data: CommandDeleteTabData, opts?: RpcOpts): Promise<CommandDeleteTabRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "deletetab", data, opts);
+        return client.wshRpcCall("deletetab", data, opts);
     }
 
     // command "dismisswshfail" [call]
@@ -406,6 +430,12 @@ export class RpcApiType {
     GetAllVarsCommand(client: WshClient, data: CommandVarData, opts?: RpcOpts): Promise<CommandVarResponseData[]> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getallvars", data, opts);
         return client.wshRpcCall("getallvars", data, opts);
+    }
+
+    // command "getblockinputstate" [call]
+    GetBlockInputStateCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<BlockInputState> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getblockinputstate", data, opts);
+        return client.wshRpcCall("getblockinputstate", data, opts);
     }
 
     // command "getbuilderoutput" [call]
@@ -702,6 +732,12 @@ export class RpcApiType {
         return client.wshRpcCall("path", data, opts);
     }
 
+    // command "prompt" [call]
+    PromptCommand(client: WshClient, data: CommandPromptData, opts?: RpcOpts): Promise<string> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "prompt", data, opts);
+        return client.wshRpcCall("prompt", data, opts);
+    }
+
     // command "publishapp" [call]
     PublishAppCommand(client: WshClient, data: CommandPublishAppData, opts?: RpcOpts): Promise<CommandPublishAppRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "publishapp", data, opts);
@@ -846,6 +882,12 @@ export class RpcApiType {
         return client.wshRpcCall("renameappfile", data, opts);
     }
 
+    // command "resolvedirectional" [call]
+    ResolveDirectionalCommand(client: WshClient, data: CommandResolveDirectionalData, opts?: RpcOpts): Promise<ORef> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "resolvedirectional", data, opts);
+        return client.wshRpcCall("resolvedirectional", data, opts);
+    }
+
     // command "resolveids" [call]
     ResolveIdsCommand(client: WshClient, data: CommandResolveIdsData, opts?: RpcOpts): Promise<CommandResolveIdsRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "resolveids", data, opts);
@@ -868,6 +910,12 @@ export class RpcApiType {
     RouteUnannounceCommand(client: WshClient, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "routeunannounce", null, opts);
         return client.wshRpcCall("routeunannounce", null, opts);
+    }
+
+    // command "setactivetab" [call]
+    SetActiveTabCommand(client: WshClient, data: CommandSetActiveTabData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "setactivetab", data, opts);
+        return client.wshRpcCall("setactivetab", data, opts);
     }
 
     // command "setblockfocus" [call]
@@ -954,6 +1002,12 @@ export class RpcApiType {
         return client.wshRpcCall("streamdataack", data, opts);
     }
 
+    // command "streamstatusreport" [call]
+    StreamStatusReportCommand(client: WshClient, data: CommandStreamStatusData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "streamstatusreport", data, opts);
+        return client.wshRpcCall("streamstatusreport", data, opts);
+    }
+
     // command "streamtest" [responsestream]
 	StreamTestCommand(client: WshClient, opts?: RpcOpts): AsyncGenerator<number, void, boolean> {
         if (this.mockClient) return this.mockClient.mockWshRpcStream(client, "streamtest", null, opts);
@@ -1038,10 +1092,28 @@ export class RpcApiType {
         return client.wshRpcCall("waveinfo", null, opts);
     }
 
+    // command "webrun" [call]
+    WebRunCommand(client: WshClient, data: CommandWebRunData, opts?: RpcOpts): Promise<WebRunResult> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "webrun", data, opts);
+        return client.wshRpcCall("webrun", data, opts);
+    }
+
+    // command "webscreenshot" [call]
+    WebScreenshotCommand(client: WshClient, data: CommandWebScreenshotData, opts?: RpcOpts): Promise<WebScreenshotResult> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "webscreenshot", data, opts);
+        return client.wshRpcCall("webscreenshot", data, opts);
+    }
+
     // command "webselector" [call]
     WebSelectorCommand(client: WshClient, data: CommandWebSelectorData, opts?: RpcOpts): Promise<string[]> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "webselector", data, opts);
         return client.wshRpcCall("webselector", data, opts);
+    }
+
+    // command "websnapshot" [call]
+    WebSnapshotCommand(client: WshClient, data: CommandWebSnapshotData, opts?: RpcOpts): Promise<WebSnapshotResult> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "websnapshot", data, opts);
+        return client.wshRpcCall("websnapshot", data, opts);
     }
 
     // command "workspacelist" [call]

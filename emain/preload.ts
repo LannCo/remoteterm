@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld("api", {
     onContextMenuClick: (callback: (id: string | null) => void) =>
         ipcRenderer.on("contextmenu-click", (_event, id: string | null) => callback(id)),
     downloadFile: (filePath) => ipcRenderer.send("download", { filePath }),
+    onDownloadProgress: (callback) => ipcRenderer.on("download-progress", (_event, progress) => callback(progress)),
+    startFileDrag: (items: { remoteUri: string; fileName: string }[]) => ipcRenderer.send("start-file-drag", { items }),
+    cleanupDragTemp: () => ipcRenderer.send("cleanup-drag-temp"),
     openExternal: (url) => {
         if (url && typeof url === "string") {
             ipcRenderer.send("open-external", url);
@@ -77,6 +80,16 @@ ipcRenderer.on("webview-new-window", (e, webContentsId, details) => {
 
 ipcRenderer.on("webcontentsid-from-blockid", (e, blockId, responseCh) => {
     const webviewElem: WebviewTag = document.querySelector("div[data-blockid='" + blockId + "'] webview");
-    const wcId = webviewElem?.dataset?.webcontentsid;
+    let wcId: string | number | undefined = webviewElem?.dataset?.webcontentsid;
+    if (wcId == null || wcId === "") {
+        try {
+            const fromApi = webviewElem?.getWebContentsId?.();
+            if (fromApi) {
+                wcId = fromApi;
+            }
+        } catch {
+            /* guest not attached yet; emain will retry */
+        }
+    }
     ipcRenderer.send(responseCh, wcId);
 });

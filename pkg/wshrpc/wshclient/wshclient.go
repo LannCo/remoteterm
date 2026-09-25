@@ -57,6 +57,12 @@ func BadgeWatchPidCommand(w *wshutil.WshRpc, data wshrpc.CommandBadgeWatchPidDat
 	return err
 }
 
+// command "blockcontrollerstatus", wshserver.BlockControllerStatusCommand
+func BlockControllerStatusCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (*wshrpc.BlockControllerStatusData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.BlockControllerStatusData](w, "blockcontrollerstatus", data, opts)
+	return resp, err
+}
+
 // command "blockinfo", wshserver.BlockInfoCommand
 func BlockInfoCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (*wshrpc.BlockInfoData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.BlockInfoData](w, "blockinfo", data, opts)
@@ -66,6 +72,12 @@ func BlockInfoCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (*ws
 // command "blockjobstatus", wshserver.BlockJobStatusCommand
 func BlockJobStatusCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (*wshrpc.BlockJobStatusData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.BlockJobStatusData](w, "blockjobstatus", data, opts)
+	return resp, err
+}
+
+// command "blockreadtermfile", wshserver.BlockReadTermFileCommand
+func BlockReadTermFileCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (string, error) {
+	resp, err := sendRpcRequestCallHelper[string](w, "blockreadtermfile", data, opts)
 	return resp, err
 }
 
@@ -189,6 +201,12 @@ func CreateSubBlockCommand(w *wshutil.WshRpc, data wshrpc.CommandCreateSubBlockD
 	return resp, err
 }
 
+// command "createtab", wshserver.CreateTabCommand
+func CreateTabCommand(w *wshutil.WshRpc, data wshrpc.CommandCreateTabData, opts *wshrpc.RpcOpts) (wshrpc.CommandCreateTabRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[wshrpc.CommandCreateTabRtnData](w, "createtab", data, opts)
+	return resp, err
+}
+
 // command "debugterm", wshserver.DebugTermCommand
 func DebugTermCommand(w *wshutil.WshRpc, data wshrpc.CommandDebugTermData, opts *wshrpc.RpcOpts) (*wshrpc.CommandDebugTermRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandDebugTermRtnData](w, "debugterm", data, opts)
@@ -217,6 +235,12 @@ func DeleteBuilderCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) 
 func DeleteSubBlockCommand(w *wshutil.WshRpc, data wshrpc.CommandDeleteBlockData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "deletesubblock", data, opts)
 	return err
+}
+
+// command "deletetab", wshserver.DeleteTabCommand
+func DeleteTabCommand(w *wshutil.WshRpc, data wshrpc.CommandDeleteTabData, opts *wshrpc.RpcOpts) (wshrpc.CommandDeleteTabRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[wshrpc.CommandDeleteTabRtnData](w, "deletetab", data, opts)
+	return resp, err
 }
 
 // command "dismisswshfail", wshserver.DismissWshFailCommand
@@ -401,6 +425,12 @@ func GetAllBadgesCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) ([]baseds.Badg
 // command "getallvars", wshserver.GetAllVarsCommand
 func GetAllVarsCommand(w *wshutil.WshRpc, data wshrpc.CommandVarData, opts *wshrpc.RpcOpts) ([]wshrpc.CommandVarResponseData, error) {
 	resp, err := sendRpcRequestCallHelper[[]wshrpc.CommandVarResponseData](w, "getallvars", data, opts)
+	return resp, err
+}
+
+// command "getblockinputstate", wshserver.GetBlockInputStateCommand
+func GetBlockInputStateCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (*wshrpc.BlockInputState, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.BlockInputState](w, "getblockinputstate", data, opts)
 	return resp, err
 }
 
@@ -698,6 +728,12 @@ func PathCommand(w *wshutil.WshRpc, data wshrpc.PathCommandData, opts *wshrpc.Rp
 	return resp, err
 }
 
+// command "prompt", wshserver.PromptCommand
+func PromptCommand(w *wshutil.WshRpc, data wshrpc.CommandPromptData, opts *wshrpc.RpcOpts) (string, error) {
+	resp, err := sendRpcRequestCallHelper[string](w, "prompt", data, opts)
+	return resp, err
+}
+
 // command "publishapp", wshserver.PublishAppCommand
 func PublishAppCommand(w *wshutil.WshRpc, data wshrpc.CommandPublishAppData, opts *wshrpc.RpcOpts) (*wshrpc.CommandPublishAppRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandPublishAppRtnData](w, "publishapp", data, opts)
@@ -840,6 +876,12 @@ func RenameAppFileCommand(w *wshutil.WshRpc, data wshrpc.CommandRenameAppFileDat
 	return err
 }
 
+// command "resolvedirectional", wshserver.ResolveDirectionalCommand
+func ResolveDirectionalCommand(w *wshutil.WshRpc, data wshrpc.CommandResolveDirectionalData, opts *wshrpc.RpcOpts) (*remotetermobj.ORef, error) {
+	resp, err := sendRpcRequestCallHelper[*remotetermobj.ORef](w, "resolvedirectional", data, opts)
+	return resp, err
+}
+
 // command "resolveids", wshserver.ResolveIdsCommand
 func ResolveIdsCommand(w *wshutil.WshRpc, data wshrpc.CommandResolveIdsData, opts *wshrpc.RpcOpts) (wshrpc.CommandResolveIdsRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[wshrpc.CommandResolveIdsRtnData](w, "resolveids", data, opts)
@@ -861,6 +903,12 @@ func RouteAnnounceCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) error {
 // command "routeunannounce", wshserver.RouteUnannounceCommand
 func RouteUnannounceCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "routeunannounce", nil, opts)
+	return err
+}
+
+// command "setactivetab", wshserver.SetActiveTabCommand
+func SetActiveTabCommand(w *wshutil.WshRpc, data wshrpc.CommandSetActiveTabData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "setactivetab", data, opts)
 	return err
 }
 
@@ -947,6 +995,12 @@ func StreamDataAckCommand(w *wshutil.WshRpc, data wshrpc.CommandStreamAckData, o
 	return err
 }
 
+// command "streamstatusreport", wshserver.StreamStatusReportCommand
+func StreamStatusReportCommand(w *wshutil.WshRpc, data wshrpc.CommandStreamStatusData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "streamstatusreport", data, opts)
+	return err
+}
+
 // command "streamtest", wshserver.StreamTestCommand
 func StreamTestCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) chan wshrpc.RespOrErrorUnion[int] {
 	return sendRpcRequestResponseStreamHelper[int](w, "streamtest", nil, opts)
@@ -1028,9 +1082,27 @@ func WaveInfoCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) (*wshrpc.WaveInfoD
 	return resp, err
 }
 
+// command "webrun", wshserver.WebRunCommand
+func WebRunCommand(w *wshutil.WshRpc, data wshrpc.CommandWebRunData, opts *wshrpc.RpcOpts) (*wshrpc.WebRunResult, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.WebRunResult](w, "webrun", data, opts)
+	return resp, err
+}
+
+// command "webscreenshot", wshserver.WebScreenshotCommand
+func WebScreenshotCommand(w *wshutil.WshRpc, data wshrpc.CommandWebScreenshotData, opts *wshrpc.RpcOpts) (*wshrpc.WebScreenshotResult, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.WebScreenshotResult](w, "webscreenshot", data, opts)
+	return resp, err
+}
+
 // command "webselector", wshserver.WebSelectorCommand
 func WebSelectorCommand(w *wshutil.WshRpc, data wshrpc.CommandWebSelectorData, opts *wshrpc.RpcOpts) ([]string, error) {
 	resp, err := sendRpcRequestCallHelper[[]string](w, "webselector", data, opts)
+	return resp, err
+}
+
+// command "websnapshot", wshserver.WebSnapshotCommand
+func WebSnapshotCommand(w *wshutil.WshRpc, data wshrpc.CommandWebSnapshotData, opts *wshrpc.RpcOpts) (*wshrpc.WebSnapshotResult, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.WebSnapshotResult](w, "websnapshot", data, opts)
 	return resp, err
 }
 
