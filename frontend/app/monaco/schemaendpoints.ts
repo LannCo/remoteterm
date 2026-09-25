@@ -14,22 +14,22 @@ type SchemaInfo = {
 
 const MonacoSchemas: SchemaInfo[] = [
     {
-        uri: "wave://schema/settings.json",
+        uri: "remoteterm://schema/settings.json",
         fileMatch: ["*/WAVECONFIGPATH/settings.json"],
         schema: settingsSchema,
     },
     {
-        uri: "wave://schema/connections.json",
+        uri: "remoteterm://schema/connections.json",
         fileMatch: ["*/WAVECONFIGPATH/connections.json"],
         schema: connectionsSchema,
     },
     {
-        uri: "wave://schema/backgrounds.json",
+        uri: "remoteterm://schema/backgrounds.json",
         fileMatch: ["*/WAVECONFIGPATH/backgrounds.json"],
         schema: backgroundsSchema,
     },
     {
-        uri: "wave://schema/widgets.json",
+        uri: "remoteterm://schema/widgets.json",
         fileMatch: ["*/WAVECONFIGPATH/widgets.json"],
         schema: widgetsSchema,
     },

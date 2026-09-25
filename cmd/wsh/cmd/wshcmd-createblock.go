@@ -6,10 +6,10 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
 var createBlockMagnified bool
@@ -36,7 +36,7 @@ func createBlockRun(cmd *cobra.Command, args []string) error {
 	}
 	tabId := getTabIdFromEnv()
 	if tabId == "" {
-		return fmt.Errorf("no WAVETERM_TABID env var set")
+		return fmt.Errorf("no REMOTETERM_TABID env var set")
 	}
 	meta, err := parseMetaSets(metaSetStrs)
 	if err != nil {
@@ -45,7 +45,7 @@ func createBlockRun(cmd *cobra.Command, args []string) error {
 	meta["view"] = viewName
 	data := wshrpc.CommandCreateBlockData{
 		TabId: tabId,
-		BlockDef: &waveobj.BlockDef{
+		BlockDef: &remotetermobj.BlockDef{
 			Meta: meta,
 		},
 		Magnified: createBlockMagnified,

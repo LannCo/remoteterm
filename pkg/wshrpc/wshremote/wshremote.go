@@ -14,15 +14,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wavetermdev/waveterm/pkg/baseds"
-	"github.com/wavetermdev/waveterm/pkg/panichandler"
-	"github.com/wavetermdev/waveterm/pkg/suggestion"
-	"github.com/wavetermdev/waveterm/pkg/util/unixutil"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/wps"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
+	"github.com/LannCo/remoteterm/pkg/baseds"
+	"github.com/LannCo/remoteterm/pkg/panichandler"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/suggestion"
+	"github.com/LannCo/remoteterm/pkg/util/unixutil"
+	"github.com/LannCo/remoteterm/pkg/wps"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
 )
 
 type JobManagerConnection struct {
@@ -110,7 +110,7 @@ func (impl *ServerImpl) ConnServerInitCommand(ctx context.Context, data wshrpc.C
 	if impl.SockName == "" {
 		return fmt.Errorf("sockname not set in server impl")
 	}
-	symlinkPath, err := wavebase.ExpandHomeDir(wavebase.GetPersistentRemoteSockName(data.ClientId))
+	symlinkPath, err := remotetermbase.ExpandHomeDir(remotetermbase.GetPersistentRemoteSockName(data.ClientId))
 	if err != nil {
 		return fmt.Errorf("cannot expand symlink path: %w", err)
 	}
@@ -129,9 +129,9 @@ func (impl *ServerImpl) ConnServerInitCommand(ctx context.Context, data wshrpc.C
 
 func (impl *ServerImpl) getWshPath() (string, error) {
 	if impl.IsLocal {
-		return filepath.Join(wavebase.GetWaveDataDir(), "bin", "wsh"), nil
+		return filepath.Join(remotetermbase.GetWaveDataDir(), "bin", "wsh"), nil
 	}
-	wshPath, err := wavebase.ExpandHomeDir("~/.waveterm/bin/wsh")
+	wshPath, err := remotetermbase.ExpandHomeDir("~/.waveterm/bin/wsh")
 	if err != nil {
 		return "", fmt.Errorf("cannot expand wsh path: %w", err)
 	}

@@ -5,7 +5,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { adaptFromElectronKeyEvent, checkKeyPressed } from "@/util/keyutil";
 import { CHORD_TIMEOUT } from "@/util/sharedconst";
 import { Rectangle, shell, WebContentsView } from "electron";
-import { createNewWaveWindow, getWaveWindowById } from "emain/emain-window";
+import { createNewRemoteTermWindow, getRemoteTermWindowById } from "emain/emain-window";
 import path from "path";
 import { configureAuthKeyRequestInjection } from "./authkey";
 import { setWasActive } from "./emain-activity";
@@ -23,13 +23,13 @@ import { ElectronWshClient } from "./emain-wsh";
 
 function handleWindowsMenuAccelerators(
     waveEvent: WaveKeyboardEvent,
-    tabView: WaveTabView,
+    tabView: RemoteTermTabView,
     fullConfig: FullConfigType
 ): boolean {
-    const waveWindow = getWaveWindowById(tabView.waveWindowId);
+    const waveWindow = getRemoteTermWindowById(tabView.remoteTermWindowId);
 
     if (checkKeyPressed(waveEvent, "Ctrl:Shift:n")) {
-        createNewWaveWindow();
+        createNewRemoteTermWindow();
         return true;
     }
 
@@ -106,28 +106,28 @@ function computeBgColor(fullConfig: FullConfigType): string {
     }
 }
 
-const wcIdToWaveTabMap = new Map<number, WaveTabView>();
+const wcIdToRemoteTermTabMap = new Map<number, RemoteTermTabView>();
 
-export function getWaveTabViewByWebContentsId(webContentsId: number): WaveTabView {
+export function getRemoteTermTabViewByWebContentsId(webContentsId: number): RemoteTermTabView {
     if (webContentsId == null) {
         return null;
     }
-    return wcIdToWaveTabMap.get(webContentsId);
+    return wcIdToRemoteTermTabMap.get(webContentsId);
 }
 
-export class WaveTabView extends WebContentsView {
-    waveWindowId: string; // this will be set for any tabviews that are initialized. (unset for the hot spare)
+export class RemoteTermTabView extends WebContentsView {
+    remoteTermWindowId: string; // this will be set for any tabviews that are initialized. (unset for the hot spare)
     isActiveTab: boolean;
-    private _waveTabId: string; // always set, WaveTabViews are unique per tab
+    private _remoteTermTabId: string; // always set, RemoteTermTabViews are unique per tab
     lastUsedTs: number; // ts milliseconds
     createdTs: number; // ts milliseconds
     initPromise: Promise<void>;
     initResolve: () => void;
-    savedInitOpts: WaveInitOpts;
-    waveReadyPromise: Promise<void>;
-    waveReadyResolve: () => void;
+    savedInitOpts: RemoteTermInitOpts;
+    remoteTermReadyPromise: Promise<void>;
+    remoteTermReadyResolve: () => void;
     isInitialized: boolean = false;
-    isWaveReady: boolean = false;
+    isRemoteTermReady: boolean = false;
     isDestroyed: boolean = false;
     keyboardChordMode: boolean = false;
     resetChordModeTimeout: NodeJS.Timeout = null;
@@ -149,33 +149,33 @@ export class WaveTabView extends WebContentsView {
             this.isInitialized = true;
             console.log("tabview init", Date.now() - this.createdTs + "ms");
         });
-        this.waveReadyPromise = new Promise((resolve, _) => {
-            this.waveReadyResolve = resolve;
+        this.remoteTermReadyPromise = new Promise((resolve, _) => {
+            this.remoteTermReadyResolve = resolve;
         });
-        this.waveReadyPromise.then(() => {
-            this.isWaveReady = true;
+        this.remoteTermReadyPromise.then(() => {
+            this.isRemoteTermReady = true;
         });
         const wcId = this.webContents.id;
-        wcIdToWaveTabMap.set(wcId, this);
+        wcIdToRemoteTermTabMap.set(wcId, this);
         if (isDevVite) {
             this.webContents.loadURL(`${process.env.ELECTRON_RENDERER_URL}/index.html`);
         } else {
             this.webContents.loadFile(path.join(getElectronAppBasePath(), "frontend", "index.html"));
         }
         this.webContents.on("destroyed", () => {
-            wcIdToWaveTabMap.delete(wcId);
-            removeWaveTabView(this.waveTabId);
+            wcIdToRemoteTermTabMap.delete(wcId);
+            removeRemoteTermTabView(this.remoteTermTabId);
             this.isDestroyed = true;
         });
         this.setBackgroundColor(computeBgColor(fullConfig));
     }
 
-    get waveTabId(): string {
-        return this._waveTabId;
+    get remoteTermTabId(): string {
+        return this._remoteTermTabId;
     }
 
-    set waveTabId(waveTabId: string) {
-        this._waveTabId = waveTabId;
+    set remoteTermTabId(remoteTermTabId: string) {
+        this._remoteTermTabId = remoteTermTabId;
     }
 
     setKeyboardChordMode(mode: boolean) {
@@ -223,8 +223,8 @@ export class WaveTabView extends WebContentsView {
     }
 
     destroy() {
-        console.log("destroy tab", this.waveTabId);
-        removeWaveTabView(this.waveTabId);
+        console.log("destroy tab", this.remoteTermTabId);
+        removeRemoteTermTabView(this.remoteTermTabId);
         if (!this.isDestroyed) {
             this.webContents?.close();
         }
@@ -233,23 +233,23 @@ export class WaveTabView extends WebContentsView {
 }
 
 let MaxCacheSize = 10;
-const wcvCache = new Map<string, WaveTabView>();
+const wcvCache = new Map<string, RemoteTermTabView>();
 
 export function setMaxTabCacheSize(size: number) {
     console.log("setMaxTabCacheSize", size);
     MaxCacheSize = size;
 }
 
-export function getWaveTabView(waveTabId: string): WaveTabView | undefined {
-    const rtn = wcvCache.get(waveTabId);
+export function getRemoteTermTabView(remoteTermTabId: string): RemoteTermTabView | undefined {
+    const rtn = wcvCache.get(remoteTermTabId);
     if (rtn) {
         rtn.lastUsedTs = Date.now();
     }
     return rtn;
 }
 
-function tryEvictEntry(waveTabId: string): boolean {
-    const tabView = wcvCache.get(waveTabId);
+function tryEvictEntry(remoteTermTabId: string): boolean {
+    const tabView = wcvCache.get(remoteTermTabId);
     if (!tabView) {
         return false;
     }
@@ -260,15 +260,15 @@ function tryEvictEntry(waveTabId: string): boolean {
     if (lastUsedDiff < 1000) {
         return false;
     }
-    const ww = getWaveWindowById(tabView.waveWindowId);
+    const ww = getRemoteTermWindowById(tabView.remoteTermWindowId);
     if (!ww) {
         // this shouldn't happen, but if it does, just destroy the tabview
-        console.log("[error] WaveWindow not found for WaveTabView", tabView.waveTabId);
+        console.log("[error] WaveWindow not found for RemoteTermTabView", tabView.remoteTermTabId);
         tabView.destroy();
         return true;
     } else {
         // will trigger a destroy on the tabview
-        ww.removeTabView(tabView.waveTabId, false);
+        ww.removeTabView(tabView.remoteTermTabId, false);
         return true;
     }
 }
@@ -286,7 +286,7 @@ function checkAndEvictCache(): void {
         return a.lastUsedTs - b.lastUsedTs;
     });
     for (let i = 0; i < sorted.length - MaxCacheSize; i++) {
-        tryEvictEntry(sorted[i].waveTabId);
+        tryEvictEntry(sorted[i].remoteTermTabId);
     }
 }
 
@@ -294,22 +294,25 @@ export function clearTabCache() {
     const wcVals = Array.from(wcvCache.values());
     for (let i = 0; i < wcVals.length; i++) {
         const tabView = wcVals[i];
-        tryEvictEntry(tabView.waveTabId);
+        tryEvictEntry(tabView.remoteTermTabId);
     }
 }
 
 // returns [tabview, initialized]
-export async function getOrCreateWebViewForTab(waveWindowId: string, tabId: string): Promise<[WaveTabView, boolean]> {
-    let tabView = getWaveTabView(tabId);
+export async function getOrCreateWebViewForTab(
+    remoteTermWindowId: string,
+    tabId: string
+): Promise<[RemoteTermTabView, boolean]> {
+    let tabView = getRemoteTermTabView(tabId);
     if (tabView) {
         return [tabView, true];
     }
     const fullConfig = await RpcApi.GetFullConfigCommand(ElectronWshClient);
     tabView = getSpareTab(fullConfig);
-    tabView.waveWindowId = waveWindowId;
+    tabView.remoteTermWindowId = remoteTermWindowId;
     tabView.lastUsedTs = Date.now();
-    setWaveTabView(tabId, tabView);
-    tabView.waveTabId = tabId;
+    setRemoteTermTabView(tabId, tabView);
+    tabView.remoteTermTabId = tabId;
     tabView.webContents.on("will-navigate", shNavHandler);
     tabView.webContents.on("will-frame-navigate", shFrameNavHandler);
     tabView.webContents.on("did-attach-webview", (event, wc) => {
@@ -323,7 +326,7 @@ export async function getOrCreateWebViewForTab(waveWindowId: string, tabId: stri
     });
     tabView.webContents.on("before-input-event", (e, input) => {
         const waveEvent = adaptFromElectronKeyEvent(input);
-        // console.log("WIN bie", tabView.waveTabId.substring(0, 8), waveEvent.type, waveEvent.code);
+        // console.log("WIN bie", tabView.remoteTermTabId.substring(0, 8), waveEvent.type, waveEvent.code);
         handleCtrlShiftState(tabView.webContents, waveEvent);
         setWasActive(true);
         if (input.type == "keyDown" && tabView.keyboardChordMode) {
@@ -355,31 +358,31 @@ export async function getOrCreateWebViewForTab(waveWindowId: string, tabId: stri
     return [tabView, false];
 }
 
-export function setWaveTabView(waveTabId: string, wcv: WaveTabView): void {
-    if (waveTabId == null) {
+export function setRemoteTermTabView(remoteTermTabId: string, wcv: RemoteTermTabView): void {
+    if (remoteTermTabId == null) {
         return;
     }
-    wcvCache.set(waveTabId, wcv);
+    wcvCache.set(remoteTermTabId, wcv);
     checkAndEvictCache();
 }
 
-function removeWaveTabView(waveTabId: string): void {
-    if (waveTabId == null) {
+function removeRemoteTermTabView(remoteTermTabId: string): void {
+    if (remoteTermTabId == null) {
         return;
     }
-    wcvCache.delete(waveTabId);
+    wcvCache.delete(remoteTermTabId);
 }
 
-let HotSpareTab: WaveTabView = null;
+let HotSpareTab: RemoteTermTabView = null;
 
 export function ensureHotSpareTab(fullConfig: FullConfigType) {
     console.log("ensureHotSpareTab");
     if (HotSpareTab == null) {
-        HotSpareTab = new WaveTabView(fullConfig);
+        HotSpareTab = new RemoteTermTabView(fullConfig);
     }
 }
 
-export function getSpareTab(fullConfig: FullConfigType): WaveTabView {
+export function getSpareTab(fullConfig: FullConfigType): RemoteTermTabView {
     setTimeout(() => ensureHotSpareTab(fullConfig), 500);
     if (HotSpareTab != null) {
         const rtn = HotSpareTab;
@@ -388,6 +391,6 @@ export function getSpareTab(fullConfig: FullConfigType): WaveTabView {
         return rtn;
     } else {
         console.log("getSpareTab: creating new tab");
-        return new WaveTabView(fullConfig);
+        return new RemoteTermTabView(fullConfig);
     }
 }

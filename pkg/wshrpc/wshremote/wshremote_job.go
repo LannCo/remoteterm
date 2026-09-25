@@ -16,11 +16,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
 	"github.com/shirou/gopsutil/v4/process"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
 )
 
 func isProcessRunning(pid int, pidStartTs int64) (*process.Process, error) {
@@ -43,7 +43,7 @@ func isProcessRunning(pid int, pidStartTs int64) (*process.Process, error) {
 
 // returns jobRouteId, cleanupFunc, error
 func (impl *ServerImpl) connectToJobManager(ctx context.Context, jobId string, mainServerJwtToken string) (string, func(), error) {
-	socketPath := wavebase.GetRemoteJobSocketPath(jobId)
+	socketPath := remotetermbase.GetRemoteJobSocketPath(jobId)
 	log.Printf("connectToJobManager: connecting to socket: %s\n", socketPath)
 	conn, err := net.Dial("unix", socketPath)
 	if err != nil {
@@ -151,7 +151,10 @@ func (impl *ServerImpl) RemoteStartJobCommand(ctx context.Context, data wshrpc.C
 
 	cmd := exec.Command(wshPath, "jobmanager", "--jobid", data.JobId, "--clientid", data.ClientId)
 	if data.PublicKeyBase64 != "" {
-		cmd.Env = append(os.Environ(), "WAVETERM_PUBLICKEY="+data.PublicKeyBase64)
+		cmd.Env = append(os.Environ(),
+			remotetermbase.WavePublicKeyVarName+"="+data.PublicKeyBase64,
+			remotetermbase.LegacyWavePublicKeyVarName+"="+data.PublicKeyBase64,
+		)
 	}
 	cmd.ExtraFiles = []*os.File{readyPipeWrite}
 	stdin, err := cmd.StdinPipe()

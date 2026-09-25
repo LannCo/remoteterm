@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/util/utilfn"
 )
 
 // this broker interface is mostly generic
@@ -42,7 +42,7 @@ type persistEventWrap struct {
 }
 
 type pendingEvent struct {
-	Event     *WaveEvent
+	Event       *WaveEvent
 	PublishedAt time.Time
 }
 
@@ -309,24 +309,24 @@ func (b *BrokerType) Publish(event WaveEvent) {
 				Event:       &event,
 				PublishedAt: time.Now(),
 			})
+			b.Lock.Unlock()
+			return
+		}
 		b.Lock.Unlock()
 		return
 	}
+	client := b.Client
 	b.Lock.Unlock()
-	return
-}
-client := b.Client
-b.Lock.Unlock()
-if client == nil {
-	if shouldBufferEvent(event.Event) {
-		b.Lock.Lock()
-		b.PendingEvents[event.Event] = append(b.PendingEvents[event.Event], &pendingEvent{
-			Event:       &event,
-			PublishedAt: time.Now(),
-		})
-		b.Lock.Unlock()
-		return
-	}
+	if client == nil {
+		if shouldBufferEvent(event.Event) {
+			b.Lock.Lock()
+			b.PendingEvents[event.Event] = append(b.PendingEvents[event.Event], &pendingEvent{
+				Event:       &event,
+				PublishedAt: time.Now(),
+			})
+			b.Lock.Unlock()
+			return
+		}
 		return
 	}
 	for _, routeId := range routeIds {
@@ -334,11 +334,11 @@ if client == nil {
 	}
 }
 
-func (b *BrokerType) SendUpdateEvents(updates waveobj.UpdatesRtnType) {
+func (b *BrokerType) SendUpdateEvents(updates remotetermobj.UpdatesRtnType) {
 	for _, update := range updates {
 		b.Publish(WaveEvent{
 			Event:  Event_WaveObjUpdate,
-			Scopes: []string{waveobj.MakeORef(update.OType, update.OID).String()},
+			Scopes: []string{remotetermobj.MakeORef(update.OType, update.OID).String()},
 			Data:   update,
 		})
 	}

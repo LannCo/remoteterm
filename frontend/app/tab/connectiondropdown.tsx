@@ -177,7 +177,7 @@ export const NewTabConnTypeahead = memo(function NewTabConnTypeahead({
     // Build suggestions
     const onEditConnections = useCallback(() => {
         onClose();
-        createBlock({ meta: { view: "waveconfig", file: "connections.json" } }, false, true);
+        createBlock({ meta: { view: "remotetermconfig", file: "connections.json" } }, false, true);
     }, [onClose]);
 
     const onCreate = useCallback(

@@ -10,6 +10,7 @@ import * as jotai from "jotai";
 import * as monaco from "monaco-editor";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+import { ActionErrorBanner } from "./action-error";
 import { DiffGutter } from "./DiffGutter";
 import { ReviewMode } from "./review-mode";
 import type { SourceControlViewModel } from "./sourcecontrol-model";
@@ -627,6 +628,7 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
     }, [model]);
 
     const containerRef = useRef<HTMLDivElement>(null);
+    const panelFocusAnchorRef = useRef<HTMLDivElement>(null);
     const handleReviewAllRef = useRef(handleReviewAll);
     handleReviewAllRef.current = handleReviewAll;
 
@@ -710,7 +712,12 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
         <div ref={containerRef} className="flex flex-col h-full w-full overflow-hidden">
             {/* Header */}
             <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-                <div className="flex items-center gap-2 text-xs">
+                <div
+                    ref={panelFocusAnchorRef}
+                    tabIndex={-1}
+                    aria-label={`Source Control: ${status?.branch || "detached"}`}
+                    className="flex items-center gap-2 text-xs rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+                >
                     <i className="fa-solid fa-code-branch text-muted" />
                     <span className="font-medium">{status?.branch || "detached"}</span>
                     <span className="text-muted text-[10px]">({totalChanges} changes)</span>
@@ -767,6 +774,12 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
                     dirsOnly
                 />
             )}
+
+            <ActionErrorBanner
+                errorAtom={model.actionErrorAtom}
+                onDismiss={() => model.dismissActionError()}
+                focusAnchorRef={panelFocusAnchorRef}
+            />
 
             {reviewMode ? (
                 <div className="flex-1 flex flex-col overflow-hidden min-h-0">

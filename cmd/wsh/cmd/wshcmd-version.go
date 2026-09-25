@@ -7,10 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
 var versionVerbose bool
@@ -31,7 +31,7 @@ func init() {
 
 func runVersionCmd(cmd *cobra.Command, args []string) error {
 	if !versionVerbose && !versionJSON {
-		WriteStdout("wsh v%s\n", wavebase.WaveVersion)
+		WriteStdout("wsh v%s\n", remotetermbase.WaveVersion)
 		return nil
 	}
 

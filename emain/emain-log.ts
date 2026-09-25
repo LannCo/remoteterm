@@ -5,7 +5,7 @@ import fs from "fs";
 import path from "path";
 import { format } from "util";
 import winston from "winston";
-import { getWaveDataDir, isDev } from "./emain-platform";
+import { getRemoteTermDataDir, isDev } from "./emain-platform";
 
 const oldConsoleLog = console.log;
 
@@ -16,7 +16,7 @@ function findHighestLogNumber(logsDir: string): number {
     const files = fs.readdirSync(logsDir);
     let maxNum = 0;
     for (const file of files) {
-        const match = file.match(/^waveapp\.(\d+)\.log$/);
+        const match = file.match(/^rtapp\.(\d+)\.log$/);
         if (match) {
             const num = parseInt(match[1], 10);
             if (num > maxNum) {
@@ -36,7 +36,7 @@ function pruneOldLogs(logsDir: string): { pruned: string[]; error: any } {
     const logFiles: { name: string; num: number }[] = [];
 
     for (const file of files) {
-        const match = file.match(/^waveapp\.(\d+)\.log$/);
+        const match = file.match(/^rtapp\.(\d+)\.log$/);
         if (match) {
             logFiles.push({ name: file, num: parseInt(match[1], 10) });
         }
@@ -66,9 +66,9 @@ function pruneOldLogs(logsDir: string): { pruned: string[]; error: any } {
 }
 
 function rotateLogIfNeeded(): string | null {
-    const waveDataDir = getWaveDataDir();
-    const logFile = path.join(waveDataDir, "waveapp.log");
-    const logsDir = path.join(waveDataDir, "logs");
+    const remoteTermDataDir = getRemoteTermDataDir();
+    const logFile = path.join(remoteTermDataDir, "rtapp.log");
+    const logsDir = path.join(remoteTermDataDir, "logs");
 
     if (!fs.existsSync(logsDir)) {
         fs.mkdirSync(logsDir, { recursive: true });
@@ -81,7 +81,7 @@ function rotateLogIfNeeded(): string | null {
     const stats = fs.statSync(logFile);
     if (stats.size > 10 * 1024 * 1024) {
         const nextNum = findHighestLogNumber(logsDir) + 1;
-        const rotatedPath = path.join(logsDir, `waveapp.${nextNum}.log`);
+        const rotatedPath = path.join(logsDir, `rtapp.${nextNum}.log`);
         fs.renameSync(logFile, rotatedPath);
         return rotatedPath;
     }
@@ -94,7 +94,7 @@ let prunedFiles: string[] = [];
 let pruneError: any = null;
 try {
     rotatedPath = rotateLogIfNeeded();
-    const logsDir = path.join(getWaveDataDir(), "logs");
+    const logsDir = path.join(getRemoteTermDataDir(), "logs");
     const pruneResult = pruneOldLogs(logsDir);
     prunedFiles = pruneResult.pruned;
     pruneError = pruneResult.error;
@@ -103,7 +103,7 @@ try {
 }
 
 const loggerTransports: winston.transport[] = [
-    new winston.transports.File({ filename: path.join(getWaveDataDir(), "waveapp.log"), level: "info" }),
+    new winston.transports.File({ filename: path.join(getRemoteTermDataDir(), "rtapp.log"), level: "info" }),
 ];
 if (isDev) {
     loggerTransports.push(new winston.transports.Console());

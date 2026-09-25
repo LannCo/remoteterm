@@ -12,21 +12,21 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/filestore"
+	"github.com/LannCo/remoteterm/pkg/jobcontroller"
+	"github.com/LannCo/remoteterm/pkg/remote"
+	"github.com/LannCo/remoteterm/pkg/remote/conncontroller"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtstore"
+	"github.com/LannCo/remoteterm/pkg/shellexec"
+	"github.com/LannCo/remoteterm/pkg/util/shellutil"
+	"github.com/LannCo/remoteterm/pkg/utilds"
+	"github.com/LannCo/remoteterm/pkg/wps"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
 	"github.com/google/uuid"
-	"github.com/wavetermdev/waveterm/pkg/filestore"
-	"github.com/wavetermdev/waveterm/pkg/jobcontroller"
-	"github.com/wavetermdev/waveterm/pkg/remote"
-	"github.com/wavetermdev/waveterm/pkg/remote/conncontroller"
-	"github.com/wavetermdev/waveterm/pkg/shellexec"
-	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
-	"github.com/wavetermdev/waveterm/pkg/utilds"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wps"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
-	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
 type DurableShellController struct {
@@ -36,7 +36,7 @@ type DurableShellController struct {
 	TabId          string
 	BlockId        string
 	ConnName       string
-	BlockDef       *waveobj.BlockDef
+	BlockDef       *remotetermobj.BlockDef
 	VersionTs      utilds.VersionTs
 
 	InputSessionId string // random uuid
@@ -120,8 +120,8 @@ func (dsc *DurableShellController) sendUpdate_withlock() {
 	wps.Broker.Publish(wps.WaveEvent{
 		Event: wps.Event_ControllerStatus,
 		Scopes: []string{
-			waveobj.MakeORef(waveobj.OType_Tab, dsc.TabId).String(),
-			waveobj.MakeORef(waveobj.OType_Block, dsc.BlockId).String(),
+			remotetermobj.MakeORef(remotetermobj.OType_Tab, dsc.TabId).String(),
+			remotetermobj.MakeORef(remotetermobj.OType_Block, dsc.BlockId).String(),
 		},
 		Data: rtStatus,
 	})
@@ -136,8 +136,8 @@ func (dsc *DurableShellController) sendUpdate_withlock() {
 //   - force=false: returns without starting (leaves block unstarted)
 //
 // After establishing jobId, ensures job connection is active (reconnects if needed)
-func (dsc *DurableShellController) Start(ctx context.Context, blockMeta waveobj.MetaMapType, rtOpts *waveobj.RuntimeOpts, force bool) error {
-	blockData, err := wstore.DBMustGet[*waveobj.Block](ctx, dsc.BlockId)
+func (dsc *DurableShellController) Start(ctx context.Context, blockMeta remotetermobj.MetaMapType, rtOpts *remotetermobj.RuntimeOpts, force bool) error {
+	blockData, err := rtstore.DBMustGet[*remotetermobj.Block](ctx, dsc.BlockId)
 	if err != nil {
 		return fmt.Errorf("error getting block: %w", err)
 	}
@@ -165,7 +165,7 @@ func (dsc *DurableShellController) Start(ctx context.Context, blockMeta waveobj.
 
 	if jobId == "" {
 		log.Printf("block %q starting new durable shell\n", dsc.BlockId)
-		fsErr := filestore.WFS.MakeFile(ctx, dsc.BlockId, wavebase.BlockFile_Term, nil, wshrpc.FileOpts{MaxSize: DefaultTermMaxFileSize, Circular: true})
+		fsErr := filestore.WFS.MakeFile(ctx, dsc.BlockId, remotetermbase.BlockFile_Term, nil, wshrpc.FileOpts{MaxSize: DefaultTermMaxFileSize, Circular: true})
 		if fsErr != nil && fsErr != fs.ErrExist {
 			return fmt.Errorf("error creating block term file: %w", fsErr)
 		}
@@ -224,16 +224,16 @@ func (dsc *DurableShellController) SendInput(inputUnion *BlockInputUnion) error 
 	return jobcontroller.SendInput(context.Background(), data)
 }
 
-func (dsc *DurableShellController) startNewJob(ctx context.Context, blockMeta waveobj.MetaMapType, connName string, rtOpts *waveobj.RuntimeOpts) (string, error) {
-	termSize := waveobj.TermSize{
+func (dsc *DurableShellController) startNewJob(ctx context.Context, blockMeta remotetermobj.MetaMapType, connName string, rtOpts *remotetermobj.RuntimeOpts) (string, error) {
+	termSize := remotetermobj.TermSize{
 		Rows: shellutil.DefaultTermRows,
 		Cols: shellutil.DefaultTermCols,
 	}
 	if rtOpts != nil && rtOpts.TermSize.Rows > 0 && rtOpts.TermSize.Cols > 0 {
 		termSize = rtOpts.TermSize
 	}
-	cmdStr := blockMeta.GetString(waveobj.MetaKey_Cmd, "")
-	cwd := blockMeta.GetString(waveobj.MetaKey_CmdCwd, "")
+	cmdStr := blockMeta.GetString(remotetermobj.MetaKey_Cmd, "")
+	cwd := blockMeta.GetString(remotetermobj.MetaKey_CmdCwd, "")
 	opts, err := remote.ParseOpts(connName)
 	if err != nil {
 		return "", fmt.Errorf("invalid ssh remote name (%s): %w", connName, err)
@@ -255,7 +255,7 @@ func (dsc *DurableShellController) startNewJob(ctx context.Context, blockMeta wa
 	}
 	shellType := shellutil.GetShellTypeFromShellPath(remoteInfo.Shell)
 	swapToken := makeSwapToken(ctx, ctx, dsc.BlockId, blockMeta, connName, shellType)
-	sockName := wavebase.GetPersistentRemoteSockName(wstore.GetClientId())
+	sockName := remotetermbase.GetPersistentRemoteSockName(rtstore.GetClientId())
 	rpcContext := wshrpc.RpcContext{
 		ProcRoute: true,
 		SockName:  sockName,
@@ -267,13 +267,13 @@ func (dsc *DurableShellController) startNewJob(ctx context.Context, blockMeta wa
 		return "", fmt.Errorf("error making jwt token: %w", err)
 	}
 	swapToken.RpcContext = &rpcContext
-	swapToken.Env[wshutil.WaveJwtTokenVarName] = jwtStr
+	remotetermbase.SetDualEnv(swapToken.Env, wshutil.WaveJwtTokenVarName, wshutil.LegacyWaveJwtTokenVarName, jwtStr)
 	cmdOpts := shellexec.CommandOptsType{
 		Interactive: true,
 		Login:       true,
 		Cwd:         cwd,
 		SwapToken:   swapToken,
-		ForceJwt:    blockMeta.GetBool(waveobj.MetaKey_CmdJwt, false),
+		ForceJwt:    blockMeta.GetBool(remotetermobj.MetaKey_CmdJwt, false),
 	}
 	jobId, err := shellexec.StartRemoteShellJob(ctx, ctx, termSize, cmdStr, cmdOpts, conn, dsc.BlockId)
 	if err != nil {

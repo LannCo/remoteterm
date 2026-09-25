@@ -46,7 +46,7 @@ vi.stubGlobal("FileReader", MockFileReader);
 describe("createRemoteTempFileFromBlob", () => {
     beforeEach(() => {
         mockRemoteWrite.mockReset();
-        mockRemoteWrite.mockResolvedValue("/tmp/waveterm-abc123/file");
+        mockRemoteWrite.mockResolvedValue("/tmp/remoteterm-abc123/file");
     });
 
     afterAll(() => {
@@ -62,7 +62,7 @@ describe("createRemoteTempFileFromBlob", () => {
         expect(data.filename).toBe("report.pdf");
         expect(data.data64).toBeTruthy();
         expect(opts).toEqual({ route: "conn:ssh:myhost" });
-        expect(path).toBe("/tmp/waveterm-abc123/file");
+        expect(path).toBe("/tmp/remoteterm-abc123/file");
     });
 
     it("generates a waveterm_paste name when no filename is given (clipboard)", async () => {

@@ -1,0 +1,854 @@
+// Copyright 2025, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+package rtconfig
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io/fs"
+	"log"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"strings"
+	"sync"
+
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtconfig/defaultconfig"
+	"github.com/LannCo/remoteterm/pkg/util/fileutil"
+	"github.com/LannCo/remoteterm/pkg/util/utilfn"
+)
+
+const SettingsFile = "settings.json"
+const ConnectionsFile = "connections.json"
+const ProfilesFile = "profiles.json"
+
+var configWriteLock sync.Mutex
+
+const AnySchema = `
+{
+  "type": "object",
+  "additionalProperties": true
+}
+`
+
+type SettingsType struct {
+	AppClear                      bool   `json:"app:*,omitempty"`
+	AppGlobalHotkey               string `json:"app:globalhotkey,omitempty"`
+	AppDismissArchitectureWarning bool   `json:"app:dismissarchitecturewarning,omitempty"`
+	AppDefaultNewBlock            string `json:"app:defaultnewblock,omitempty"`
+	AppShowOverlayBlockNums       *bool  `json:"app:showoverlayblocknums,omitempty"`
+	AppCtrlVPaste                 *bool  `json:"app:ctrlvpaste,omitempty"`
+	AppConfirmQuit                *bool  `json:"app:confirmquit,omitempty"`
+	AppDisableCtrlShiftArrows     bool   `json:"app:disablectrlshiftarrows,omitempty"`
+	AppDisableCtrlShiftDisplay    bool   `json:"app:disablectrlshiftdisplay,omitempty"`
+	AppFocusFollowsCursor         string `json:"app:focusfollowscursor,omitempty" jsonschema:"enum=off,enum=on,enum=term"`
+	AppTabBar                     string `json:"app:tabbar,omitempty" jsonschema:"enum=top,enum=left"`
+
+	FeatureRTAppBuilder bool `json:"feature:rtappbuilder,omitempty"`
+
+	TermClear                  bool     `json:"term:*,omitempty"`
+	TermFontSize               float64  `json:"term:fontsize,omitempty"`
+	TermFontFamily             string   `json:"term:fontfamily,omitempty"`
+	TermTheme                  string   `json:"term:theme,omitempty"`
+	TermDisableWebGl           bool     `json:"term:disablewebgl,omitempty"`
+	TermLocalShellPath         string   `json:"term:localshellpath,omitempty"`
+	TermLocalShellOpts         []string `json:"term:localshellopts,omitempty"`
+	TermGitBashPath            string   `json:"term:gitbashpath,omitempty"`
+	TermScrollback             *int64   `json:"term:scrollback,omitempty"`
+	TermCopyOnSelect           *bool    `json:"term:copyonselect,omitempty"`
+	TermTransparency           *float64 `json:"term:transparency,omitempty"`
+	TermAllowBracketedPaste    *bool    `json:"term:allowbracketedpaste,omitempty"`
+	TermShiftEnterNewline      *bool    `json:"term:shiftenternewline,omitempty"`
+	TermMacOptionIsMeta        *bool    `json:"term:macoptionismeta,omitempty"`
+	TermCursor                 string   `json:"term:cursor,omitempty"`
+	TermCursorBlink            *bool    `json:"term:cursorblink,omitempty"`
+	TermBellSound              *bool    `json:"term:bellsound,omitempty"`
+	TermBellIndicator          *bool    `json:"term:bellindicator,omitempty"`
+	TermOsc52                  string   `json:"term:osc52,omitempty" jsonschema:"enum=focus,enum=always"`
+	TermDurable                *bool    `json:"term:durable,omitempty"`
+	TermShowSplitButtons       bool     `json:"term:showsplitbuttons,omitempty"`
+	TermTrimTrailingWhitespace *bool    `json:"term:trimtrailingwhitespace,omitempty"`
+
+	EditorMinimapEnabled      bool    `json:"editor:minimapenabled,omitempty"`
+	EditorStickyScrollEnabled bool    `json:"editor:stickyscrollenabled,omitempty"`
+	EditorWordWrap            bool    `json:"editor:wordwrap,omitempty"`
+	EditorFontSize            float64 `json:"editor:fontsize,omitempty"`
+	EditorInlineDiff          bool    `json:"editor:inlinediff,omitempty"`
+
+	WebClear               bool   `json:"web:*,omitempty"`
+	WebOpenLinksInternally bool   `json:"web:openlinksinternally,omitempty"`
+	WebDefaultUrl          string `json:"web:defaulturl,omitempty"`
+	WebDefaultSearch       string `json:"web:defaultsearch,omitempty"`
+
+	AutoUpdateClear         bool    `json:"autoupdate:*,omitempty"`
+	AutoUpdateEnabled       bool    `json:"autoupdate:enabled,omitempty"`
+	AutoUpdateIntervalMs    float64 `json:"autoupdate:intervalms,omitempty"`
+	AutoUpdateInstallOnQuit bool    `json:"autoupdate:installonquit,omitempty"`
+	AutoUpdateChannel       string  `json:"autoupdate:channel,omitempty"`
+
+	MarkdownFontSize      float64 `json:"markdown:fontsize,omitempty"`
+	MarkdownFixedFontSize float64 `json:"markdown:fixedfontsize,omitempty"`
+
+	PreviewShowHiddenFiles *bool  `json:"preview:showhiddenfiles,omitempty"`
+	PreviewDefaultSort     string `json:"preview:defaultsort,omitempty" jsonschema:"enum=name,enum=modtime"`
+
+	TabPreset       string `json:"tab:preset,omitempty"`
+	TabConfirmClose bool   `json:"tab:confirmclose,omitempty"`
+	TabBackground   string `json:"tab:background,omitempty"`
+
+	WidgetClear    bool  `json:"widget:*,omitempty"`
+	WidgetShowHelp *bool `json:"widget:showhelp,omitempty"`
+
+	WindowClear                         bool     `json:"window:*,omitempty"`
+	WindowFullscreenOnLaunch            bool     `json:"window:fullscreenonlaunch,omitempty"`
+	WindowTransparent                   bool     `json:"window:transparent,omitempty"`
+	WindowBlur                          bool     `json:"window:blur,omitempty"`
+	WindowOpacity                       *float64 `json:"window:opacity,omitempty"`
+	WindowBgColor                       string   `json:"window:bgcolor,omitempty"`
+	WindowReducedMotion                 bool     `json:"window:reducedmotion,omitempty"`
+	WindowTileGapSize                   *int64   `json:"window:tilegapsize,omitempty"`
+	WindowShowMenuBar                   bool     `json:"window:showmenubar,omitempty"`
+	WindowNativeTitleBar                bool     `json:"window:nativetitlebar,omitempty"`
+	WindowDisableHardwareAcceleration   bool     `json:"window:disablehardwareacceleration,omitempty"`
+	WindowMaxTabCacheSize               int      `json:"window:maxtabcachesize,omitempty"`
+	WindowMagnifiedBlockOpacity         *float64 `json:"window:magnifiedblockopacity,omitempty"`
+	WindowMagnifiedBlockSize            *float64 `json:"window:magnifiedblocksize,omitempty"`
+	WindowMagnifiedBlockBlurPrimaryPx   *int64   `json:"window:magnifiedblockblurprimarypx,omitempty"`
+	WindowMagnifiedBlockBlurSecondaryPx *int64   `json:"window:magnifiedblockblursecondarypx,omitempty"`
+	WindowConfirmClose                  bool     `json:"window:confirmclose,omitempty"`
+	WindowSaveLastWindow                bool     `json:"window:savelastwindow,omitempty"`
+	WindowDimensions                    string   `json:"window:dimensions,omitempty"`
+	WindowZoom                          *float64 `json:"window:zoom,omitempty"`
+
+	ConnClear                bool    `json:"conn:*,omitempty"`
+	ConnAskBeforeWshInstall  *bool   `json:"conn:askbeforewshinstall,omitempty"`
+	ConnWshEnabled           bool    `json:"conn:wshenabled,omitempty"`
+	ConnLocalHostnameDisplay *string `json:"conn:localhostdisplayname,omitempty"`
+
+	DebugClear               bool `json:"debug:*,omitempty"`
+	DebugPprofPort           *int `json:"debug:pprofport,omitempty"`
+	DebugPprofMemProfileRate *int `json:"debug:pprofmemprofilerate,omitempty"`
+	DebugWebGlStatus         bool `json:"debug:webglstatus,omitempty"`
+
+	TsunamiClear          bool   `json:"tsunami:*,omitempty"`
+	TsunamiScaffoldPath   string `json:"tsunami:scaffoldpath,omitempty"`
+	TsunamiSdkReplacePath string `json:"tsunami:sdkreplacepath,omitempty"`
+	TsunamiSdkVersion     string `json:"tsunami:sdkversion,omitempty"`
+	TsunamiGoPath         string `json:"tsunami:gopath,omitempty"`
+}
+
+type ConfigError struct {
+	File string `json:"file"`
+	Err  string `json:"err"`
+}
+
+type WebBookmark struct {
+	Url          string  `json:"url"`
+	Title        string  `json:"title,omitempty"`
+	Icon         string  `json:"icon,omitempty"`
+	IconColor    string  `json:"iconcolor,omitempty"`
+	IconUrl      string  `json:"iconurl,omitempty"`
+	DisplayOrder float64 `json:"display:order,omitempty"`
+}
+
+type WidgetConfigType struct {
+	DisplayOrder  float64                `json:"display:order,omitempty"`
+	DisplayHidden bool                   `json:"display:hidden,omitempty"`
+	Icon          string                 `json:"icon,omitempty"`
+	Color         string                 `json:"color,omitempty"`
+	Label         string                 `json:"label,omitempty"`
+	Description   string                 `json:"description,omitempty"`
+	Workspaces    []string               `json:"workspaces,omitempty"`
+	Magnified     bool                   `json:"magnified,omitempty"`
+	BlockDef      remotetermobj.BlockDef `json:"blockdef"`
+}
+
+type BackgroundConfigType struct {
+	Bg                  string  `json:"bg,omitempty" jsonschema_description:"CSS background property value"`
+	BgOpacity           float64 `json:"bg:opacity,omitempty" jsonschema_description:"Background opacity (0.0-1.0)"`
+	BgBlendMode         string  `json:"bg:blendmode,omitempty" jsonschema_description:"CSS background-blend-mode property value"`
+	BgBorderColor       string  `json:"bg:bordercolor,omitempty" jsonschema_description:"Block frame border color"`
+	BgActiveBorderColor string  `json:"bg:activebordercolor,omitempty" jsonschema_description:"Block frame focused border color"`
+	DisplayName         string  `json:"display:name" jsonschema_description:"The name shown in the context menu"`
+	DisplayOrder        float64 `json:"display:order,omitempty" jsonschema_description:"Determines the order of the background in the context menu"`
+}
+
+type MimeTypeConfigType struct {
+	Icon  string `json:"icon"`
+	Color string `json:"color"`
+}
+
+type TermThemeType struct {
+	DisplayName         string  `json:"display:name"`
+	DisplayOrder        float64 `json:"display:order"`
+	Black               string  `json:"black"`
+	Red                 string  `json:"red"`
+	Green               string  `json:"green"`
+	Yellow              string  `json:"yellow"`
+	Blue                string  `json:"blue"`
+	Magenta             string  `json:"magenta"`
+	Cyan                string  `json:"cyan"`
+	White               string  `json:"white"`
+	BrightBlack         string  `json:"brightBlack"`
+	BrightRed           string  `json:"brightRed"`
+	BrightGreen         string  `json:"brightGreen"`
+	BrightYellow        string  `json:"brightYellow"`
+	BrightBlue          string  `json:"brightBlue"`
+	BrightMagenta       string  `json:"brightMagenta"`
+	BrightCyan          string  `json:"brightCyan"`
+	BrightWhite         string  `json:"brightWhite"`
+	Gray                string  `json:"gray"`
+	CmdText             string  `json:"cmdtext"`
+	Foreground          string  `json:"foreground"`
+	SelectionBackground string  `json:"selectionBackground"`
+	Background          string  `json:"background"`
+	Cursor              string  `json:"cursor"`
+}
+
+type FullConfigType struct {
+	Settings       SettingsType                         `json:"settings" merge:"meta"`
+	MimeTypes      map[string]MimeTypeConfigType        `json:"mimetypes"`
+	DefaultWidgets map[string]WidgetConfigType          `json:"defaultwidgets"`
+	Widgets        map[string]WidgetConfigType          `json:"widgets"`
+	Presets        map[string]remotetermobj.MetaMapType `json:"presets"`
+	Backgrounds    map[string]BackgroundConfigType      `json:"backgrounds"`
+	TermThemes     map[string]TermThemeType             `json:"termthemes"`
+	Connections    map[string]ConnKeywords              `json:"connections"`
+	Bookmarks      map[string]WebBookmark               `json:"bookmarks"`
+	ConfigErrors   []ConfigError                        `json:"configerrors" configfile:"-"`
+	Version        string                               `json:"version" configfile:"-"`
+	BuildTime      string                               `json:"buildtime" configfile:"-"`
+}
+
+type ConnKeywords struct {
+	ConnWshEnabled               *bool  `json:"conn:wshenabled,omitempty"`
+	ConnAskBeforeWshInstall      *bool  `json:"conn:askbeforewshinstall,omitempty"`
+	ConnWshPath                  string `json:"conn:wshpath,omitempty"`
+	ConnShellPath                string `json:"conn:shellpath,omitempty"`
+	ConnIgnoreSshConfig          *bool  `json:"conn:ignoresshconfig,omitempty"`
+	ConnStallAutoDisconnect      *bool  `json:"conn:stallautodisconnect,omitempty"`
+	ConnStallDisconnectThreshold *int   `json:"conn:stalldisconnectthreshold,omitempty"`
+
+	// Keepalive interval and stall-detection threshold for the connection monitor,
+	// and timing for the reconnect scheduler (issue #19). ConnStallAutoDisconnect /
+	// ConnStallDisconnectThreshold above already cover the monitor's auto-disconnect
+	// toggle and threshold, so they are reused rather than duplicated here.
+	ConnKeepaliveIntervalSec           *int `json:"conn:keepaliveinterval,omitempty"`
+	ConnStallThresholdSec              *int `json:"conn:stallthreshold,omitempty"`
+	ConnReconnectTimeoutSec            *int `json:"conn:reconnecttimeout,omitempty"`
+	ConnReconnectIntervalSec           *int `json:"conn:reconnectinterval,omitempty"`
+	ConnReconnectAggressiveIntervalSec *int `json:"conn:reconnectaggressiveinterval,omitempty"`
+
+	ConnConnectCount    *int64 `json:"conn:connectcount,omitempty"`
+	ConnLastConnectTime *int64 `json:"conn:lastconnecttime,omitempty"`
+	// ConnAuthPromptUsed records whether the last successful SSH handshake required
+	// an interactive prompt (password typed, key passphrase, or keyboard-interactive).
+	// Persisted so cold-start reconnect can skip the publickey false-positive path
+	// and prompt immediately for password-auth connections.
+	ConnAuthPromptUsed *bool `json:"conn:authpromptused,omitempty"`
+
+	SysInfoHeavyInterval int `json:"sysinfo:heavyinterval,omitempty"`
+
+	DisplayHidden *bool   `json:"display:hidden,omitempty"`
+	DisplayOrder  float32 `json:"display:order,omitempty"`
+
+	TermClear      bool    `json:"term:*,omitempty"`
+	TermFontSize   float64 `json:"term:fontsize,omitempty"`
+	TermFontFamily string  `json:"term:fontfamily,omitempty"`
+	TermTheme      string  `json:"term:theme,omitempty"`
+	TermDurable    *bool   `json:"term:durable,omitempty"`
+
+	CmdEnv            map[string]string `json:"cmd:env,omitempty"`
+	CmdInitScript     string            `json:"cmd:initscript,omitempty"`
+	CmdInitScriptSh   string            `json:"cmd:initscript.sh,omitempty"`
+	CmdInitScriptBash string            `json:"cmd:initscript.bash,omitempty"`
+	CmdInitScriptZsh  string            `json:"cmd:initscript.zsh,omitempty"`
+	CmdInitScriptPwsh string            `json:"cmd:initscript.pwsh,omitempty"`
+	CmdInitScriptFish string            `json:"cmd:initscript.fish,omitempty"`
+
+	SshUser                         *string  `json:"ssh:user,omitempty"`
+	SshHostName                     *string  `json:"ssh:hostname,omitempty"`
+	SshPort                         *string  `json:"ssh:port,omitempty"`
+	SshIdentityFile                 []string `json:"ssh:identityfile,omitempty"`
+	SshPasswordSecretName           *string  `json:"ssh:passwordsecretname,omitempty"`
+	SshBatchMode                    *bool    `json:"ssh:batchmode,omitempty"`
+	SshPubkeyAuthentication         *bool    `json:"ssh:pubkeyauthentication,omitempty"`
+	SshPasswordAuthentication       *bool    `json:"ssh:passwordauthentication,omitempty"`
+	SshKbdInteractiveAuthentication *bool    `json:"ssh:kbdinteractiveauthentication,omitempty"`
+	SshPreferredAuthentications     []string `json:"ssh:preferredauthentications,omitempty"`
+	SshAddKeysToAgent               *bool    `json:"ssh:addkeystoagent,omitempty"`
+	SshIdentityAgent                *string  `json:"ssh:identityagent,omitempty"`
+	SshIdentitiesOnly               *bool    `json:"ssh:identitiesonly,omitempty"`
+	SshProxyJump                    []string `json:"ssh:proxyjump,omitempty"`
+	SshUserKnownHostsFile           []string `json:"ssh:userknownhostsfile,omitempty"`
+	SshGlobalKnownHostsFile         []string `json:"ssh:globalknownhostsfile,omitempty"`
+	SshLocalForward                 []string `json:"ssh:localforward,omitempty"`
+	SshRemoteForward                []string `json:"ssh:remoteforward,omitempty"`
+}
+
+func DefaultBoolPtr(arg *bool, def bool) bool {
+	if arg == nil {
+		return def
+	}
+	return *arg
+}
+
+func goBackWS(barr []byte, offset int) int {
+	if offset >= len(barr) {
+		offset = offset - 1
+	}
+	for i := offset - 1; i >= 0; i-- {
+		if barr[i] == ' ' || barr[i] == '\t' || barr[i] == '\n' || barr[i] == '\r' {
+			continue
+		}
+		return i
+	}
+	return 0
+}
+
+func isTrailingCommaError(barr []byte, offset int) bool {
+	if offset >= len(barr) {
+		offset = offset - 1
+	}
+	offset = goBackWS(barr, offset)
+	if barr[offset] == '}' {
+		offset = goBackWS(barr, offset)
+		if barr[offset] == ',' {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveEnvReplacements(m remotetermobj.MetaMapType) {
+	if m == nil {
+		return
+	}
+
+	for key, value := range m {
+		switch v := value.(type) {
+		case string:
+			if resolved, ok := resolveEnvValue(v); ok {
+				m[key] = resolved
+			}
+		case map[string]interface{}:
+			resolveEnvReplacements(remotetermobj.MetaMapType(v))
+		case []interface{}:
+			resolveEnvArray(v)
+		}
+	}
+}
+
+func resolveEnvArray(arr []interface{}) {
+	for i, value := range arr {
+		switch v := value.(type) {
+		case string:
+			if resolved, ok := resolveEnvValue(v); ok {
+				arr[i] = resolved
+			}
+		case map[string]interface{}:
+			resolveEnvReplacements(remotetermobj.MetaMapType(v))
+		case []interface{}:
+			resolveEnvArray(v)
+		}
+	}
+}
+
+func resolveEnvValue(value string) (string, bool) {
+	if !strings.HasPrefix(value, "$ENV:") {
+		return "", false
+	}
+
+	envSpec := value[5:] // Remove "$ENV:" prefix
+	parts := strings.SplitN(envSpec, ":", 2)
+	envVar := parts[0]
+	var fallback string
+	if len(parts) > 1 {
+		fallback = parts[1]
+	}
+
+	// Get the environment variable value
+	if envValue, exists := os.LookupEnv(envVar); exists {
+		return envValue, true
+	}
+
+	// Return fallback if provided, otherwise return empty string
+	if fallback != "" {
+		return fallback, true
+	}
+	return "", true
+}
+
+func readConfigHelper(fileName string, barr []byte, readErr error) (remotetermobj.MetaMapType, []ConfigError) {
+	var cerrs []ConfigError
+	if readErr != nil && !os.IsNotExist(readErr) {
+		cerrs = append(cerrs, ConfigError{File: fileName, Err: readErr.Error()})
+	}
+	if len(barr) == 0 {
+		return nil, cerrs
+	}
+	var rtn remotetermobj.MetaMapType
+	err := json.Unmarshal(barr, &rtn)
+	if err != nil {
+		if syntaxErr, ok := err.(*json.SyntaxError); ok {
+			offset := syntaxErr.Offset
+			if offset > 0 {
+				offset = offset - 1
+			}
+			lineNum, colNum := utilfn.GetLineColFromOffset(barr, int(offset))
+			isTrailingComma := isTrailingCommaError(barr, int(offset))
+			if isTrailingComma {
+				err = fmt.Errorf("json syntax error at line %d, col %d: probably an extra trailing comma: %v", lineNum, colNum, syntaxErr)
+			} else {
+				err = fmt.Errorf("json syntax error at line %d, col %d: %v", lineNum, colNum, syntaxErr)
+			}
+		}
+		cerrs = append(cerrs, ConfigError{File: fileName, Err: err.Error()})
+	}
+
+	// Resolve environment variable replacements
+	if rtn != nil {
+		resolveEnvReplacements(rtn)
+	}
+
+	return rtn, cerrs
+}
+
+func readConfigFileFS(fsys fs.FS, logPrefix string, fileName string) (remotetermobj.MetaMapType, []ConfigError) {
+	barr, readErr := fs.ReadFile(fsys, fileName)
+	if readErr != nil {
+		// If we get an error, we may be using the wrong path separator for the given FS interface. Try switching the separator.
+		barr, readErr = fs.ReadFile(fsys, filepath.ToSlash(fileName))
+	}
+	return readConfigHelper(logPrefix+fileName, barr, readErr)
+}
+
+func ReadDefaultsConfigFile(fileName string) (remotetermobj.MetaMapType, []ConfigError) {
+	return readConfigFileFS(defaultconfig.ConfigFS, "defaults:", fileName)
+}
+
+func ReadWaveHomeConfigFile(fileName string) (remotetermobj.MetaMapType, []ConfigError) {
+	configDirAbsPath := remotetermbase.GetWaveConfigDir()
+	configDirFsys := os.DirFS(configDirAbsPath)
+	return readConfigFileFS(configDirFsys, "", fileName)
+}
+
+func WriteWaveHomeConfigFile(fileName string, m remotetermobj.MetaMapType) error {
+	configWriteLock.Lock()
+	defer configWriteLock.Unlock()
+	return writeWaveHomeConfigFileLocked(fileName, m)
+}
+
+// Caller must hold configWriteLock.
+func writeWaveHomeConfigFileLocked(fileName string, m remotetermobj.MetaMapType) error {
+	configDirAbsPath := remotetermbase.GetWaveConfigDir()
+	fullFileName := filepath.Join(configDirAbsPath, fileName)
+	barr, err := jsonMarshalConfigInOrder(m)
+	if err != nil {
+		return err
+	}
+	return fileutil.AtomicWriteFile(fullFileName, barr, 0644)
+}
+
+// simple merge that overwrites
+func mergeMetaMapSimple(m remotetermobj.MetaMapType, toMerge remotetermobj.MetaMapType) remotetermobj.MetaMapType {
+	if m == nil {
+		return toMerge
+	}
+	if toMerge == nil {
+		return m
+	}
+	for k, v := range toMerge {
+		if v == nil {
+			delete(m, k)
+			continue
+		}
+		m[k] = v
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	return m
+}
+
+func mergeMetaMap(m remotetermobj.MetaMapType, toMerge remotetermobj.MetaMapType, simpleMerge bool) remotetermobj.MetaMapType {
+	if simpleMerge {
+		return mergeMetaMapSimple(m, toMerge)
+	} else {
+		return remotetermobj.MergeMeta(m, toMerge, true)
+	}
+}
+
+func selectDirEntsBySuffix(dirEnts []fs.DirEntry, fileNameSuffix string) []fs.DirEntry {
+	var rtn []fs.DirEntry
+	for _, ent := range dirEnts {
+		if ent.IsDir() {
+			continue
+		}
+		if !strings.HasSuffix(ent.Name(), fileNameSuffix) {
+			continue
+		}
+		rtn = append(rtn, ent)
+	}
+	return rtn
+}
+
+func SortFileNameDescend(files []fs.DirEntry) {
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].Name() > files[j].Name()
+	})
+}
+
+// Read and merge all files in the specified directory matching the supplied suffix
+func readConfigFilesForDir(fsys fs.FS, logPrefix string, dirName string, fileName string, simpleMerge bool) (remotetermobj.MetaMapType, []ConfigError) {
+	dirEnts, _ := fs.ReadDir(fsys, dirName)
+	suffixEnts := selectDirEntsBySuffix(dirEnts, fileName+".json")
+	SortFileNameDescend(suffixEnts)
+	var rtn remotetermobj.MetaMapType
+	var errs []ConfigError
+	for _, ent := range suffixEnts {
+		fileVal, cerrs := readConfigFileFS(fsys, logPrefix, filepath.Join(dirName, ent.Name()))
+		rtn = mergeMetaMap(rtn, fileVal, simpleMerge)
+		errs = append(errs, cerrs...)
+	}
+	return rtn, errs
+}
+
+// Read and merge all files in the specified config filesystem matching the patterns `<partName>.json` and `<partName>/*.json`
+func readConfigPartForFS(fsys fs.FS, logPrefix string, partName string, simpleMerge bool) (remotetermobj.MetaMapType, []ConfigError) {
+	config, errs := readConfigFilesForDir(fsys, logPrefix, partName, "", simpleMerge)
+	allErrs := errs
+	rtn := config
+	config, errs = readConfigFileFS(fsys, logPrefix, partName+".json")
+	allErrs = append(allErrs, errs...)
+	return mergeMetaMap(rtn, config, simpleMerge), allErrs
+}
+
+// Combine files from the defaults and home directory for the specified config part name
+func readConfigPart(partName string, simpleMerge bool) (remotetermobj.MetaMapType, []ConfigError) {
+	configDirAbsPath := remotetermbase.GetWaveConfigDir()
+	configDirFsys := os.DirFS(configDirAbsPath)
+	defaultConfigs, cerrs := readConfigPartForFS(defaultconfig.ConfigFS, "defaults:", partName, simpleMerge)
+	homeConfigs, cerrs1 := readConfigPartForFS(configDirFsys, "", partName, simpleMerge)
+
+	rtn := defaultConfigs
+	allErrs := append(cerrs, cerrs1...)
+	return mergeMetaMap(rtn, homeConfigs, simpleMerge), allErrs
+}
+
+// this function should only be called by the rtconfig code.
+// in golang code, the best way to get the current config is via the watcher -- rtconfig.GetWatcher().GetFullConfig()
+func ReadFullConfig() FullConfigType {
+	var fullConfig FullConfigType
+	configRType := reflect.TypeOf(fullConfig)
+	configRVal := reflect.ValueOf(&fullConfig).Elem()
+	for fieldIdx := 0; fieldIdx < configRType.NumField(); fieldIdx++ {
+		field := configRType.Field(fieldIdx)
+		if field.PkgPath != "" {
+			continue
+		}
+		configFile := field.Tag.Get("configfile")
+		if configFile == "-" {
+			continue
+		}
+		jsonTag := utilfn.GetJsonTag(field)
+		simpleMerge := field.Tag.Get("merge") == ""
+		var configPart remotetermobj.MetaMapType
+		var errs []ConfigError
+		if jsonTag == "-" || jsonTag == "" {
+			continue
+		} else {
+			configPart, errs = readConfigPart(jsonTag, simpleMerge)
+		}
+		fullConfig.ConfigErrors = append(fullConfig.ConfigErrors, errs...)
+		if configPart != nil {
+			fieldPtr := configRVal.Field(fieldIdx).Addr().Interface()
+			utilfn.ReUnmarshal(fieldPtr, configPart)
+		}
+	}
+	fullConfig.Version = remotetermbase.WaveVersion
+	fullConfig.BuildTime = remotetermbase.BuildTime
+	return fullConfig
+}
+
+func GetConfigSubdirs() []string {
+	var fullConfig FullConfigType
+	configRType := reflect.TypeOf(fullConfig)
+	var retVal []string
+	configDirAbsPath := remotetermbase.GetWaveConfigDir()
+	for fieldIdx := 0; fieldIdx < configRType.NumField(); fieldIdx++ {
+		field := configRType.Field(fieldIdx)
+		if field.PkgPath != "" {
+			continue
+		}
+		configFile := field.Tag.Get("configfile")
+		if configFile == "-" {
+			continue
+		}
+		jsonTag := utilfn.GetJsonTag(field)
+		if jsonTag != "-" && jsonTag != "" && jsonTag != "settings" {
+			retVal = append(retVal, filepath.Join(configDirAbsPath, jsonTag))
+		}
+	}
+	log.Printf("subdirs: %v\n", retVal)
+	return retVal
+}
+
+func getConfigKeyType(configKey string) reflect.Type {
+	ctype := reflect.TypeOf(SettingsType{})
+	for i := 0; i < ctype.NumField(); i++ {
+		field := ctype.Field(i)
+		jsonTag := utilfn.GetJsonTag(field)
+		if jsonTag == configKey {
+			return field.Type
+		}
+	}
+	return nil
+}
+
+func getConfigKeyNamespace(key string) string {
+	colonIdx := strings.Index(key, ":")
+	if colonIdx == -1 {
+		return ""
+	}
+	return key[:colonIdx]
+}
+
+func orderConfigKeys(m remotetermobj.MetaMapType) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		k1 := keys[i]
+		k2 := keys[j]
+		k1ns := getConfigKeyNamespace(k1)
+		k2ns := getConfigKeyNamespace(k2)
+		if k1ns != k2ns {
+			return k1ns < k2ns
+		}
+		return k1 < k2
+	})
+	return keys
+}
+
+func reindentJson(barr []byte, indentStr string) []byte {
+	if len(barr) < 2 {
+		return barr
+	}
+	if barr[0] != '{' && barr[0] != '[' {
+		return barr
+	}
+	if !bytes.Contains(barr, []byte("\n")) {
+		return barr
+	}
+	outputLines := bytes.Split(barr, []byte("\n"))
+	for i, line := range outputLines {
+		if i == 0 {
+			continue
+		}
+		outputLines[i] = append([]byte(indentStr), line...)
+	}
+	return bytes.Join(outputLines, []byte("\n"))
+}
+
+func jsonMarshalConfigInOrder(m remotetermobj.MetaMapType) ([]byte, error) {
+	if len(m) == 0 {
+		return []byte("{}"), nil
+	}
+	var buf bytes.Buffer
+	orderedKeys := orderConfigKeys(m)
+	buf.WriteString("{\n")
+	for idx, key := range orderedKeys {
+		val := m[key]
+		keyBarr, err := json.Marshal(key)
+		if err != nil {
+			return nil, err
+		}
+		valBarr, err := json.MarshalIndent(val, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		valBarr = reindentJson(valBarr, "  ")
+		buf.WriteString("  ")
+		buf.Write(keyBarr)
+		buf.WriteString(": ")
+		buf.Write(valBarr)
+		if idx < len(orderedKeys)-1 {
+			buf.WriteString(",")
+		}
+		buf.WriteString("\n")
+	}
+	buf.WriteString("}")
+	return buf.Bytes(), nil
+}
+
+var dummyNumber json.Number
+
+func convertJsonNumber(num json.Number, ctype reflect.Type) (interface{}, error) {
+	// ctype might be int64, float64, string, *int64, *float64, *string
+	// switch on ctype first
+	if ctype.Kind() == reflect.Pointer {
+		ctype = ctype.Elem()
+	}
+	if reflect.Int64 == ctype.Kind() {
+		if ival, err := num.Int64(); err == nil {
+			return ival, nil
+		}
+		return nil, fmt.Errorf("invalid number for int64: %s", num)
+	}
+	if reflect.Float64 == ctype.Kind() {
+		if fval, err := num.Float64(); err == nil {
+			return fval, nil
+		}
+		return nil, fmt.Errorf("invalid number for float64: %s", num)
+	}
+	if reflect.String == ctype.Kind() {
+		return num.String(), nil
+	}
+	return nil, fmt.Errorf("cannot convert number to %s", ctype)
+}
+
+// The lock spans the read as well as the write: concurrent RPCs each merging one key would
+// otherwise read the same snapshot and the last writer would drop the others' keys.
+func SetBaseConfigValue(toMerge remotetermobj.MetaMapType) error {
+	configWriteLock.Lock()
+	defer configWriteLock.Unlock()
+	m, cerrs := ReadWaveHomeConfigFile(SettingsFile)
+	if len(cerrs) > 0 {
+		return fmt.Errorf("error reading config file: %v", cerrs[0])
+	}
+	if m == nil {
+		m = make(remotetermobj.MetaMapType)
+	}
+	for configKey, val := range toMerge {
+		ctype := getConfigKeyType(configKey)
+		if ctype == nil {
+			return fmt.Errorf("invalid config key: %s", configKey)
+		}
+		if val == nil {
+			delete(m, configKey)
+		} else {
+			rtype := reflect.TypeOf(val)
+			if rtype == reflect.TypeOf(dummyNumber) {
+				convertedVal, err := convertJsonNumber(val.(json.Number), ctype)
+				if err != nil {
+					return fmt.Errorf("cannot convert %s: %v", configKey, err)
+				}
+				val = convertedVal
+				rtype = reflect.TypeOf(val)
+			}
+			if rtype != ctype {
+				if ctype == reflect.PointerTo(rtype) {
+					m[configKey] = &val
+				} else {
+					return fmt.Errorf("invalid value type for %s: %T", configKey, val)
+				}
+			}
+			m[configKey] = val
+		}
+	}
+	return writeWaveHomeConfigFileLocked(SettingsFile, m)
+}
+
+func SetConnectionsConfigValue(connName string, toMerge remotetermobj.MetaMapType) error {
+	configWriteLock.Lock()
+	defer configWriteLock.Unlock()
+	m, cerrs := ReadWaveHomeConfigFile(ConnectionsFile)
+	if len(cerrs) > 0 {
+		return fmt.Errorf("error reading config file: %v", cerrs[0])
+	}
+	if m == nil {
+		m = make(remotetermobj.MetaMapType)
+	}
+	connData := m.GetMap(connName)
+	if connData == nil {
+		connData = make(remotetermobj.MetaMapType)
+	}
+	for configKey, val := range toMerge {
+		connData[configKey] = val
+	}
+	m[connName] = connData
+	return writeWaveHomeConfigFileLocked(ConnectionsFile, m)
+}
+
+func MigratePresetsBackgrounds() {
+	configDirAbsPath := remotetermbase.GetWaveConfigDir()
+	backgroundsFile := filepath.Join(configDirAbsPath, "backgrounds.json")
+	if _, err := os.Stat(backgroundsFile); err == nil {
+		return
+	} else if !os.IsNotExist(err) {
+		log.Printf("error checking backgrounds.json during migration: %v\n", err)
+		return
+	}
+	bgFile := filepath.Join(configDirAbsPath, "presets", "bg.json")
+	bgData, err := os.ReadFile(bgFile)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("error reading presets/bg.json for migration: %v\n", err)
+		}
+		return
+	}
+	var rawMap map[string]json.RawMessage
+	if err := json.Unmarshal(bgData, &rawMap); err != nil {
+		log.Printf("error parsing presets/bg.json for migration: %v\n", err)
+		return
+	}
+	filtered := make(map[string]json.RawMessage)
+	for k, v := range rawMap {
+		if strings.HasPrefix(k, "bg@") {
+			filtered[k] = v
+		}
+	}
+	if len(filtered) == 0 {
+		return
+	}
+	outBarr, err := json.MarshalIndent(filtered, "", "  ")
+	if err != nil {
+		log.Printf("error marshaling backgrounds.json during migration: %v\n", err)
+		return
+	}
+	if err := fileutil.AtomicWriteFile(backgroundsFile, outBarr, 0644); err != nil {
+		log.Printf("error writing backgrounds.json during migration: %v\n", err)
+		return
+	}
+	log.Printf("migrated %d background presets from presets/bg.json to backgrounds.json\n", len(filtered))
+}
+
+// CountCustomWidgets returns the number of custom widgets the user has defined.
+// Custom widgets are identified as widgets whose ID doesn't start with "defwidget@".
+func (fc *FullConfigType) CountCustomWidgets() int {
+	count := 0
+	for widgetID := range fc.Widgets {
+		if !strings.HasPrefix(widgetID, "defwidget@") {
+			count++
+		}
+	}
+	return count
+}
+
+// CountCustomSettings returns the number of settings in the user's settings file.
+// This excludes autoupdate:channel which doesn't count as a customization.
+func CountCustomSettings() int {
+	// Load user settings
+	userSettings, _ := ReadWaveHomeConfigFile("settings.json")
+	if userSettings == nil {
+		return 0
+	}
+
+	// Count all keys except autoupdate:channel
+	count := 0
+	for key := range userSettings {
+		if key == "autoupdate:channel" {
+			continue
+		}
+		count++
+	}
+
+	return count
+}

@@ -5,7 +5,7 @@ import { Button } from "@/app/element/button";
 import { CenteredDiv } from "@/app/element/quickelems";
 import { globalStore } from "@/app/store/jotaiStore";
 import { getWebServerEndpoint } from "@/util/endpoints";
-import { formatRemoteUri } from "@/util/waveutil";
+import { formatRemoteUri } from "@/util/remotetermutil";
 import { useAtomValue } from "jotai";
 import { useEffect } from "react";
 import { TransformComponent, TransformWrapper, useControls } from "react-zoom-pan-pinch";

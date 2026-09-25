@@ -3,7 +3,7 @@
 
 import { modalsModel } from "@/app/store/modalmodel";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { useWaveEnv } from "@/app/waveenv/waveenv";
+import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { BlockEnv } from "@/app/block/blockenv";
 import { globalStore } from "@/app/store/jotaiStore";
 import { isLocalConnName, isWslConnName } from "@/util/util";

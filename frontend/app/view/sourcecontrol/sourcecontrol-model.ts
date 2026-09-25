@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { globalStore } from "@/app/store/jotaiStore";
-import { getFocusedTerminalCwd } from "@/store/global";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { WaveEnv } from "@/app/waveenv/waveenv";
-import { makeConnRoute, isBlank } from "@/util/util";
+import { WaveEnv } from "@/app/remotetermenv/remotetermenv";
+import { getFocusedTerminalCwd } from "@/store/global";
+import { isBlank, makeConnRoute } from "@/util/util";
 import * as jotai from "jotai";
 import { createRef } from "react";
 import type { ReviewFile, SelectedFile } from "./types";
@@ -30,6 +30,8 @@ export class SourceControlViewModel implements ViewModel {
     selectedFileAtom: jotai.PrimitiveAtom<SelectedFile | null>;
     loadingAtom: jotai.PrimitiveAtom<boolean>;
     errorAtom: jotai.PrimitiveAtom<string | null>;
+    // Separate from errorAtom, which every successful status poll clears.
+    actionErrorAtom: jotai.PrimitiveAtom<string | null>;
     viewModeAtom: jotai.PrimitiveAtom<"side-by-side" | "inline">;
     diffAtom: jotai.PrimitiveAtom<GitDiffResponse | null>;
     directoryDropdownOpen: jotai.PrimitiveAtom<boolean>;
@@ -82,7 +84,10 @@ export class SourceControlViewModel implements ViewModel {
         this.selectedFileAtom = jotai.atom<SelectedFile | null>(null) as jotai.PrimitiveAtom<SelectedFile | null>;
         this.loadingAtom = jotai.atom<boolean>(true) as jotai.PrimitiveAtom<boolean>;
         this.errorAtom = jotai.atom<string | null>(null) as jotai.PrimitiveAtom<string | null>;
-        this.viewModeAtom = jotai.atom<"side-by-side" | "inline">("side-by-side") as jotai.PrimitiveAtom<"side-by-side" | "inline">;
+        this.actionErrorAtom = jotai.atom<string | null>(null) as jotai.PrimitiveAtom<string | null>;
+        this.viewModeAtom = jotai.atom<"side-by-side" | "inline">("side-by-side") as jotai.PrimitiveAtom<
+            "side-by-side" | "inline"
+        >;
         this.diffAtom = jotai.atom<GitDiffResponse | null>(null) as jotai.PrimitiveAtom<GitDiffResponse | null>;
         this.directoryDropdownOpen = jotai.atom<boolean>(false) as jotai.PrimitiveAtom<boolean>;
         this.stagingAtom = jotai.atom<boolean>(false) as jotai.PrimitiveAtom<boolean>;
@@ -102,9 +107,15 @@ export class SourceControlViewModel implements ViewModel {
         this.reviewModeAtom = jotai.atom<boolean>(false) as jotai.PrimitiveAtom<boolean>;
         this.reviewFilesAtom = jotai.atom<ReviewFile[]>([]) as jotai.PrimitiveAtom<ReviewFile[]>;
         this.reviewActiveIndexAtom = jotai.atom<number>(0) as jotai.PrimitiveAtom<number>;
-        this.reviewCollapsedAtom = jotai.atom<Map<string, boolean>>(new Map()) as jotai.PrimitiveAtom<Map<string, boolean>>;
-        this.reviewFileRefsAtom = jotai.atom<Map<string, HTMLDivElement>>(new Map()) as jotai.PrimitiveAtom<Map<string, HTMLDivElement>>;
-        this.diffCacheAtom = jotai.atom<Map<string, GitDiffResponse>>(new Map()) as jotai.PrimitiveAtom<Map<string, GitDiffResponse>>;
+        this.reviewCollapsedAtom = jotai.atom<Map<string, boolean>>(new Map()) as jotai.PrimitiveAtom<
+            Map<string, boolean>
+        >;
+        this.reviewFileRefsAtom = jotai.atom<Map<string, HTMLDivElement>>(new Map()) as jotai.PrimitiveAtom<
+            Map<string, HTMLDivElement>
+        >;
+        this.diffCacheAtom = jotai.atom<Map<string, GitDiffResponse>>(new Map()) as jotai.PrimitiveAtom<
+            Map<string, GitDiffResponse>
+        >;
         this.reviewFilterLabelAtom = jotai.atom<string>("") as jotai.PrimitiveAtom<string>;
 
         this.reviewStatsAtom = jotai.atom((get) => {
@@ -250,11 +261,7 @@ export class SourceControlViewModel implements ViewModel {
 
         const route = makeConnRoute(globalStore.get(this.connection));
         try {
-            const resp = await this.env.rpc.GitStatusCommand(
-                TabRpcClient,
-                { dir: cwd },
-                { route }
-            );
+            const resp = await this.env.rpc.GitStatusCommand(TabRpcClient, { dir: cwd }, { route });
             if (!this.disposed) {
                 globalStore.set(this.statusAtom, resp);
                 globalStore.set(this.loadingAtom, false);
@@ -269,7 +276,13 @@ export class SourceControlViewModel implements ViewModel {
         }
     }
 
-    async fetchDiff(dir: string, path: string, staged: boolean, untracked: boolean = false, fullFile: boolean = false): Promise<GitDiffResponse | null> {
+    async fetchDiff(
+        dir: string,
+        path: string,
+        staged: boolean,
+        untracked: boolean = false,
+        fullFile: boolean = false
+    ): Promise<GitDiffResponse | null> {
         const connStatus = globalStore.get(this.connStatus);
         if (!connStatus?.connected) {
             return null;
@@ -305,13 +318,18 @@ export class SourceControlViewModel implements ViewModel {
             cwd,
         });
         const diff = await this.fetchDiff(cwd, selected.path, selected.staged, untracked, true);
-        console.log("[SCM] diff result:", diff ? {
-            hasOriginal: diff.original.length > 0,
-            hasModified: diff.modified.length > 0,
-            originalLen: diff.original.length,
-            modifiedLen: diff.modified.length,
-            language: diff.language,
-        } : null);
+        console.log(
+            "[SCM] diff result:",
+            diff
+                ? {
+                      hasOriginal: diff.original.length > 0,
+                      hasModified: diff.modified.length > 0,
+                      originalLen: diff.original.length,
+                      modifiedLen: diff.modified.length,
+                      language: diff.language,
+                  }
+                : null
+        );
         if (!this.disposed) {
             globalStore.set(this.diffAtom, diff);
         }
@@ -330,6 +348,7 @@ export class SourceControlViewModel implements ViewModel {
             await this.fetchDiffForSelected();
         } catch (e) {
             console.error("[SCM] stageFiles failed:", e);
+            globalStore.set(this.actionErrorAtom, `Failed to stage files: ${e?.message ?? String(e)}`);
             await this.fetchStatus();
         } finally {
             globalStore.set(this.stagingAtom, false);
@@ -347,6 +366,7 @@ export class SourceControlViewModel implements ViewModel {
             await this.fetchDiffForSelected();
         } catch (e) {
             console.error("Failed to unstage files:", e);
+            globalStore.set(this.actionErrorAtom, `Failed to unstage files: ${e?.message ?? String(e)}`);
             await this.fetchStatus();
         } finally {
             globalStore.set(this.stagingAtom, false);
@@ -363,6 +383,7 @@ export class SourceControlViewModel implements ViewModel {
             await this.fetchDiffForSelected();
         } catch (e) {
             console.error("Failed to stage hunk:", e);
+            globalStore.set(this.actionErrorAtom, `Failed to stage hunk: ${e?.message ?? String(e)}`);
             await this.fetchStatus();
         } finally {
             globalStore.set(this.stagingAtom, false);
@@ -379,10 +400,15 @@ export class SourceControlViewModel implements ViewModel {
             await this.fetchDiffForSelected();
         } catch (e) {
             console.error("Failed to revert hunk:", e);
+            globalStore.set(this.actionErrorAtom, `Failed to revert hunk: ${e?.message ?? String(e)}`);
             await this.fetchStatus();
         } finally {
             globalStore.set(this.stagingAtom, false);
         }
+    }
+
+    dismissActionError() {
+        globalStore.set(this.actionErrorAtom, null);
     }
 
     async commit(amend: boolean = false): Promise<{ success: boolean; output: string } | null> {
@@ -419,11 +445,7 @@ export class SourceControlViewModel implements ViewModel {
         const route = makeConnRoute(globalStore.get(this.connection));
         globalStore.set(this.pushingAtom, true);
         try {
-            const result = await this.env.rpc.GitPushCommand(
-                TabRpcClient,
-                { dir: cwd, username, password },
-                { route }
-            );
+            const result = await this.env.rpc.GitPushCommand(TabRpcClient, { dir: cwd, username, password }, { route });
 
             // If auth needed and no credentials provided, check secret store
             if (result.authNeeded && !username) {
@@ -450,7 +472,14 @@ export class SourceControlViewModel implements ViewModel {
             return result;
         } catch (e) {
             console.error("Failed to push:", e);
-            return { success: false, output: String(e), authNeeded: false, authError: "", authHost: "", authRemote: "" };
+            return {
+                success: false,
+                output: String(e),
+                authNeeded: false,
+                authError: "",
+                authHost: "",
+                authRemote: "",
+            };
         } finally {
             globalStore.set(this.pushingAtom, false);
         }
@@ -459,11 +488,7 @@ export class SourceControlViewModel implements ViewModel {
     async lookupCredentials(remote: string): Promise<GitCredentials> {
         const route = makeConnRoute(globalStore.get(this.connection));
         try {
-            return await this.env.rpc.GitLookupCredentialsCommand(
-                TabRpcClient,
-                { remote },
-                { route }
-            );
+            return await this.env.rpc.GitLookupCredentialsCommand(TabRpcClient, { remote }, { route });
         } catch (e) {
             console.error("Failed to lookup credentials:", e);
             return { username: "", password: "", found: false, scope: "" };
@@ -567,25 +592,29 @@ export class SourceControlViewModel implements ViewModel {
             additions = diff.modified.split("\n").length;
             deletions = diff.original.split("\n").length;
         }
-        globalStore.set(this.reviewFilesAtom, files.map(f =>
-            f.path === path ? { ...f, additions, deletions } : f
-        ));
+        globalStore.set(
+            this.reviewFilesAtom,
+            files.map((f) => (f.path === path ? { ...f, additions, deletions } : f))
+        );
     }
 
     async stageFileFromReview(path: string, staged: boolean, untracked: boolean) {
         const prevFiles = globalStore.get(this.reviewFilesAtom);
         if (untracked) {
-            globalStore.set(this.reviewFilesAtom, prevFiles.map(f =>
-                f.path === path ? { ...f, staged: true } : f
-            ));
+            globalStore.set(
+                this.reviewFilesAtom,
+                prevFiles.map((f) => (f.path === path ? { ...f, staged: true } : f))
+            );
         } else if (staged) {
-            globalStore.set(this.reviewFilesAtom, prevFiles.map(f =>
-                f.path === path ? { ...f, staged: false } : f
-            ));
+            globalStore.set(
+                this.reviewFilesAtom,
+                prevFiles.map((f) => (f.path === path ? { ...f, staged: false } : f))
+            );
         } else {
-            globalStore.set(this.reviewFilesAtom, prevFiles.map(f =>
-                f.path === path ? { ...f, staged: true } : f
-            ));
+            globalStore.set(
+                this.reviewFilesAtom,
+                prevFiles.map((f) => (f.path === path ? { ...f, staged: true } : f))
+            );
         }
 
         this.invalidateDiffCache(path);
@@ -610,7 +639,8 @@ export class SourceControlViewModel implements ViewModel {
         try {
             const diff = await this.fetchDiffCached(path, staged, false);
             const hunkCount = diff?.hunks?.length ?? 0;
-            for (let i = 0; i < hunkCount; i++) {
+            // Last to first: each revert re-diffs server-side, so earlier indices stay valid.
+            for (let i = hunkCount - 1; i >= 0; i--) {
                 await this.revertHunk(path, i, staged);
             }
             this.invalidateDiffCache(path);
@@ -637,18 +667,18 @@ export class SourceControlViewModel implements ViewModel {
         const reviewFiles = globalStore.get(this.reviewFilesAtom);
         if (!status || reviewFiles.length === 0) return;
 
-        const existingByPath = new Map(reviewFiles.map(f => [f.path, f]));
+        const existingByPath = new Map(reviewFiles.map((f) => [f.path, f]));
 
         const allFiles = [
-            ...status.staged.map(f => ({ ...f, staged: true, additions: 0, deletions: 0 })),
-            ...status.unstaged.map(f => ({ ...f, staged: false, additions: 0, deletions: 0 })),
-            ...status.untracked.map(f => ({ ...f, staged: false, untracked: true, additions: 0, deletions: 0 })),
+            ...status.staged.map((f) => ({ ...f, staged: true, additions: 0, deletions: 0 })),
+            ...status.unstaged.map((f) => ({ ...f, staged: false, additions: 0, deletions: 0 })),
+            ...status.untracked.map((f) => ({ ...f, staged: false, untracked: true, additions: 0, deletions: 0 })),
         ];
 
-        const reviewPaths = new Set(reviewFiles.map(f => f.path));
+        const reviewPaths = new Set(reviewFiles.map((f) => f.path));
         const updated = allFiles
-            .filter(f => reviewPaths.has(f.path))
-            .map(f => {
+            .filter((f) => reviewPaths.has(f.path))
+            .map((f) => {
                 const existing = existingByPath.get(f.path);
                 if (existing && (existing.additions > 0 || existing.deletions > 0)) {
                     return { ...f, additions: existing.additions, deletions: existing.deletions };

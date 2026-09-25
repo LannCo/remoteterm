@@ -185,7 +185,7 @@ function createMockFilesystemEntries(): MockFsEntryInput[] {
         { path: `${MockHomePath}/.config`, isdir: true },
         makeMockFsInput(
             `${MockHomePath}/.bashrc`,
-            `export PATH="$HOME/bin:$PATH"\nalias gs="git status -sb"\nexport WAVETERM_THEME="midnight"\n`,
+            `export PATH="$HOME/bin:$PATH"\nalias gs="git status -sb"\nexport REMOTETERM_THEME="midnight"\n`,
             "text/plain"
         ),
         makeMockFsInput(`${MockHomePath}/.gitconfig`),

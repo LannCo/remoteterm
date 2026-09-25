@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/LannCo/remoteterm/pkg/baseds"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/wps"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/baseds"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wps"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
 var tabIndicatorCmd = &cobra.Command{
@@ -34,7 +34,7 @@ var (
 
 func init() {
 	rootCmd.AddCommand(tabIndicatorCmd)
-	tabIndicatorCmd.Flags().StringVar(&tabIndicatorTabId, "tabid", "", "tab id (defaults to WAVETERM_TABID)")
+	tabIndicatorCmd.Flags().StringVar(&tabIndicatorTabId, "tabid", "", "tab id (defaults to REMOTETERM_TABID)")
 	tabIndicatorCmd.Flags().StringVar(&tabIndicatorColor, "color", "", "indicator color")
 	tabIndicatorCmd.Flags().Float64Var(&tabIndicatorPriority, "priority", 10, "indicator priority")
 	tabIndicatorCmd.Flags().BoolVar(&tabIndicatorClear, "clear", false, "clear the indicator")
@@ -46,13 +46,13 @@ func tabIndicatorRun(cmd *cobra.Command, args []string) error {
 
 	tabId := tabIndicatorTabId
 	if tabId == "" {
-		tabId = os.Getenv("WAVETERM_TABID")
+		tabId = getEnvNewOrLegacy("REMOTETERM_TABID", "WAVETERM_TABID")
 	}
 	if tabId == "" {
-		return fmt.Errorf("no tab id specified (use --tabid or set WAVETERM_TABID)")
+		return fmt.Errorf("no tab id specified (use --tabid or set REMOTETERM_TABID)")
 	}
 
-	oref := waveobj.MakeORef(waveobj.OType_Tab, tabId)
+	oref := remotetermobj.MakeORef(remotetermobj.OType_Tab, tabId)
 
 	var eventData baseds.BadgeEvent
 	eventData.ORef = oref.String()

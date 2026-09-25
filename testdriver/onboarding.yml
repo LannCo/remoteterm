@@ -1,6 +1,6 @@
 version: 4.0.65
 steps:
-  - prompt: complete the onboarding of wave terminal
+  - prompt: complete the onboarding of RemoteTerm
     commands:
       - command: hover-text
         text: Continue

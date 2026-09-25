@@ -1,9 +1,9 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { MetaKeyAtomFnType, useWaveEnv, WaveEnv, WaveEnvSubset } from "@/app/waveenv/waveenv";
+import { MetaKeyAtomFnType, useWaveEnv, WaveEnv, WaveEnvSubset } from "@/app/remotetermenv/remotetermenv";
 import { PLATFORM, PlatformMacOS } from "@/util/platformutil";
-import { computeBgStyleFromMeta } from "@/util/waveutil";
+import { computeBgStyleFromMeta } from "@/util/remotetermutil";
 import useResizeObserver from "@react-hook/resize-observer";
 import { useAtomValue } from "jotai";
 import { CSSProperties, useCallback, useLayoutEffect, useRef } from "react";

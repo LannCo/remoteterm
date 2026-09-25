@@ -115,7 +115,10 @@ func CopyAndAddToEnvMap(envMap map[string]string, key string, val string) map[st
 func PruneInitialEnv(envMap map[string]string) map[string]string {
 	pruned := make(map[string]string)
 	for key, value := range envMap {
-		if strings.HasPrefix(key, "WAVETERM_") || strings.HasPrefix(key, "BASH_FUNC_") {
+		// matches both prefixes during the rename's deprecation window: the app still
+		// dual-writes some session-scoped vars under the old "WAVETERM_" prefix for
+		// backwards compatibility, and those must still be pruned here too
+		if strings.HasPrefix(key, "REMOTETERM_") || strings.HasPrefix(key, "WAVETERM_") || strings.HasPrefix(key, "BASH_FUNC_") {
 			continue
 		}
 		if key == "XDG_SESSION_ID" || key == "SHLVL" || key == "S_COLORS" ||

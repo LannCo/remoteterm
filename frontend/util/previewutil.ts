@@ -1,7 +1,7 @@
 import { createBlock, getApi } from "@/app/store/global";
 import { makeNativeLabel } from "./platformutil";
+import { formatRemoteUri } from "./remotetermutil";
 import { fireAndForget } from "./util";
-import { formatRemoteUri } from "./waveutil";
 
 export function addOpenMenuItems(menu: ContextMenuItem[], conn: string, finfo: FileInfo): ContextMenuItem[] {
     if (!finfo) {

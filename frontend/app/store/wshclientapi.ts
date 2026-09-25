@@ -66,16 +66,16 @@ export class RpcApiType {
         return client.wshRpcCall("blockinfo", data, opts);
     }
 
-    // command "blockrestartstream" [call]
-    BlockRestartStreamCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<void> {
-        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "blockrestartstream", data, opts);
-        return client.wshRpcCall("blockrestartstream", data, opts);
-    }
-
     // command "blockjobstatus" [call]
     BlockJobStatusCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<BlockJobStatusData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "blockjobstatus", data, opts);
         return client.wshRpcCall("blockjobstatus", data, opts);
+    }
+
+    // command "blockrestartstream" [call]
+    BlockRestartStreamCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "blockrestartstream", data, opts);
+        return client.wshRpcCall("blockrestartstream", data, opts);
     }
 
     // command "blockslist" [call]
@@ -108,12 +108,6 @@ export class RpcApiType {
         return client.wshRpcCall("conndisconnect", data, opts);
     }
 
-    // command "connstopautoretry" [call]
-    ConnStopAutoRetryCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<void> {
-        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "connstopautoretry", data, opts);
-        return client.wshRpcCall("connstopautoretry", data, opts);
-    }
-
     // command "connensure" [call]
     ConnEnsureCommand(client: WshClient, data: ConnExtData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "connensure", data, opts);
@@ -142,6 +136,12 @@ export class RpcApiType {
     ConnStatusCommand(client: WshClient, opts?: RpcOpts): Promise<ConnStatus[]> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "connstatus", null, opts);
         return client.wshRpcCall("connstatus", null, opts);
+    }
+
+    // command "connstopautoretry" [call]
+    ConnStopAutoRetryCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "connstopautoretry", data, opts);
+        return client.wshRpcCall("connstopautoretry", data, opts);
     }
 
     // command "connupdatewsh" [call]
@@ -468,6 +468,12 @@ export class RpcApiType {
         return client.wshRpcCall("getsecretsnames", null, opts);
     }
 
+    // command "getsysinfometrics" [call]
+    GetSysInfoMetricsCommand(client: WshClient, data: CommandSysInfoMetricsData, opts?: RpcOpts): Promise<{[key: string]: MetricMeta}> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getsysinfometrics", data, opts);
+        return client.wshRpcCall("getsysinfometrics", data, opts);
+    }
+
     // command "gettab" [call]
     GetTabCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<Tab> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gettab", data, opts);
@@ -498,28 +504,28 @@ export class RpcApiType {
         return client.wshRpcCall("gitdiff", data, opts);
     }
 
-    // command "gitpush" [call]
-    GitPushCommand(client: WshClient, data: CommandGitPushData, opts?: RpcOpts): Promise<GitPushResponse> {
-        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitpush", data, opts);
-        return client.wshRpcCall("gitpush", data, opts);
-    }
-
     // command "gitlookupcredentials" [call]
     GitLookupCredentialsCommand(client: WshClient, data: CommandGitLookupCredentialsData, opts?: RpcOpts): Promise<GitCredentials> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitlookupcredentials", data, opts);
         return client.wshRpcCall("gitlookupcredentials", data, opts);
     }
 
-    // command "gitsavecredentials" [call]
-    GitSaveCredentialsCommand(client: WshClient, data: CommandGitSaveCredentialsData, opts?: RpcOpts): Promise<void> {
-        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitsavecredentials", data, opts);
-        return client.wshRpcCall("gitsavecredentials", data, opts);
+    // command "gitpush" [call]
+    GitPushCommand(client: WshClient, data: CommandGitPushData, opts?: RpcOpts): Promise<GitPushResponse> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitpush", data, opts);
+        return client.wshRpcCall("gitpush", data, opts);
     }
 
     // command "gitreverthunk" [call]
     GitRevertHunkCommand(client: WshClient, data: CommandGitRevertHunkData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitreverthunk", data, opts);
         return client.wshRpcCall("gitreverthunk", data, opts);
+    }
+
+    // command "gitsavecredentials" [call]
+    GitSaveCredentialsCommand(client: WshClient, data: CommandGitSaveCredentialsData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "gitsavecredentials", data, opts);
+        return client.wshRpcCall("gitsavecredentials", data, opts);
     }
 
     // command "gitstage" [call]
@@ -952,6 +958,12 @@ export class RpcApiType {
 	StreamTestCommand(client: WshClient, opts?: RpcOpts): AsyncGenerator<number, void, boolean> {
         if (this.mockClient) return this.mockClient.mockWshRpcStream(client, "streamtest", null, opts);
         return client.wshRpcStream("streamtest", null, opts);
+    }
+
+    // command "sysinforeprobe" [call]
+    SysInfoReprobeCommand(client: WshClient, data: CommandSysInfoReprobeData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "sysinforeprobe", data, opts);
+        return client.wshRpcCall("sysinforeprobe", data, opts);
     }
 
     // command "termgetscrollbacklines" [call]

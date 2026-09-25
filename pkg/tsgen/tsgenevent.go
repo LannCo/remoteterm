@@ -9,13 +9,13 @@ import (
 	"reflect"
 	"strconv"
 
-	"github.com/wavetermdev/waveterm/pkg/baseds"
-	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
-	"github.com/wavetermdev/waveterm/pkg/userinput"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
-	"github.com/wavetermdev/waveterm/pkg/wps"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/baseds"
+	"github.com/LannCo/remoteterm/pkg/blockcontroller"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtconfig"
+	"github.com/LannCo/remoteterm/pkg/userinput"
+	"github.com/LannCo/remoteterm/pkg/wps"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
 )
 
 var waveEventRType = reflect.TypeOf(wps.WaveEvent{})
@@ -27,9 +27,9 @@ var WaveEventDataTypes = map[string]reflect.Type{
 	wps.Event_ControllerStatus:    reflect.TypeOf((*blockcontroller.BlockControllerRuntimeStatus)(nil)),
 	wps.Event_BuilderStatus:       reflect.TypeOf(wshrpc.BuilderStatusData{}),
 	wps.Event_BuilderOutput:       reflect.TypeOf(map[string]any{}),
-	wps.Event_WaveObjUpdate:       reflect.TypeOf(waveobj.WaveObjUpdate{}),
+	wps.Event_WaveObjUpdate:       reflect.TypeOf(remotetermobj.WaveObjUpdate{}),
 	wps.Event_BlockFile:           reflect.TypeOf((*wps.WSFileEventData)(nil)),
-	wps.Event_Config:              reflect.TypeOf(wconfig.WatcherUpdate{}),
+	wps.Event_Config:              reflect.TypeOf(rtconfig.WatcherUpdate{}),
 	wps.Event_UserInput:           reflect.TypeOf((*userinput.UserInputRequest)(nil)),
 	wps.Event_RouteDown:           nil,
 	wps.Event_RouteUp:             nil,

@@ -10,10 +10,10 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
 // Command-line flags for the blocks commands
@@ -28,11 +28,11 @@ var (
 
 // BlockDetails represents the information about a block returned by the list command
 type BlockDetails struct {
-	BlockId     string              `json:"blockid"`     // Unique identifier for the block
-	WorkspaceId string              `json:"workspaceid"` // ID of the workspace containing the block
-	TabId       string              `json:"tabid"`       // ID of the tab containing the block
-	View        string              `json:"view"`        // Canonical view type (term, web, preview, edit, sysinfo)
-	Meta        waveobj.MetaMapType `json:"meta"`        // Block metadata including view type
+	BlockId     string                    `json:"blockid"`     // Unique identifier for the block
+	WorkspaceId string                    `json:"workspaceid"` // ID of the workspace containing the block
+	TabId       string                    `json:"tabid"`       // ID of the tab containing the block
+	View        string                    `json:"view"`        // Canonical view type (term, web, preview, edit, sysinfo)
+	Meta        remotetermobj.MetaMapType `json:"meta"`        // Block metadata including view type
 }
 
 // blocksListCmd represents the 'blocks list' command
@@ -40,7 +40,7 @@ var blocksListCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls", "get"},
 	Short:   "List blocks in workspaces/windows",
-	Long:    `List blocks with optional filtering by workspace, window, tab, or view type.
+	Long: `List blocks with optional filtering by workspace, window, tab, or view type.
 
 Examples:
   # List blocks from all workspaces
@@ -63,8 +63,8 @@ Examples:
 
   # Set a different timeout (in milliseconds)
   wsh blocks list --timeout=10000`,
-	RunE:    blocksListRun,
-	PreRunE: preRunSetupRpcClient,
+	RunE:         blocksListRun,
+	PreRunE:      preRunSetupRpcClient,
 	SilenceUsage: true,
 }
 
@@ -86,9 +86,9 @@ func init() {
 	}
 
 	blocksCmd := &cobra.Command{
-		Use:     "blocks",
-		Short:   "Manage blocks",
-		Long:    "Commands for working with blocks",
+		Use:   "blocks",
+		Short: "Manage blocks",
+		Long:  "Commands for working with blocks",
 	}
 
 	blocksCmd.AddCommand(blocksListCmd)
@@ -165,7 +165,7 @@ func blocksListRun(cmd *cobra.Command, args []string) error {
 			}
 
 			if blocksView != "" {
-				view := b.Meta.GetString(waveobj.MetaKey_View, "")
+				view := b.Meta.GetString(remotetermobj.MetaKey_View, "")
 
 				// Support view type aliases
 				if !matchesViewType(view, blocksView) {
@@ -173,7 +173,7 @@ func blocksListRun(cmd *cobra.Command, args []string) error {
 				}
 			}
 
-			v := b.Meta.GetString(waveobj.MetaKey_View, "")
+			v := b.Meta.GetString(remotetermobj.MetaKey_View, "")
 			allBlocks = append(allBlocks, BlockDetails{
 				BlockId:     b.BlockId,
 				WorkspaceId: b.WorkspaceId,
@@ -230,11 +230,11 @@ func blocksListRun(cmd *cobra.Command, args []string) error {
 
 		switch view {
 		case "preview", "edit":
-			content = b.Meta.GetString(waveobj.MetaKey_File, "<no file>")
+			content = b.Meta.GetString(remotetermobj.MetaKey_File, "<no file>")
 		case "web":
-			content = b.Meta.GetString(waveobj.MetaKey_Url, "<no url>")
+			content = b.Meta.GetString(remotetermobj.MetaKey_Url, "<no url>")
 		case "term":
-			content = b.Meta.GetString(waveobj.MetaKey_CmdCwd, "<no cwd>")
+			content = b.Meta.GetString(remotetermobj.MetaKey_CmdCwd, "<no cwd>")
 		default:
 			content = ""
 		}

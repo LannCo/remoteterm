@@ -5,7 +5,7 @@ import { UserInputPrompt } from "@/app/modals/userinputprompt";
 import { modalsModel } from "@/app/store/modalmodel";
 import * as jotai from "jotai";
 import * as React from "react";
-import { useWaveEnv } from "@/app/waveenv/waveenv";
+import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { BlockEnv } from "@/app/block/blockenv";
 import { globalStore } from "@/app/store/jotaiStore";
 

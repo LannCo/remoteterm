@@ -6,13 +6,13 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"text/tabwriter"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
 var tabCommand = &cobra.Command{
@@ -26,7 +26,7 @@ var tabListCmd = &cobra.Command{
 	Aliases: []string{"ls"},
 	Short:   "List tabs in a workspace",
 	Long: `List tabs with their ids and names, in their current order.
-Defaults to the current workspace (from WAVETERM_WORKSPACEID).`,
+Defaults to the current workspace (from REMOTETERM_WORKSPACEID).`,
 	RunE:    tabListRun,
 	PreRunE: preRunSetupRpcClient,
 }
@@ -49,11 +49,11 @@ var (
 )
 
 func init() {
-	tabListCmd.Flags().StringVar(&tabWorkspaceId, "workspace", "", "workspace id (defaults to WAVETERM_WORKSPACEID)")
+	tabListCmd.Flags().StringVar(&tabWorkspaceId, "workspace", "", "workspace id (defaults to REMOTETERM_WORKSPACEID)")
 	tabListCmd.Flags().BoolVar(&tabListJSON, "json", false, "output as JSON")
 	tabCommand.AddCommand(tabListCmd)
 
-	tabMoveCmd.Flags().StringVar(&tabWorkspaceId, "workspace", "", "workspace id (defaults to WAVETERM_WORKSPACEID)")
+	tabMoveCmd.Flags().StringVar(&tabWorkspaceId, "workspace", "", "workspace id (defaults to REMOTETERM_WORKSPACEID)")
 	tabMoveCmd.Flags().IntVar(&tabMoveIndex, "index", -1, "0-based target position (required)")
 	tabMoveCmd.MarkFlagRequired("index")
 	tabCommand.AddCommand(tabMoveCmd)
@@ -73,14 +73,14 @@ func resolveWorkspaceId() (string, error) {
 	if wsId != "" {
 		return wsId, nil
 	}
-	wsId = os.Getenv("WAVETERM_WORKSPACEID")
+	wsId = getEnvNewOrLegacy(remotetermbase.WaveWorkspaceIdVarName, remotetermbase.LegacyWaveWorkspaceIdVarName)
 	if wsId != "" {
 		return wsId, nil
 	}
-	return "", fmt.Errorf("no workspace id specified (use --workspace or set WAVETERM_WORKSPACEID)")
+	return "", fmt.Errorf("no workspace id specified (use --workspace or set %s)", remotetermbase.WaveWorkspaceIdVarName)
 }
 
-func getWorkspaceForId(wsId string, workspaces []wshrpc.WorkspaceInfoData) (*waveobj.Workspace, error) {
+func getWorkspaceForId(wsId string, workspaces []wshrpc.WorkspaceInfoData) (*remotetermobj.Workspace, error) {
 	for _, w := range workspaces {
 		if w.WorkspaceData.OID == wsId {
 			return w.WorkspaceData, nil

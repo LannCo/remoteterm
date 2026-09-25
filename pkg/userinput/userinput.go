@@ -11,11 +11,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/blocklogger"
+	"github.com/LannCo/remoteterm/pkg/genconn"
+	"github.com/LannCo/remoteterm/pkg/rtstore"
+	"github.com/LannCo/remoteterm/pkg/wps"
 	"github.com/google/uuid"
-	"github.com/wavetermdev/waveterm/pkg/blocklogger"
-	"github.com/wavetermdev/waveterm/pkg/genconn"
-	"github.com/wavetermdev/waveterm/pkg/wps"
-	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
 var MainUserInputHandler = UserInputHandler{
@@ -265,15 +265,15 @@ func determineScopes(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("context did not contain connection info")
 	}
 	// resolve windowId from blockId
-	tabId, err := wstore.DBFindTabForBlockId(ctx, connData.BlockId)
+	tabId, err := rtstore.DBFindTabForBlockId(ctx, connData.BlockId)
 	if err != nil {
 		return nil, fmt.Errorf("unabled to determine tab for route: %w", err)
 	}
-	workspaceId, err := wstore.DBFindWorkspaceForTabId(ctx, tabId)
+	workspaceId, err := rtstore.DBFindWorkspaceForTabId(ctx, tabId)
 	if err != nil {
 		return nil, fmt.Errorf("unabled to determine workspace for route: %w", err)
 	}
-	windowId, err := wstore.DBFindWindowForWorkspaceId(ctx, workspaceId)
+	windowId, err := rtstore.DBFindWindowForWorkspaceId(ctx, workspaceId)
 	if err != nil {
 		return nil, fmt.Errorf("unabled to determine window for route: %w", err)
 	}
@@ -284,21 +284,21 @@ func determineScopes(ctx context.Context) ([]string, error) {
 // findWindowsForConnection finds all windows that contain blocks using the given connection.
 // Used as a fallback when determineScopes fails (e.g., during reconnect without BlockId in context).
 func findWindowsForConnection(ctx context.Context, connName string) []string {
-	blockIds, err := wstore.DBFindBlocksByConnection(ctx, connName)
+	blockIds, err := rtstore.DBFindBlocksByConnection(ctx, connName)
 	if err != nil || len(blockIds) == 0 {
 		return nil
 	}
 	windowSet := make(map[string]bool)
 	for _, blockId := range blockIds {
-		tabId, err := wstore.DBFindTabForBlockId(ctx, blockId)
+		tabId, err := rtstore.DBFindTabForBlockId(ctx, blockId)
 		if err != nil {
 			continue
 		}
-		workspaceId, err := wstore.DBFindWorkspaceForTabId(ctx, tabId)
+		workspaceId, err := rtstore.DBFindWorkspaceForTabId(ctx, tabId)
 		if err != nil {
 			continue
 		}
-		windowId, err := wstore.DBFindWindowForWorkspaceId(ctx, workspaceId)
+		windowId, err := rtstore.DBFindWindowForWorkspaceId(ctx, workspaceId)
 		if err != nil {
 			continue
 		}
@@ -336,7 +336,7 @@ func (p *FrontendProvider) GetUserInput(ctx context.Context, request *UserInputR
 			scopes = findWindowsForConnection(ctx, request.ConnName)
 		}
 		if len(scopes) == 0 {
-			allWindows, err := wstore.DBGetAllOIDsByType(ctx, "window")
+			allWindows, err := rtstore.DBGetAllOIDsByType(ctx, "window")
 			if err != nil {
 				blocklogger.Infof(ctx, "unable to find windows for user input: %v", err)
 				return nil, fmt.Errorf("unable to find windows for user input: %v", err)

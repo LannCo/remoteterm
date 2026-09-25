@@ -5,9 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/LannCo/remoteterm/tsunami/build"
+	"github.com/LannCo/remoteterm/tsunami/tsunamibase"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/tsunami/build"
-	"github.com/wavetermdev/waveterm/tsunami/tsunamibase"
 )
 
 const (

@@ -47,7 +47,7 @@ function goHistoryBack(curValKey: "url" | "file", curVal: string, meta: MetaType
 }
 
 function goHistoryForward(curValKey: "url" | "file", curVal: string, meta: MetaType): MetaType {
-    let history = (meta?.history ?? []).slice();
+    const history = (meta?.history ?? []).slice();
     const historyForward = (meta?.["history:forward"] ?? []).slice();
     if (historyForward == null || historyForward.length == 0) {
         return null;

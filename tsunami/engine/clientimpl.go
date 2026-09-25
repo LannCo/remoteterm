@@ -19,10 +19,10 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/LannCo/remoteterm/tsunami/rpctypes"
+	"github.com/LannCo/remoteterm/tsunami/util"
+	"github.com/LannCo/remoteterm/tsunami/vdom"
 	"github.com/google/uuid"
-	"github.com/wavetermdev/waveterm/tsunami/rpctypes"
-	"github.com/wavetermdev/waveterm/tsunami/util"
-	"github.com/wavetermdev/waveterm/tsunami/vdom"
 )
 
 const TsunamiListenAddrEnvVar = "TSUNAMI_LISTENADDR"
@@ -44,8 +44,8 @@ var defaultClient = makeClient()
 type AppMeta struct {
 	Title     string `json:"title"`
 	ShortDesc string `json:"shortdesc"`
-	Icon      string `json:"icon"`      // for waveapps, the icon to use (fontawesome names)
-	IconColor string `json:"iconcolor"` // for waveapps, the icon color to use (HTML color -- name, hex, rgb)
+	Icon      string `json:"icon"`      // for rtapps, the icon to use (fontawesome names)
+	IconColor string `json:"iconcolor"` // for rtapps, the icon color to use (HTML color -- name, hex, rgb)
 }
 
 type SecretMeta struct {

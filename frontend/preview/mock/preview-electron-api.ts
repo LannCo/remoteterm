@@ -37,8 +37,8 @@ const previewElectronApi: ElectronApi = {
     setActiveTab: (_tabId: string) => {},
     createTab: () => {},
     closeTab: (_workspaceId: string, _tabId: string, _confirmClose: boolean) => Promise.resolve(false),
-    setWindowInitStatus: (_status: "ready" | "wave-ready") => {},
-    onWaveInit: (_callback: (initOpts: WaveInitOpts) => void) => {},
+    setWindowInitStatus: (_status: "ready" | "remoteterm-ready") => {},
+    onRemoteTermInit: (_callback: (initOpts: RemoteTermInitOpts) => void) => {},
     onBuilderInit: (_callback: (initOpts: BuilderInitOpts) => void) => {},
     sendLog: (_log: string) => {},
     onQuicklook: (_filePath: string) => {},
@@ -54,7 +54,7 @@ const previewElectronApi: ElectronApi = {
     doRefresh: () => {},
     saveTextFile: (_fileName: string, _content: string) => Promise.resolve(false),
     setIsActive: async () => {},
-    onWaveResize: (_callback: () => void) => {},
+    onRemoteTermResize: (_callback: () => void) => {},
 };
 
 function installPreviewElectronApi() {

@@ -8,7 +8,7 @@ import { useEffect, useRef } from "react";
 import { debounce } from "throttle-debounce";
 
 function createModel(value: string, path: string, language?: string) {
-    const uri = monaco.Uri.parse(`wave://editor/${encodeURIComponent(path)}`);
+    const uri = monaco.Uri.parse(`remoteterm://editor/${encodeURIComponent(path)}`);
     return monaco.editor.createModel(value, language, uri);
 }
 
@@ -174,8 +174,8 @@ export function MonacoDiffViewer({ original, modified, language, path, options, 
         }
 
         // Create new models with fresh URIs
-        const origUri = monaco.Uri.parse(`wave://diff/${encodeURIComponent(path)}.orig`);
-        const modUri = monaco.Uri.parse(`wave://diff/${encodeURIComponent(path)}.mod`);
+        const origUri = monaco.Uri.parse(`remoteterm://diff/${encodeURIComponent(path)}.orig`);
+        const modUri = monaco.Uri.parse(`remoteterm://diff/${encodeURIComponent(path)}.mod`);
         const originalModel = monaco.editor.createModel(original, language, origUri);
         const modifiedModel = monaco.editor.createModel(modified, language, modUri);
 

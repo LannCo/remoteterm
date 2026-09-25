@@ -4,9 +4,9 @@
 import * as electron from "electron";
 import { getWebServerEndpoint } from "../frontend/util/endpoints";
 
-export const WaveAppPathVarName = "WAVETERM_APP_PATH";
-export const WaveAppResourcesPathVarName = "WAVETERM_RESOURCES_PATH";
-export const WaveAppElectronExecPath = "WAVETERM_ELECTRONEXECPATH";
+export const RemoteTermAppPathVarName = "REMOTETERM_APP_PATH";
+export const RemoteTermAppResourcesPathVarName = "REMOTETERM_RESOURCES_PATH";
+export const RemoteTermAppElectronExecPath = "REMOTETERM_ELECTRONEXECPATH";
 
 const MinZoomLevel = 0.4;
 const MaxZoomLevel = 2.6;
@@ -264,9 +264,9 @@ export function ensureBoundsAreVisible(bounds: electron.Rectangle): electron.Rec
     return bounds;
 }
 
-export function waveKeyToElectronKey(waveKey: string): string {
-    const waveParts = waveKey.split(":");
-    const electronParts: Array<string> = waveParts.map((part: string) => {
+export function remoteTermKeyToElectronKey(remoteTermKey: string): string {
+    const remoteTermParts = remoteTermKey.split(":");
+    const electronParts: Array<string> = remoteTermParts.map((part: string) => {
         const digitRegexpMatch = new RegExp("^c{Digit([0-9])}$").exec(part);
         const numpadRegexpMatch = new RegExp("^c{Numpad([0-9])}$").exec(part);
         const lowercaseCharMatch = new RegExp("^([a-z])$").exec(part);

@@ -9,29 +9,29 @@ import (
 	"log"
 	"time"
 
-	"github.com/wavetermdev/waveterm/pkg/remote/conncontroller"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wcore"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wslconn"
-	"github.com/wavetermdev/waveterm/pkg/wstore"
+	"github.com/LannCo/remoteterm/pkg/remote/conncontroller"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtcore"
+	"github.com/LannCo/remoteterm/pkg/rtstore"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wslconn"
 )
 
 type ClientService struct{}
 
 const DefaultTimeout = 2 * time.Second
 
-func (cs *ClientService) GetClientData() (*waveobj.Client, error) {
+func (cs *ClientService) GetClientData() (*remotetermobj.Client, error) {
 	log.Println("GetClientData")
 	ctx, cancelFn := context.WithTimeout(context.Background(), DefaultTimeout)
 	defer cancelFn()
-	return wcore.GetClientData(ctx)
+	return rtcore.GetClientData(ctx)
 }
 
-func (cs *ClientService) GetTab(tabId string) (*waveobj.Tab, error) {
+func (cs *ClientService) GetTab(tabId string) (*remotetermobj.Tab, error) {
 	ctx, cancelFn := context.WithTimeout(context.Background(), DefaultTimeout)
 	defer cancelFn()
-	tab, err := wstore.DBGet[*waveobj.Tab](ctx, tabId)
+	tab, err := rtstore.DBGet[*remotetermobj.Tab](ctx, tabId)
 	if err != nil {
 		return nil, fmt.Errorf("error getting tab: %w", err)
 	}
@@ -46,21 +46,21 @@ func (cs *ClientService) GetAllConnStatus(ctx context.Context) ([]wshrpc.ConnSta
 
 // moves the window to the front of the windowId stack
 func (cs *ClientService) FocusWindow(ctx context.Context, windowId string) error {
-	return wcore.FocusWindow(ctx, windowId)
+	return rtcore.FocusWindow(ctx, windowId)
 }
 
-func (cs *ClientService) AgreeTos(ctx context.Context) (waveobj.UpdatesRtnType, error) {
-	ctx = waveobj.ContextWithUpdates(ctx)
-	clientData, err := wstore.DBGetSingleton[*waveobj.Client](ctx)
+func (cs *ClientService) AgreeTos(ctx context.Context) (remotetermobj.UpdatesRtnType, error) {
+	ctx = remotetermobj.ContextWithUpdates(ctx)
+	clientData, err := rtstore.DBGetSingleton[*remotetermobj.Client](ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error getting client data: %w", err)
 	}
 	timestamp := time.Now().UnixMilli()
 	clientData.TosAgreed = timestamp
-	err = wstore.DBUpdate(ctx, clientData)
+	err = rtstore.DBUpdate(ctx, clientData)
 	if err != nil {
 		return nil, fmt.Errorf("error updating client data: %w", err)
 	}
-	wcore.BootstrapStarterLayout(ctx)
-	return waveobj.ContextGetUpdatesRtn(ctx), nil
+	rtcore.BootstrapStarterLayout(ctx)
+	return remotetermobj.ContextGetUpdatesRtn(ctx), nil
 }

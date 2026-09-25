@@ -6,7 +6,7 @@ import { CopyButton } from "@/app/element/copybutton";
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { modalsModel } from "@/app/store/modalmodel";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { useWaveEnv } from "@/app/waveenv/waveenv";
+import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { NodeModel } from "@/layout/index";
 import * as util from "@/util/util";
 import clsx from "clsx";

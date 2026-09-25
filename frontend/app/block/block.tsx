@@ -9,7 +9,7 @@ import {
     SubBlockProps,
 } from "@/app/block/blocktypes";
 import { useTabModel } from "@/app/store/tab-model";
-import { useWaveEnv } from "@/app/waveenv/waveenv";
+import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { ErrorBoundary } from "@/element/errorboundary";
 import { CenteredDiv } from "@/element/quickelems";
 import { useDebouncedNodeInnerRect } from "@/layout/index";

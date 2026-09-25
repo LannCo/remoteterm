@@ -12,83 +12,37 @@ import * as jotai from "jotai";
 import * as React from "react";
 
 import { useDimensionsWithExistingRef } from "@/app/hook/useDimensions";
+import type { MetaKeyAtomFnType, WaveEnv, WaveEnvSubset } from "@/app/remotetermenv/remotetermenv";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import type { MetaKeyAtomFnType, WaveEnv, WaveEnvSubset } from "@/app/waveenv/waveenv";
 import { OverlayScrollbarsComponent, OverlayScrollbarsComponentRef } from "overlayscrollbars-react";
 
 export type SysinfoEnv = WaveEnvSubset<{
     rpc: {
         EventReadHistoryCommand: WaveEnv["rpc"]["EventReadHistoryCommand"];
         SetMetaCommand: WaveEnv["rpc"]["SetMetaCommand"];
-    };
-    atoms: {
-        fullConfigAtom: WaveEnv["atoms"]["fullConfigAtom"];
+        GetSysInfoMetricsCommand: WaveEnv["rpc"]["GetSysInfoMetricsCommand"];
+        SysInfoReprobeCommand: WaveEnv["rpc"]["SysInfoReprobeCommand"];
     };
     getConnStatusAtom: WaveEnv["getConnStatusAtom"];
-    getBlockMetaKeyAtom: MetaKeyAtomFnType<"graph:numpoints" | "sysinfo:type" | "connection" | "count">;
+    getBlockMetaKeyAtom: MetaKeyAtomFnType<"graph:numpoints" | "graph:metrics" | "connection" | "count">;
 }>;
 
 const DefaultNumPoints = 120;
+const DefaultMetrics = ["cpu"];
+// Reprobe runs nvidia-smi, rocm-smi and a 1s intel_gpu_top sample back to back on the backend.
+const ReprobeTimeoutMs = 5000;
+const GpuCollectorNames = ["gpu-nvidia", "gpu-amd", "gpu-intel"];
+const _plotColors = ["#58C142", "#FFC107", "#FF5722", "#2196F3", "#9C27B0", "#00BCD4", "#FFEB3B", "#795548"];
+
+export function getGpuColor(gpuIndex: number): string {
+    return _plotColors[gpuIndex % _plotColors.length];
+}
 
 type DataItem = {
     ts: number;
     [k: string]: number;
 };
-
-function defaultCpuMeta(name: string): TimeSeriesMeta {
-    return {
-        name: name,
-        label: "%",
-        miny: 0,
-        maxy: 100,
-        color: "var(--sysinfo-cpu-color)",
-        decimalPlaces: 0,
-    };
-}
-
-function defaultMemMeta(name: string, maxY: string): TimeSeriesMeta {
-    return {
-        name: name,
-        label: "GB",
-        miny: 0,
-        maxy: maxY,
-        color: "var(--sysinfo-mem-color)",
-        decimalPlaces: 1,
-    };
-}
-
-const PlotTypes: object = {
-    CPU: function (_dataItem: DataItem): Array<string> {
-        return ["cpu"];
-    },
-    Mem: function (_dataItem: DataItem): Array<string> {
-        return ["mem:used"];
-    },
-    "CPU + Mem": function (_dataItem: DataItem): Array<string> {
-        return ["cpu", "mem:used"];
-    },
-    "All CPU": function (dataItem: DataItem): Array<string> {
-        return Object.keys(dataItem)
-            .filter((item) => item.startsWith("cpu") && item != "cpu")
-            .sort((a, b) => {
-                const valA = parseInt(a.replace("cpu:", ""));
-                const valB = parseInt(b.replace("cpu:", ""));
-                return valA - valB;
-            });
-    },
-};
-
-const DefaultPlotMeta = {
-    cpu: defaultCpuMeta("CPU %"),
-    "mem:total": defaultMemMeta("Memory Total", "mem:total"),
-    "mem:used": defaultMemMeta("Memory Used", "mem:total"),
-    "mem:free": defaultMemMeta("Memory Free", "mem:total"),
-    "mem:available": defaultMemMeta("Memory Available", "mem:total"),
-};
-for (let i = 0; i < 32; i++) {
-    DefaultPlotMeta[`cpu:${i}`] = defaultCpuMeta(`Core ${i}`);
-}
 
 function convertWaveEventToDataItem(event: Extract<WaveEvent, { event: "sysinfo" }>): DataItem {
     const eventData = event.data;
@@ -100,6 +54,104 @@ function convertWaveEventToDataItem(event: Extract<WaveEvent, { event: "sysinfo"
         dataItem[key] = eventData.values[key];
     }
     return dataItem;
+}
+
+function gpuIndexFromKey(key: string): number | null {
+    const match = key.match(/^gpu:(\d+):/);
+    if (match == null) {
+        return null;
+    }
+    return parseInt(match[1], 10);
+}
+
+function collectorNamesForKey(key: string): string[] {
+    if (key === "cpu:temp") {
+        return ["temp"];
+    }
+    if (key.startsWith("gpu:")) {
+        // a gpu:N:* key doesn't say which vendor collector produced it
+        return GpuCollectorNames;
+    }
+    if (key.startsWith("mem:")) {
+        return ["mem"];
+    }
+    if (key === "cpu" || key.startsWith("cpu:")) {
+        return ["cpu"];
+    }
+    return [];
+}
+
+export function errorForMetric(key: string, errors: Record<string, string>): string | undefined {
+    if (errors == null) {
+        return undefined;
+    }
+    for (const name of collectorNamesForKey(key)) {
+        if (errors[name]) {
+            return errors[name];
+        }
+    }
+    return undefined;
+}
+
+export function metricMetaToTimeSeriesMeta(key: string, meta: MetricMeta): TimeSeriesMeta {
+    const gpuIdx = gpuIndexFromKey(key);
+    let maxy: string | number = meta.maxykey || meta.maxy;
+    if (!meta.maxykey && !(meta.maxy > meta.miny)) {
+        // e.g. mem:total has no fixed ceiling; bounding by its own value keeps the line in view
+        maxy = key;
+    }
+    return {
+        name: meta.label,
+        label: meta.unit,
+        color: gpuIdx != null ? getGpuColor(gpuIdx) : meta.color,
+        miny: meta.miny,
+        maxy: maxy,
+        decimalPlaces: meta.decimalplaces,
+    };
+}
+
+export function buildMetricsMenu(
+    availableMeta: Record<string, TimeSeriesMeta>,
+    selected: string[],
+    onToggle: (key: string) => void
+): ContextMenuItem[] {
+    const selectedSet = new Set(selected);
+    const gpuGroups = new Map<number, string[]>();
+    const flatKeys: string[] = [];
+
+    for (const key of Object.keys(availableMeta)) {
+        const gpuIdx = gpuIndexFromKey(key);
+        if (gpuIdx == null) {
+            flatKeys.push(key);
+            continue;
+        }
+        if (!gpuGroups.has(gpuIdx)) {
+            gpuGroups.set(gpuIdx, []);
+        }
+        gpuGroups.get(gpuIdx).push(key);
+    }
+
+    const menu: ContextMenuItem[] = flatKeys.map((key) => ({
+        label: key,
+        type: "checkbox",
+        checked: selectedSet.has(key),
+        click: () => onToggle(key),
+    }));
+
+    const sortedGpuIndices = Array.from(gpuGroups.keys()).sort((a, b) => a - b);
+    for (const gpuIdx of sortedGpuIndices) {
+        menu.push({
+            label: `GPU ${gpuIdx}`,
+            submenu: gpuGroups.get(gpuIdx).map((key) => ({
+                label: availableMeta[key]?.name ?? key,
+                type: "checkbox",
+                checked: selectedSet.has(key),
+                click: () => onToggle(key),
+            })),
+        });
+    }
+
+    return menu;
 }
 
 class SysinfoViewModel implements ViewModel {
@@ -116,14 +168,15 @@ class SysinfoViewModel implements ViewModel {
     incrementCount: jotai.WritableAtom<unknown, [], Promise<void>>;
     loadingAtom: jotai.PrimitiveAtom<boolean>;
     numPoints: jotai.Atom<number>;
-    metrics: jotai.Atom<string[]>;
+    metricsAtom: jotai.Atom<string[]>;
     connection: jotai.Atom<string>;
     manageConnection: jotai.Atom<boolean>;
     filterOutNowsh: jotai.Atom<boolean>;
     connStatus: jotai.Atom<ConnStatus>;
-    plotMetaAtom: jotai.PrimitiveAtom<Map<string, TimeSeriesMeta>>;
+    availableMetaAtom: jotai.PrimitiveAtom<Record<string, TimeSeriesMeta>>;
+    errorsAtom: jotai.PrimitiveAtom<Record<string, string>>;
+    metricsRefetchInFlight = false;
     endIconButtons: jotai.Atom<IconButtonDecl[]>;
-    plotTypeSelectedAtom: jotai.Atom<string>;
     env: SysinfoEnv;
 
     constructor({ blockId, waveEnv }: ViewModelInitType) {
@@ -186,7 +239,8 @@ class SysinfoViewModel implements ViewModel {
                 console.log("Error adding data to sysinfo", e);
             }
         });
-        this.plotMetaAtom = jotai.atom(new Map(Object.entries(DefaultPlotMeta)));
+        this.availableMetaAtom = jotai.atom({});
+        this.errorsAtom = jotai.atom({});
         this.manageConnection = jotai.atom(true);
         this.filterOutNowsh = jotai.atom(true);
         this.loadingAtom = jotai.atom(true);
@@ -197,32 +251,17 @@ class SysinfoViewModel implements ViewModel {
             }
             return metaNumPoints;
         });
-        this.metrics = jotai.atom((get) => {
-            const plotType = get(this.plotTypeSelectedAtom);
-            const plotData = get(this.dataAtom);
-            try {
-                const metrics = PlotTypes[plotType](plotData[plotData.length - 1]);
-                if (metrics == null || !Array.isArray(metrics)) {
-                    return ["cpu"];
-                }
-                return metrics;
-            } catch (e) {
-                return ["cpu"];
+        this.metricsAtom = jotai.atom((get) => {
+            const metrics = get(this.env.getBlockMetaKeyAtom(blockId, "graph:metrics"));
+            if (!Array.isArray(metrics) || metrics.length === 0) {
+                return DefaultMetrics;
             }
-        });
-        this.plotTypeSelectedAtom = jotai.atom((get) => {
-            const plotType = get(this.env.getBlockMetaKeyAtom(blockId, "sysinfo:type"));
-            if (plotType == null || typeof plotType != "string") {
-                return "CPU";
-            }
-            return plotType;
+            return metrics;
         });
         this.viewIcon = jotai.atom((get) => {
             return "chart-line"; // should not be hardcoded
         });
-        this.viewName = jotai.atom((get) => {
-            return get(this.plotTypeSelectedAtom);
-        });
+        this.viewName = jotai.atom("Sysinfo");
         this.incrementCount = jotai.atom(null, async (get, _set) => {
             const count = get(this.env.getBlockMetaKeyAtom(blockId, "count")) ?? 0;
             await this.env.rpc.SetMetaCommand(TabRpcClient, {
@@ -250,6 +289,86 @@ class SysinfoViewModel implements ViewModel {
         return SysinfoView;
     }
 
+    // Both sysinfo RPCs are served by the connection's own process (wavesrv or its wsh connserver),
+    // so they need an explicit route; connname and route must come from the same connName or the
+    // call silently no-ops against the wrong loop.
+    async loadAvailableMetrics() {
+        const connName = globalStore.get(this.connection);
+        try {
+            const meta = await this.env.rpc.GetSysInfoMetricsCommand(
+                TabRpcClient,
+                { connname: connName },
+                { route: util.makeConnRoute(connName) }
+            );
+            if (globalStore.get(this.connection) !== connName) {
+                return;
+            }
+            const converted: Record<string, TimeSeriesMeta> = {};
+            for (const [key, metricMeta] of Object.entries(meta ?? {})) {
+                converted[key] = metricMetaToTimeSeriesMeta(key, metricMeta);
+            }
+            globalStore.set(this.availableMetaAtom, converted);
+        } catch (e) {
+            console.log("Error loading sysinfo metric metadata", e);
+        }
+    }
+
+    // The backend registers its loop only after the first probe (which includes a ~1s intel_gpu_top
+    // sample), so discovery at connect time can return {}; a live event proves registration.
+    refetchMetricsIfEmpty() {
+        if (this.metricsRefetchInFlight || Object.keys(globalStore.get(this.availableMetaAtom)).length > 0) {
+            return;
+        }
+        this.metricsRefetchInFlight = true;
+        this.loadAvailableMetrics().finally(() => {
+            this.metricsRefetchInFlight = false;
+        });
+    }
+
+    handleSysinfoEvent(event: Extract<WaveEvent, { event: "sysinfo" }>) {
+        this.refetchMetricsIfEmpty();
+        if (globalStore.get(this.loadingAtom)) {
+            return;
+        }
+        globalStore.set(this.errorsAtom, event.data?.errors ?? {});
+        const dataItem = convertWaveEventToDataItem(event);
+        const prevData = globalStore.get(this.dataAtom);
+        const prevLastTs = prevData[prevData.length - 1]?.ts ?? 0;
+        if (dataItem.ts - prevLastTs > 2000) {
+            this.loadInitialData();
+        } else {
+            globalStore.set(this.addContinuousDataAtom, dataItem);
+        }
+    }
+
+    resetConnectionState() {
+        globalStore.set(this.errorsAtom, {});
+        globalStore.set(this.availableMetaAtom, {});
+    }
+
+    async reprobe() {
+        const connName = globalStore.get(this.connection);
+        try {
+            await this.env.rpc.SysInfoReprobeCommand(
+                TabRpcClient,
+                { connname: connName },
+                { route: util.makeConnRoute(connName), timeout: ReprobeTimeoutMs }
+            );
+            await this.loadAvailableMetrics();
+        } catch (e) {
+            console.log("Error reprobing sysinfo collectors", e);
+        }
+    }
+
+    async toggleMetric(key: string) {
+        const current = globalStore.get(this.metricsAtom);
+        const next = current.includes(key) ? current.filter((k) => k !== key) : [...current, key];
+        await this.env.rpc.SetMetaCommand(TabRpcClient, {
+            oref: makeORef("block", this.blockId),
+            meta: { "graph:metrics": next },
+        });
+    }
+
     async loadInitialData() {
         globalStore.set(this.loadingAtom, true);
         try {
@@ -268,6 +387,8 @@ class SysinfoViewModel implements ViewModel {
             // splice the initial data into the default data (replacing the newest points)
             //newData.splice(newData.length - initialDataItems.length, initialDataItems.length, ...initialDataItems);
             globalStore.set(this.addInitialDataAtom, initialDataItems);
+            const lastData = initialData[initialData.length - 1]?.data as TimeSeriesData;
+            globalStore.set(this.errorsAtom, lastData?.errors ?? {});
         } catch (e) {
             console.log("Error loading initial data for sysinfo", e);
         } finally {
@@ -276,40 +397,16 @@ class SysinfoViewModel implements ViewModel {
     }
 
     getSettingsMenuItems(): ContextMenuItem[] {
-        const fullConfig = globalStore.get(this.env.atoms.fullConfigAtom);
-        const termThemes = fullConfig?.termthemes ?? {};
-        const termThemeKeys = Object.keys(termThemes);
-        const plotData = globalStore.get(this.dataAtom);
-
-        termThemeKeys.sort((a, b) => {
-            return (termThemes[a]["display:order"] ?? 0) - (termThemes[b]["display:order"] ?? 0);
-        });
+        const availableMeta = globalStore.get(this.availableMetaAtom);
+        const selected = globalStore.get(this.metricsAtom);
         const fullMenu: ContextMenuItem[] = [];
-        let submenu: ContextMenuItem[];
-        if (plotData.length == 0) {
-            submenu = [];
-        } else {
-            submenu = Object.keys(PlotTypes).map((plotType) => {
-                const dataTypes = PlotTypes[plotType](plotData[plotData.length - 1]);
-                const currentlySelected = globalStore.get(this.plotTypeSelectedAtom);
-                const menuItem: ContextMenuItem = {
-                    label: plotType,
-                    type: "radio",
-                    checked: currentlySelected == plotType,
-                    click: async () => {
-                        await this.env.rpc.SetMetaCommand(TabRpcClient, {
-                            oref: makeORef("block", this.blockId),
-                            meta: { "graph:metrics": dataTypes, "sysinfo:type": plotType },
-                        });
-                    },
-                };
-                return menuItem;
-            });
-        }
-
         fullMenu.push({
-            label: "Plot Type",
-            submenu: submenu,
+            label: "Metrics",
+            submenu: buildMetricsMenu(availableMeta, selected, (key) => this.toggleMetric(key)),
+        });
+        fullMenu.push({
+            label: "Re-detect GPU",
+            click: () => this.reprobe(),
         });
         fullMenu.push({ type: "separator" });
         return fullMenu;
@@ -326,8 +423,6 @@ class SysinfoViewModel implements ViewModel {
         return points;
     }
 }
-
-const _plotColors = ["#58C142", "#FFC107", "#FF5722", "#2196F3", "#9C27B0", "#00BCD4", "#FFEB3B", "#795548"];
 
 type SysinfoViewProps = {
     blockId: string;
@@ -348,7 +443,6 @@ function SysinfoView({ model, blockId }: SysinfoViewProps) {
     const connName = jotai.useAtomValue(model.connection);
     const lastConnName = React.useRef(connName);
     const connStatus = jotai.useAtomValue(model.connStatus);
-    const addContinuousData = jotai.useSetAtom(model.addContinuousDataAtom);
     const loading = jotai.useAtomValue(model.loadingAtom);
 
     React.useEffect(() => {
@@ -357,33 +451,27 @@ function SysinfoView({ model, blockId }: SysinfoViewProps) {
         }
         if (lastConnName.current !== connName) {
             lastConnName.current = connName;
+            model.resetConnectionState();
             model.loadInitialData();
         }
+    }, [connStatus.status, connName]);
+    React.useEffect(() => {
+        if (connStatus?.status != "connected") {
+            return;
+        }
+        model.loadAvailableMetrics();
     }, [connStatus.status, connName]);
     React.useEffect(() => {
         const unsubFn = waveEventSubscribeSingle({
             eventType: "sysinfo",
             scope: connName,
-            handler: (event) => {
-                const loading = globalStore.get(model.loadingAtom);
-                if (loading) {
-                    return;
-                }
-                const dataItem = convertWaveEventToDataItem(event);
-                const prevData = globalStore.get(model.dataAtom);
-                const prevLastTs = prevData[prevData.length - 1]?.ts ?? 0;
-                if (dataItem.ts - prevLastTs > 2000) {
-                    model.loadInitialData();
-                } else {
-                    addContinuousData(dataItem);
-                }
-            },
+            handler: (event) => model.handleSysinfoEvent(event),
         });
         console.log("subscribe to sysinfo", connName);
         return () => {
             unsubFn();
         };
-    }, [connName, addContinuousData]);
+    }, [connName]);
     if (connStatus?.status != "connected") {
         return null;
     }
@@ -402,6 +490,7 @@ type SingleLinePlotProps = {
     title?: boolean;
     sparkline?: boolean;
     targetLen: number;
+    errorMessage?: string;
 };
 
 function SingleLinePlot({
@@ -413,6 +502,7 @@ function SingleLinePlot({
     title = false,
     sparkline = false,
     targetLen,
+    errorMessage,
 }: SingleLinePlotProps) {
     const containerRef = React.useRef<HTMLInputElement>(null);
     const domRect = useDimensionsWithExistingRef(containerRef, 300);
@@ -519,13 +609,24 @@ function SingleLinePlot({
         };
     }, [plot, plotWidth, plotHeight]);
 
-    return <div ref={containerRef} className="min-h-[100px]" />;
+    return (
+        <div className="relative min-h-[100px]">
+            <div ref={containerRef} className="min-h-[100px]" />
+            {errorMessage && (
+                <div className="absolute top-1 right-1 z-10" title={errorMessage}>
+                    <i aria-hidden="true" className="fa-sharp fa-solid fa-triangle-exclamation text-warning text-xs" />
+                    <span className="sr-only">Metric error: {errorMessage}</span>
+                </div>
+            )}
+        </div>
+    );
 }
 
 const SysinfoViewInner = React.memo(({ model }: SysinfoViewProps) => {
     const plotData = jotai.useAtomValue(model.dataAtom);
-    const yvals = jotai.useAtomValue(model.metrics);
-    const plotMeta = jotai.useAtomValue(model.plotMetaAtom);
+    const yvals = jotai.useAtomValue(model.metricsAtom);
+    const plotMeta = jotai.useAtomValue(model.availableMetaAtom);
+    const errors = jotai.useAtomValue(model.errorsAtom);
     const osRef = React.useRef<OverlayScrollbarsComponentRef>(null);
     const targetLen = jotai.useAtomValue(model.numPoints) + 1;
     let title = false;
@@ -556,11 +657,12 @@ const SysinfoViewInner = React.memo(({ model }: SysinfoViewProps) => {
                                 key={`plot-${model.blockId}-${yval}`}
                                 plotData={plotData}
                                 yval={yval}
-                                yvalMeta={plotMeta.get(yval)}
+                                yvalMeta={plotMeta[yval]}
                                 blockId={model.blockId}
                                 defaultColor={"var(--accent-color)"}
                                 title={title}
                                 targetLen={targetLen}
+                                errorMessage={errorForMetric(yval, errors)}
                             />
                         );
                     })}

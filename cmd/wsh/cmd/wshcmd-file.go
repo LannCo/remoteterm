@@ -15,10 +15,10 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/util/utilfn"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/spf13/cobra"
-	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 	"golang.org/x/term"
 )
 

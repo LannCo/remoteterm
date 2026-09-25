@@ -12,19 +12,19 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/remote"
+	"github.com/LannCo/remoteterm/pkg/remote/conncontroller"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/remotetermjwt"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtconfig"
+	"github.com/LannCo/remoteterm/pkg/rtstore"
+	"github.com/LannCo/remoteterm/pkg/shellexec"
+	"github.com/LannCo/remoteterm/pkg/userinput"
+	"github.com/LannCo/remoteterm/pkg/util/shellutil"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshserver"
+	"github.com/LannCo/remoteterm/pkg/wshutil"
 	"github.com/google/uuid"
-	"github.com/wavetermdev/waveterm/pkg/remote"
-	"github.com/wavetermdev/waveterm/pkg/remote/conncontroller"
-	"github.com/wavetermdev/waveterm/pkg/shellexec"
-	"github.com/wavetermdev/waveterm/pkg/userinput"
-	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/wavejwt"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshserver"
-	"github.com/wavetermdev/waveterm/pkg/wshutil"
-	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
 func setupWaveEnvVars() error {
@@ -33,26 +33,26 @@ func setupWaveEnvVars() error {
 		return fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	isDev := os.Getenv("WAVETERM_DEV") != ""
+	isDev := os.Getenv(remotetermbase.WaveDevVarName) != ""
 	devSuffix := ""
 	if isDev {
 		devSuffix = "-dev"
 	}
 
-	configHome := os.Getenv("WAVETERM_CONFIG_HOME")
+	configHome := os.Getenv(remotetermbase.WaveConfigHomeEnvVar)
 	if configHome == "" {
-		configHome = filepath.Join(homeDir, ".config", "waveterm"+devSuffix)
-		os.Setenv("WAVETERM_CONFIG_HOME", configHome)
+		configHome = filepath.Join(homeDir, ".config", "remoteterm"+devSuffix)
+		os.Setenv(remotetermbase.WaveConfigHomeEnvVar, configHome)
 	}
 	log.Printf("Using config directory: %s", configHome)
 
-	dataHome := os.Getenv("WAVETERM_DATA_HOME")
+	dataHome := os.Getenv(remotetermbase.WaveDataHomeEnvVar)
 	if dataHome == "" {
 		if runtime.GOOS == "darwin" {
-			dataHome = filepath.Join(homeDir, "Library", "Application Support", "waveterm"+devSuffix)
-			os.Setenv("WAVETERM_DATA_HOME", dataHome)
+			dataHome = filepath.Join(homeDir, "Library", "Application Support", "remoteterm"+devSuffix)
+			os.Setenv(remotetermbase.WaveDataHomeEnvVar, dataHome)
 		} else {
-			return fmt.Errorf("WAVETERM_DATA_HOME must be set on non-macOS systems")
+			return fmt.Errorf("%s must be set on non-macOS systems", remotetermbase.WaveDataHomeEnvVar)
 		}
 	}
 	log.Printf("Using data directory: %s", dataHome)
@@ -68,7 +68,7 @@ func initTestHarness(autoAccept bool) error {
 		return fmt.Errorf("failed to setup wave env vars: %w", err)
 	}
 
-	err = wavebase.CacheAndRemoveEnvVars()
+	err = remotetermbase.CacheAndRemoveEnvVars()
 	if err != nil {
 		return fmt.Errorf("failed to cache env vars: %w", err)
 	}
@@ -76,21 +76,21 @@ func initTestHarness(autoAccept bool) error {
 	wshutil.DefaultRouter = wshutil.NewWshRouter()
 	wshutil.DefaultRouter.SetAsRootRouter()
 
-	wstore.SetClientId("test-client-" + fmt.Sprintf("%d", time.Now().Unix()))
+	rtstore.SetClientId("test-client-" + fmt.Sprintf("%d", time.Now().Unix()))
 
 	userinput.SetUserInputProvider(&CLIProvider{AutoAccept: autoAccept})
 
-	keyPair, err := wavejwt.GenerateKeyPair()
+	keyPair, err := remotetermjwt.GenerateKeyPair()
 	if err != nil {
 		return fmt.Errorf("failed to generate JWT key pair: %w", err)
 	}
 
-	err = wavejwt.SetPrivateKey(keyPair.PrivateKey)
+	err = remotetermjwt.SetPrivateKey(keyPair.PrivateKey)
 	if err != nil {
 		return fmt.Errorf("failed to set JWT private key: %w", err)
 	}
 
-	err = wavejwt.SetPublicKey(keyPair.PublicKey)
+	err = remotetermjwt.SetPublicKey(keyPair.PublicKey)
 	if err != nil {
 		return fmt.Errorf("failed to set JWT public key: %w", err)
 	}
@@ -98,7 +98,7 @@ func initTestHarness(autoAccept bool) error {
 	rpc := wshserver.GetMainRpcClient()
 	wshutil.DefaultRouter.RegisterTrustedLeaf(rpc, wshutil.DefaultRoute)
 
-	wconfig.GetWatcher().Start()
+	rtconfig.GetWatcher().Start()
 
 	log.Printf("Test harness initialized")
 	return nil
@@ -116,7 +116,7 @@ func testBasicConnect(connName string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	err = conn.Connect(ctx, &wconfig.ConnKeywords{})
+	err = conn.Connect(ctx, &rtconfig.ConnKeywords{})
 	if err != nil {
 		return fmt.Errorf("connection failed: %w", err)
 	}
@@ -151,14 +151,14 @@ func testShellWithCommand(connName string, cmd string, timeout time.Duration) er
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	err = conn.Connect(ctx, &wconfig.ConnKeywords{})
+	err = conn.Connect(ctx, &rtconfig.ConnKeywords{})
 	if err != nil {
 		return fmt.Errorf("connection failed: %w", err)
 	}
 
 	log.Printf("✓ Connected! Starting shell...")
 
-	termSize := waveobj.TermSize{Rows: 24, Cols: 80}
+	termSize := remotetermobj.TermSize{Rows: 24, Cols: 80}
 	shellProc, err := shellexec.StartRemoteShellProcNoWsh(ctx, termSize, "", shellexec.CommandOptsType{}, conn)
 	if err != nil {
 		return fmt.Errorf("failed to start shell: %w", err)
@@ -202,7 +202,7 @@ func testWshExec(connName string, cmd string, timeout time.Duration) error {
 	defer cancel()
 
 	wshEnabled := true
-	err = conn.Connect(ctx, &wconfig.ConnKeywords{
+	err = conn.Connect(ctx, &rtconfig.ConnKeywords{
 		ConnWshEnabled: &wshEnabled,
 	})
 	if err != nil {
@@ -226,15 +226,15 @@ func testWshExec(connName string, cmd string, timeout time.Duration) error {
 		Exp:   time.Now().Add(5 * time.Minute),
 	}
 	swapToken.Env["TERM_PROGRAM"] = "remoteterm"
-	swapToken.Env["WAVETERM"] = "1"
-	swapToken.Env["WAVETERM_VERSION"] = wavebase.WaveVersion
-	swapToken.Env["WAVETERM_CONN"] = connName
+	remotetermbase.SetDualEnv(swapToken.Env, remotetermbase.WaveFlagVarName, remotetermbase.LegacyWaveFlagVarName, "1")
+	swapToken.Env[remotetermbase.WaveVersionVarName] = remotetermbase.WaveVersion
+	remotetermbase.SetDualEnv(swapToken.Env, remotetermbase.WaveConnVarName, remotetermbase.LegacyWaveConnVarName, connName)
 
 	cmdOpts := shellexec.CommandOptsType{
 		SwapToken: swapToken,
 	}
 
-	termSize := waveobj.TermSize{Rows: 24, Cols: 80}
+	termSize := remotetermobj.TermSize{Rows: 24, Cols: 80}
 	shellProc, err := shellexec.StartRemoteShellProc(ctx, ctx, termSize, "", cmdOpts, conn)
 	if err != nil {
 		return fmt.Errorf("failed to start shell: %w", err)
@@ -277,7 +277,7 @@ func testInteractiveShell(connName string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	err = conn.Connect(ctx, &wconfig.ConnKeywords{})
+	err = conn.Connect(ctx, &rtconfig.ConnKeywords{})
 	if err != nil {
 		return fmt.Errorf("connection failed: %w", err)
 	}
@@ -286,7 +286,7 @@ func testInteractiveShell(connName string, timeout time.Duration) error {
 	log.Printf("Note: This is a simple test - output may be mixed with prompts")
 	log.Printf("Type commands and press Enter. Type 'exit' to quit.\n")
 
-	termSize := waveobj.TermSize{Rows: 24, Cols: 80}
+	termSize := remotetermobj.TermSize{Rows: 24, Cols: 80}
 	shellProc, err := shellexec.StartRemoteShellProcNoWsh(ctx, termSize, "", shellexec.CommandOptsType{}, conn)
 	if err != nil {
 		return fmt.Errorf("failed to start shell: %w", err)

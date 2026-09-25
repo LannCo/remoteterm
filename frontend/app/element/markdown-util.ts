@@ -4,7 +4,7 @@
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { getWebServerEndpoint } from "@/util/endpoints";
-import { formatRemoteUri } from "@/util/waveutil";
+import { formatRemoteUri } from "@/util/remotetermutil";
 import parseSrcSet from "parse-srcset";
 
 export type MarkdownContentBlockType = {

@@ -15,16 +15,16 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/wavetermdev/waveterm/pkg/tsunamiutil"
-	"github.com/wavetermdev/waveterm/pkg/utilds"
-	"github.com/wavetermdev/waveterm/pkg/waveappstore"
-	"github.com/wavetermdev/waveterm/pkg/waveapputil"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
-	"github.com/wavetermdev/waveterm/pkg/wps"
-	"github.com/wavetermdev/waveterm/pkg/wstore"
-	"github.com/wavetermdev/waveterm/tsunami/build"
+	"github.com/LannCo/remoteterm/pkg/remotetermappstore"
+	"github.com/LannCo/remoteterm/pkg/remotetermapputil"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtconfig"
+	"github.com/LannCo/remoteterm/pkg/rtstore"
+	"github.com/LannCo/remoteterm/pkg/tsunamiutil"
+	"github.com/LannCo/remoteterm/pkg/utilds"
+	"github.com/LannCo/remoteterm/pkg/wps"
+	"github.com/LannCo/remoteterm/tsunami/build"
 )
 
 type TsunamiAppProc struct {
@@ -50,12 +50,12 @@ type TsunamiController struct {
 }
 
 func (c *TsunamiController) setManifestMetadata(appId string) {
-	manifest, err := waveappstore.ReadAppManifest(appId)
+	manifest, err := remotetermappstore.ReadAppManifest(appId)
 	if err != nil {
 		return
 	}
 
-	blockRef := waveobj.MakeORef(waveobj.OType_Block, c.blockId)
+	blockRef := remotetermobj.MakeORef(remotetermobj.OType_Block, c.blockId)
 	rtInfo := make(map[string]any)
 	rtInfo["tsunami:appmeta"] = manifest.AppMeta
 	if manifest.ConfigSchema != nil || manifest.DataSchema != nil {
@@ -68,17 +68,17 @@ func (c *TsunamiController) setManifestMetadata(appId string) {
 		}
 		rtInfo["tsunami:schemas"] = schemas
 	}
-	wstore.SetRTInfo(blockRef, rtInfo)
+	rtstore.SetRTInfo(blockRef, rtInfo)
 	wps.Broker.Publish(wps.WaveEvent{
 		Event:  wps.Event_TsunamiUpdateMeta,
-		Scopes: []string{waveobj.MakeORef(waveobj.OType_Block, c.blockId).String()},
+		Scopes: []string{remotetermobj.MakeORef(remotetermobj.OType_Block, c.blockId).String()},
 		Data:   manifest.AppMeta,
 	})
 }
 
 func (c *TsunamiController) clearSchemas() {
-	blockRef := waveobj.MakeORef(waveobj.OType_Block, c.blockId)
-	wstore.SetRTInfo(blockRef, map[string]any{
+	blockRef := remotetermobj.MakeORef(remotetermobj.OType_Block, c.blockId)
+	rtstore.SetRTInfo(blockRef, map[string]any{
 		"tsunami:schemas": nil,
 	})
 	log.Printf("TsunamiController: cleared schemas for block %s", c.blockId)
@@ -111,35 +111,35 @@ func isBuildCacheUpToDate(appPath string) (bool, error) {
 	return !cacheModTime.Before(appModTime), nil
 }
 
-func (c *TsunamiController) Start(ctx context.Context, blockMeta waveobj.MetaMapType, rtOpts *waveobj.RuntimeOpts, force bool) error {
+func (c *TsunamiController) Start(ctx context.Context, blockMeta remotetermobj.MetaMapType, rtOpts *remotetermobj.RuntimeOpts, force bool) error {
 	log.Printf("TsunamiController.Start called for block %s", c.blockId)
 	c.runLock.Lock()
 	defer c.runLock.Unlock()
 
-	scaffoldPath := waveapputil.GetTsunamiScaffoldPath()
-	settings := wconfig.GetWatcher().GetFullConfig().Settings
+	scaffoldPath := remotetermapputil.GetTsunamiScaffoldPath()
+	settings := rtconfig.GetWatcher().GetFullConfig().Settings
 	sdkReplacePath := settings.TsunamiSdkReplacePath
 	sdkVersion := settings.TsunamiSdkVersion
 	if sdkVersion == "" {
-		sdkVersion = waveapputil.DefaultTsunamiSdkVersion
+		sdkVersion = remotetermapputil.DefaultTsunamiSdkVersion
 	}
 	goPath := settings.TsunamiGoPath
 
-	appPath := blockMeta.GetString(waveobj.MetaKey_TsunamiAppPath, "")
-	appId := blockMeta.GetString(waveobj.MetaKey_TsunamiAppId, "")
+	appPath := blockMeta.GetString(remotetermobj.MetaKey_TsunamiAppPath, "")
+	appId := blockMeta.GetString(remotetermobj.MetaKey_TsunamiAppId, "")
 
 	if appPath == "" {
 		if appId == "" {
 			return fmt.Errorf("tsunami:apppath or tsunami:appid is required")
 		}
 		var err error
-		appPath, err = waveappstore.GetAppDir(appId)
+		appPath, err = remotetermappstore.GetAppDir(appId)
 		if err != nil {
 			return fmt.Errorf("failed to get app directory from tsunami:appid: %w", err)
 		}
 	} else {
 		var err error
-		appPath, err = wavebase.ExpandHomeDir(appPath)
+		appPath, err = remotetermbase.ExpandHomeDir(appPath)
 		if err != nil {
 			return fmt.Errorf("tsunami:apppath invalid: %w", err)
 		}
@@ -166,7 +166,7 @@ func (c *TsunamiController) Start(ctx context.Context, blockMeta waveobj.MetaMap
 	}
 
 	if !upToDate || force {
-		nodePath := wavebase.GetWaveAppElectronExecPath()
+		nodePath := remotetermbase.GetWaveAppElectronExecPath()
 		if nodePath == "" {
 			return fmt.Errorf("electron executable path not set")
 		}
@@ -292,16 +292,16 @@ func (c *TsunamiController) SendInput(input *BlockInputUnion) error {
 	return fmt.Errorf("tsunami controller send input not implemented")
 }
 
-func runTsunamiAppBinary(ctx context.Context, appBinPath string, appPath string, blockMeta waveobj.MetaMapType) (*TsunamiAppProc, error) {
+func runTsunamiAppBinary(ctx context.Context, appBinPath string, appPath string, blockMeta remotetermobj.MetaMapType) (*TsunamiAppProc, error) {
 	cmd := exec.Command(appBinPath)
 	cmd.Env = append(os.Environ(), "TSUNAMI_CLOSEONSTDIN=1")
 
-	if wavebase.IsDevMode() {
+	if remotetermbase.IsDevMode() {
 		cmd.Env = append(cmd.Env, "TSUNAMI_CORS="+tsunamiutil.DevModeCorsOrigins)
 	}
 
 	// Add TsunamiEnv variables if configured
-	tsunamiEnv := blockMeta.GetMap(waveobj.MetaKey_TsunamiEnv)
+	tsunamiEnv := blockMeta.GetMap(remotetermobj.MetaKey_TsunamiEnv)
 	for key, value := range tsunamiEnv {
 		if strValue, ok := value.(string); ok {
 			cmd.Env = append(cmd.Env, key+"="+strValue)
@@ -422,8 +422,8 @@ func (c *TsunamiController) sendStatusUpdate() {
 	wps.Broker.Publish(wps.WaveEvent{
 		Event: wps.Event_ControllerStatus,
 		Scopes: []string{
-			waveobj.MakeORef(waveobj.OType_Tab, c.tabId).String(),
-			waveobj.MakeORef(waveobj.OType_Block, c.blockId).String(),
+			remotetermobj.MakeORef(remotetermobj.OType_Tab, c.tabId).String(),
+			remotetermobj.MakeORef(remotetermobj.OType_Block, c.blockId).String(),
 		},
 		Data: rtStatus,
 	})

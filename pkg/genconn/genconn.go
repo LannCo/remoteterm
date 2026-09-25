@@ -12,8 +12,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
-	"github.com/wavetermdev/waveterm/pkg/util/syncbuf"
+	"github.com/LannCo/remoteterm/pkg/util/shellutil"
+	"github.com/LannCo/remoteterm/pkg/util/syncbuf"
 )
 
 type connContextKeyType struct{}
@@ -21,7 +21,7 @@ type connContextKeyType struct{}
 var connContextKey connContextKeyType
 
 type connData struct {
-	BlockId string
+	BlockId  string
 	ConnName string
 }
 

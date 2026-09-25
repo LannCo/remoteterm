@@ -14,14 +14,14 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/LannCo/remoteterm/pkg/faviconcache"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/rtconfig"
+	"github.com/LannCo/remoteterm/pkg/util/fileutil"
+	"github.com/LannCo/remoteterm/pkg/util/utilfn"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
 	"github.com/junegunn/fzf/src/algo"
 	"github.com/junegunn/fzf/src/util"
-	"github.com/wavetermdev/waveterm/pkg/faviconcache"
-	"github.com/wavetermdev/waveterm/pkg/util/fileutil"
-	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 )
 
 const MaxSuggestions = 50
@@ -67,7 +67,7 @@ func resolveFileQuery(cwd string, query string) (string, string, string, error) 
 		cwd = "~"
 	}
 	var err error
-	cwd, err = wavebase.ExpandHomeDir(cwd)
+	cwd, err = remotetermbase.ExpandHomeDir(cwd)
 	if err != nil {
 		return "", "", "", fmt.Errorf("error expanding home dir: %w", err)
 	}
@@ -78,7 +78,7 @@ func resolveFileQuery(cwd string, query string) (string, string, string, error) 
 	tildeSlash := "~" + PathSepStr
 	if query == "~" || strings.HasPrefix(query, tildeSlash) {
 		ogQuery := query
-		query, err = wavebase.ExpandHomeDir(query)
+		query, err = remotetermbase.ExpandHomeDir(query)
 		if err != nil {
 			return "", "", "", fmt.Errorf("error expanding query home dir: %w", err)
 		}
@@ -146,8 +146,8 @@ func FetchSuggestions(ctx context.Context, data wshrpc.FetchSuggestionsData) (*w
 	return nil, fmt.Errorf("unsupported suggestion type: %q", data.SuggestionType)
 }
 
-func filterBookmarksForValid(bookmarks map[string]wconfig.WebBookmark) map[string]wconfig.WebBookmark {
-	validBookmarks := make(map[string]wconfig.WebBookmark)
+func filterBookmarksForValid(bookmarks map[string]rtconfig.WebBookmark) map[string]rtconfig.WebBookmark {
+	validBookmarks := make(map[string]rtconfig.WebBookmark)
 	for k, v := range bookmarks {
 		if v.Url == "" {
 			continue
@@ -171,14 +171,14 @@ func fetchBookmarkSuggestions(_ context.Context, data wshrpc.FetchSuggestionsDat
 	// field that will be used for display, the positions for the secondary field (if any),
 	// and its original index in the Bookmarks list.
 	type scoredEntry struct {
-		bookmark    wconfig.WebBookmark
+		bookmark    rtconfig.WebBookmark
 		score       int
 		matchPos    []int // positions for the field that's used as Display
 		subMatchPos []int // positions for the other field (if any)
 		origIndex   int
 	}
 
-	bookmarks := wconfig.GetWatcher().GetFullConfig().Bookmarks
+	bookmarks := rtconfig.GetWatcher().GetFullConfig().Bookmarks
 	bookmarks = filterBookmarksForValid(bookmarks)
 
 	searchTerm := data.Query

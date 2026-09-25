@@ -13,21 +13,21 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/blocklogger"
+	"github.com/LannCo/remoteterm/pkg/filestore"
+	"github.com/LannCo/remoteterm/pkg/jobcontroller"
+	"github.com/LannCo/remoteterm/pkg/panichandler"
+	"github.com/LannCo/remoteterm/pkg/remote"
+	"github.com/LannCo/remoteterm/pkg/remote/conncontroller"
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+	"github.com/LannCo/remoteterm/pkg/rtstore"
+	"github.com/LannCo/remoteterm/pkg/util/ds"
+	"github.com/LannCo/remoteterm/pkg/util/shellutil"
+	"github.com/LannCo/remoteterm/pkg/wps"
+	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
+	"github.com/LannCo/remoteterm/pkg/wslconn"
 	"github.com/google/uuid"
-	"github.com/wavetermdev/waveterm/pkg/blocklogger"
-	"github.com/wavetermdev/waveterm/pkg/filestore"
-	"github.com/wavetermdev/waveterm/pkg/jobcontroller"
-	"github.com/wavetermdev/waveterm/pkg/panichandler"
-	"github.com/wavetermdev/waveterm/pkg/remote"
-	"github.com/wavetermdev/waveterm/pkg/remote/conncontroller"
-	"github.com/wavetermdev/waveterm/pkg/util/ds"
-	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
-	"github.com/wavetermdev/waveterm/pkg/wavebase"
-	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wps"
-	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
-	"github.com/wavetermdev/waveterm/pkg/wslconn"
-	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
 const (
@@ -59,15 +59,15 @@ type ReconnectDurableBlock struct {
 	JobId    string
 }
 
-// GetAllBlocksForReconnectTestHook, when set, overrides the wstore block lookup
+// GetAllBlocksForReconnectTestHook, when set, overrides the rtstore block lookup
 // in StartupReconnectDurableShells. Returns pre-filtered durable blocks directly,
-// avoiding the wstore/IsBlockTermDurable path. Nil by default (production uses wstore).
+// avoiding the rtstore/IsBlockTermDurable path. Nil by default (production uses rtstore).
 var GetAllBlocksForReconnectTestHook func() []ReconnectDurableBlock
 
 type BlockInputUnion struct {
-	InputData []byte            `json:"inputdata,omitempty"`
-	SigName   string            `json:"signame,omitempty"`
-	TermSize  *waveobj.TermSize `json:"termsize,omitempty"`
+	InputData []byte                  `json:"inputdata,omitempty"`
+	SigName   string                  `json:"signame,omitempty"`
+	TermSize  *remotetermobj.TermSize `json:"termsize,omitempty"`
 }
 
 type BlockControllerRuntimeStatus struct {
@@ -81,7 +81,7 @@ type BlockControllerRuntimeStatus struct {
 
 // Controller interface that all block controllers must implement
 type Controller interface {
-	Start(ctx context.Context, blockMeta waveobj.MetaMapType, rtOpts *waveobj.RuntimeOpts, force bool) error
+	Start(ctx context.Context, blockMeta remotetermobj.MetaMapType, rtOpts *remotetermobj.RuntimeOpts, force bool) error
 	Stop(graceful bool, newStatus string, destroy bool)
 	GetRuntimeStatus() *BlockControllerRuntimeStatus // does not return nil
 	GetConnName() string
@@ -121,7 +121,7 @@ func registerController(blockId string, controller Controller) {
 
 	if existingController != nil {
 		existingController.Stop(false, Status_Done, true)
-		wstore.DeleteRTInfo(waveobj.MakeORef(waveobj.OType_Block, blockId))
+		rtstore.DeleteRTInfo(remotetermobj.MakeORef(remotetermobj.OType_Block, blockId))
 	}
 }
 
@@ -162,7 +162,7 @@ func StartupReconnectDurableShells(ctx context.Context) {
 	if GetAllBlocksForReconnectTestHook != nil {
 		durableBlocks = GetAllBlocksForReconnectTestHook()
 	} else {
-		allBlocks, err := wstore.DBGetAllObjsByType[*waveobj.Block](ctx, waveobj.OType_Block)
+		allBlocks, err := rtstore.DBGetAllObjsByType[*remotetermobj.Block](ctx, remotetermobj.OType_Block)
 		if err != nil {
 			log.Printf("[startup] error getting blocks: %v", err)
 			return
@@ -171,7 +171,7 @@ func StartupReconnectDurableShells(ctx context.Context) {
 			if !jobcontroller.IsBlockTermDurable(block) {
 				continue
 			}
-			connName := block.Meta.GetString(waveobj.MetaKey_Connection, "")
+			connName := block.Meta.GetString(remotetermobj.MetaKey_Connection, "")
 			if conncontroller.IsLocalConnName(connName) {
 				continue
 			}
@@ -297,7 +297,7 @@ func handleBlockCloseEvent(event *wps.WaveEvent) {
 
 // Public API Functions
 
-func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts *waveobj.RuntimeOpts, force bool) error {
+func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts *remotetermobj.RuntimeOpts, force bool) error {
 	if tabId == "" || blockId == "" {
 		return fmt.Errorf("invalid tabId or blockId passed to ResyncController")
 	}
@@ -306,13 +306,13 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 	mu.Lock()
 	defer mu.Unlock()
 
-	blockData, err := wstore.DBMustGet[*waveobj.Block](ctx, blockId)
+	blockData, err := rtstore.DBMustGet[*remotetermobj.Block](ctx, blockId)
 	if err != nil {
 		return fmt.Errorf("error getting block: %w", err)
 	}
 
-	controllerName := blockData.Meta.GetString(waveobj.MetaKey_Controller, "")
-	connName := blockData.Meta.GetString(waveobj.MetaKey_Connection, "")
+	controllerName := blockData.Meta.GetString(remotetermobj.MetaKey_Controller, "")
+	connName := blockData.Meta.GetString(remotetermobj.MetaKey_Connection, "")
 
 	// Get existing controller
 	existing := getController(blockId)
@@ -447,7 +447,7 @@ func DestroyBlockController(blockId string) {
 		return
 	}
 	controller.Stop(true, Status_Done, true)
-	wstore.DeleteRTInfo(waveobj.MakeORef(waveobj.OType_Block, blockId))
+	rtstore.DeleteRTInfo(remotetermobj.MakeORef(remotetermobj.OType_Block, blockId))
 	deleteController(blockId)
 }
 
@@ -487,7 +487,7 @@ func StopAllBlockControllersForShutdown() {
 		if status != nil && status.ShellProcStatus == Status_Running {
 			go func(id string, c Controller) {
 				c.Stop(true, Status_Done, false)
-				wstore.DeleteRTInfo(waveobj.MakeORef(waveobj.OType_Block, id))
+				rtstore.DeleteRTInfo(remotetermobj.MakeORef(remotetermobj.OType_Block, id))
 			}(blockId, controller)
 		}
 	}
@@ -504,11 +504,11 @@ func getBoolFromMeta(meta map[string]any, key string, def bool) bool {
 	return def
 }
 
-func getTermSize(bdata *waveobj.Block) waveobj.TermSize {
+func getTermSize(bdata *remotetermobj.Block) remotetermobj.TermSize {
 	if bdata.RuntimeOpts != nil {
 		return bdata.RuntimeOpts.TermSize
 	} else {
-		return waveobj.TermSize{
+		return remotetermobj.TermSize{
 			Rows: 25,
 			Cols: 80,
 		}
@@ -525,7 +525,7 @@ func HandleAppendBlockFile(blockId string, blockFile string, data []byte) error 
 	wps.Broker.Publish(wps.WaveEvent{
 		Event: wps.Event_BlockFile,
 		Scopes: []string{
-			waveobj.MakeORef(waveobj.OType_Block, blockId).String(),
+			remotetermobj.MakeORef(remotetermobj.OType_Block, blockId).String(),
 		},
 		Data: &wps.WSFileEventData{
 			ZoneId:   blockId,
@@ -540,14 +540,14 @@ func HandleAppendBlockFile(blockId string, blockFile string, data []byte) error 
 func HandleTruncateBlockFile(blockId string) error {
 	ctx, cancelFn := context.WithTimeout(context.Background(), DefaultTimeout)
 	defer cancelFn()
-	err := filestore.WFS.WriteFile(ctx, blockId, wavebase.BlockFile_Term, nil)
+	err := filestore.WFS.WriteFile(ctx, blockId, remotetermbase.BlockFile_Term, nil)
 	if err == fs.ErrNotExist {
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("error truncating blockfile: %w", err)
 	}
-	err = filestore.WFS.DeleteFile(ctx, blockId, wavebase.BlockFile_Cache)
+	err = filestore.WFS.DeleteFile(ctx, blockId, remotetermbase.BlockFile_Cache)
 	if err == fs.ErrNotExist {
 		err = nil
 	}
@@ -556,10 +556,10 @@ func HandleTruncateBlockFile(blockId string) error {
 	}
 	wps.Broker.Publish(wps.WaveEvent{
 		Event:  wps.Event_BlockFile,
-		Scopes: []string{waveobj.MakeORef(waveobj.OType_Block, blockId).String()},
+		Scopes: []string{remotetermobj.MakeORef(remotetermobj.OType_Block, blockId).String()},
 		Data: &wps.WSFileEventData{
 			ZoneId:   blockId,
-			FileName: wavebase.BlockFile_Term,
+			FileName: remotetermbase.BlockFile_Term,
 			FileOp:   wps.FileOp_Truncate,
 		},
 	})
@@ -573,11 +573,11 @@ func debugLog(ctx context.Context, fmtStr string, args ...interface{}) {
 }
 
 func CheckConnStatus(blockId string) error {
-	bdata, err := wstore.DBMustGet[*waveobj.Block](context.Background(), blockId)
+	bdata, err := rtstore.DBMustGet[*remotetermobj.Block](context.Background(), blockId)
 	if err != nil {
 		return fmt.Errorf("error getting block: %w", err)
 	}
-	connName := bdata.Meta.GetString(waveobj.MetaKey_Connection, "")
+	connName := bdata.Meta.GetString(remotetermobj.MetaKey_Connection, "")
 	if conncontroller.IsLocalConnName(connName) {
 		return nil
 	}
@@ -605,32 +605,32 @@ func CheckConnStatus(blockId string) error {
 	return nil
 }
 
-func makeSwapToken(ctx context.Context, logCtx context.Context, blockId string, blockMeta waveobj.MetaMapType, remoteName string, shellType string) *shellutil.TokenSwapEntry {
+func makeSwapToken(ctx context.Context, logCtx context.Context, blockId string, blockMeta remotetermobj.MetaMapType, remoteName string, shellType string) *shellutil.TokenSwapEntry {
 	token := &shellutil.TokenSwapEntry{
 		Token: uuid.New().String(),
 		Env:   make(map[string]string),
 		Exp:   time.Now().Add(5 * time.Minute),
 	}
 	token.Env["TERM_PROGRAM"] = "remoteterm"
-	token.Env["WAVETERM_BLOCKID"] = blockId
-	token.Env["WAVETERM_VERSION"] = wavebase.WaveVersion
-	token.Env["WAVETERM"] = "1"
-	tabId, err := wstore.DBFindTabForBlockId(ctx, blockId)
+	remotetermbase.SetDualEnv(token.Env, remotetermbase.WaveBlockIdVarName, remotetermbase.LegacyWaveBlockIdVarName, blockId)
+	token.Env[remotetermbase.WaveVersionVarName] = remotetermbase.WaveVersion
+	remotetermbase.SetDualEnv(token.Env, remotetermbase.WaveFlagVarName, remotetermbase.LegacyWaveFlagVarName, "1")
+	tabId, err := rtstore.DBFindTabForBlockId(ctx, blockId)
 	if err != nil {
 		log.Printf("error finding tab for block: %v\n", err)
 	} else {
-		token.Env["WAVETERM_TABID"] = tabId
+		remotetermbase.SetDualEnv(token.Env, remotetermbase.WaveTabIdVarName, remotetermbase.LegacyWaveTabIdVarName, tabId)
 	}
 	if tabId != "" {
-		wsId, err := wstore.DBFindWorkspaceForTabId(ctx, tabId)
+		wsId, err := rtstore.DBFindWorkspaceForTabId(ctx, tabId)
 		if err != nil {
 			log.Printf("error finding workspace for tab: %v\n", err)
 		} else {
-			token.Env["WAVETERM_WORKSPACEID"] = wsId
+			remotetermbase.SetDualEnv(token.Env, remotetermbase.WaveWorkspaceIdVarName, remotetermbase.LegacyWaveWorkspaceIdVarName, wsId)
 		}
 	}
-	token.Env["WAVETERM_CLIENTID"] = wstore.GetClientId()
-	token.Env["WAVETERM_CONN"] = remoteName
+	remotetermbase.SetDualEnv(token.Env, remotetermbase.WaveClientIdVarName, remotetermbase.LegacyWaveClientIdVarName, rtstore.GetClientId())
+	remotetermbase.SetDualEnv(token.Env, remotetermbase.WaveConnVarName, remotetermbase.LegacyWaveConnVarName, remoteName)
 	envMap, err := resolveEnvMap(blockId, blockMeta, remoteName)
 	if err != nil {
 		log.Printf("error resolving env map: %v\n", err)
