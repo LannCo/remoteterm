@@ -93,6 +93,7 @@ const (
 	ConfigKey_WindowSaveLastWindow           = "window:savelastwindow"
 	ConfigKey_WindowDimensions               = "window:dimensions"
 	ConfigKey_WindowZoom                     = "window:zoom"
+	ConfigKey_WindowAppearanceMode           = "window:appearancemode"
 
 	ConfigKey_ConnClear                      = "conn:*"
 	ConfigKey_ConnAskBeforeWshInstall        = "conn:askbeforewshinstall"
