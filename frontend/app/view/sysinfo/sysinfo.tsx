@@ -429,6 +429,41 @@ type SysinfoViewProps = {
     model: SysinfoViewModel;
 };
 
+/**
+ * A plot only needs a full Plot.plot() rebuild when something it actually renders has changed —
+ * this metric's own latest value, its dimensions, or its display meta. `dataAtom` pushes a new
+ * row every tick (as often as 1s, driven by the fastest collector tier) even for metrics on a
+ * slower tier whose value is just carried forward unchanged, so keying a memo off this instead of
+ * off plotData's object identity skips that redundant rebuild+DOM-swap work for idle metrics
+ * without touching ones that do change every tick.
+ */
+export function plotMemoKey(
+    plotData: DataItem[],
+    yval: string,
+    yvalMeta: TimeSeriesMeta,
+    defaultColor: string,
+    plotWidth: number,
+    plotHeight: number,
+    targetLen: number
+): readonly unknown[] {
+    const latestItem = plotData[plotData.length - 1];
+    const latestValue = latestItem?.[yval];
+    const color = yvalMeta?.color ?? defaultColor;
+    const maxY = resolveDomainBound(yvalMeta?.maxy, latestItem) ?? 100;
+    const minY = resolveDomainBound(yvalMeta?.miny, latestItem) ?? 0;
+    return [
+        latestValue,
+        plotWidth,
+        plotHeight,
+        color,
+        yvalMeta?.decimalPlaces ?? 0,
+        yvalMeta?.label ?? "?",
+        maxY,
+        minY,
+        targetLen,
+    ];
+}
+
 function resolveDomainBound(value: number | string, dataItem: DataItem): number | undefined {
     if (typeof value == "number") {
         return value;
@@ -508,98 +543,129 @@ function SingleLinePlot({
     const domRect = useDimensionsWithExistingRef(containerRef, 300);
     const plotHeight = domRect?.height ?? 0;
     const plotWidth = domRect?.width ?? 0;
-    const marks: Plot.Markish[] = [];
-    const decimalPlaces = yvalMeta?.decimalPlaces ?? 0;
-    let color = yvalMeta?.color;
-    if (!color) {
-        color = defaultColor;
-    }
-    marks.push(
-        () => htl.svg`<defs>
+
+    // `dataAtom` pushes a new row every tick (as often as 1s), even for metrics on a slower
+    // collector tier whose value is just carried forward unchanged — rebuilding the whole
+    // Plot.plot() SVG on every such tick is pure churn. Memoizing on plotMemoKey's flattened
+    // primitives (this metric's own latest value + everything else the plot actually renders),
+    // rather than on plotData's object identity, skips that rebuild for idle metrics while still
+    // rebuilding every tick for ones that do change. Trade-off: the x-axis window only advances
+    // when this metric gets a real new value, not every tick — for an unchanging value the line is
+    // flat either way, so a skipped intermediate redraw isn't visually distinguishable.
+    const plot = React.useMemo(() => {
+        const marks: Plot.Markish[] = [];
+        const decimalPlaces = yvalMeta?.decimalPlaces ?? 0;
+        let color = yvalMeta?.color;
+        if (!color) {
+            color = defaultColor;
+        }
+        marks.push(
+            () => htl.svg`<defs>
       <linearGradient id="gradient-${blockId}-${yval}" gradientTransform="rotate(90)">
         <stop offset="0%" stop-color="${color}" stop-opacity="0.7" />
         <stop offset="100%" stop-color="${color}" stop-opacity="0" />
       </linearGradient>
 	      </defs>`
-    );
-
-    marks.push(
-        Plot.lineY(plotData, {
-            stroke: color,
-            strokeWidth: 2,
-            x: "ts",
-            y: yval,
-        })
-    );
-
-    // only add the gradient for single items
-    marks.push(
-        Plot.areaY(plotData, {
-            fill: `url(#gradient-${blockId}-${yval})`,
-            x: "ts",
-            y: yval,
-        })
-    );
-    if (title) {
-        marks.push(
-            Plot.text([yvalMeta?.name], {
-                frameAnchor: "top-left",
-                dx: 4,
-                fill: "var(--grey-text-color)",
-            })
         );
-    }
-    const labelY = yvalMeta?.label ?? "?";
-    marks.push(
-        Plot.ruleX(
-            plotData,
-            Plot.pointerX({ x: "ts", py: yval, stroke: "var(--grey-text-color)", strokeWidth: 1, strokeDasharray: 2 })
-        )
-    );
-    marks.push(
-        Plot.ruleY(
-            plotData,
-            Plot.pointerX({ px: "ts", y: yval, stroke: "var(--grey-text-color)", strokeWidth: 1, strokeDasharray: 2 })
-        )
-    );
-    marks.push(
-        Plot.tip(
-            plotData,
-            Plot.pointerX({
+
+        marks.push(
+            Plot.lineY(plotData, {
+                stroke: color,
+                strokeWidth: 2,
                 x: "ts",
                 y: yval,
-                fill: "var(--main-bg-color)",
-                anchor: "middle",
-                dy: -30,
-                title: (d) =>
-                    `${dayjs.unix(d.ts / 1000).format("HH:mm:ss")} ${Number(d[yval]).toFixed(decimalPlaces)}${labelY}`,
-                textPadding: 3,
             })
-        )
-    );
-    marks.push(
-        Plot.dot(
-            plotData,
-            Plot.pointerX({ x: "ts", y: yval, fill: color, r: 3, stroke: "var(--main-text-color)", strokeWidth: 1 })
-        )
-    );
-    const maxY = resolveDomainBound(yvalMeta?.maxy, plotData[plotData.length - 1]) ?? 100;
-    const minY = resolveDomainBound(yvalMeta?.miny, plotData[plotData.length - 1]) ?? 0;
-    const maxX = plotData[plotData.length - 1].ts;
-    const minX = maxX - targetLen * 1000;
-    const plot = Plot.plot({
-        axis: !sparkline,
-        x: {
-            grid: true,
-            label: "time",
-            tickFormat: (d) => `${dayjs.unix(d / 1000).format("HH:mm:ss")}`,
-            domain: [minX, maxX],
-        },
-        y: { label: labelY, domain: [minY, maxY] },
-        width: plotWidth,
-        height: plotHeight,
-        marks: marks,
-    });
+        );
+
+        // only add the gradient for single items
+        marks.push(
+            Plot.areaY(plotData, {
+                fill: `url(#gradient-${blockId}-${yval})`,
+                x: "ts",
+                y: yval,
+            })
+        );
+        if (title) {
+            marks.push(
+                Plot.text([yvalMeta?.name], {
+                    frameAnchor: "top-left",
+                    dx: 4,
+                    fill: "var(--grey-text-color)",
+                })
+            );
+        }
+        const labelY = yvalMeta?.label ?? "?";
+        marks.push(
+            Plot.ruleX(
+                plotData,
+                Plot.pointerX({
+                    x: "ts",
+                    py: yval,
+                    stroke: "var(--grey-text-color)",
+                    strokeWidth: 1,
+                    strokeDasharray: 2,
+                })
+            )
+        );
+        marks.push(
+            Plot.ruleY(
+                plotData,
+                Plot.pointerX({
+                    px: "ts",
+                    y: yval,
+                    stroke: "var(--grey-text-color)",
+                    strokeWidth: 1,
+                    strokeDasharray: 2,
+                })
+            )
+        );
+        marks.push(
+            Plot.tip(
+                plotData,
+                Plot.pointerX({
+                    x: "ts",
+                    y: yval,
+                    fill: "var(--main-bg-color)",
+                    anchor: "middle",
+                    dy: -30,
+                    title: (d) =>
+                        `${dayjs.unix(d.ts / 1000).format("HH:mm:ss")} ${Number(d[yval]).toFixed(decimalPlaces)}${labelY}`,
+                    textPadding: 3,
+                })
+            )
+        );
+        marks.push(
+            Plot.dot(
+                plotData,
+                Plot.pointerX({
+                    x: "ts",
+                    y: yval,
+                    fill: color,
+                    r: 3,
+                    stroke: "var(--main-text-color)",
+                    strokeWidth: 1,
+                })
+            )
+        );
+        const maxY = resolveDomainBound(yvalMeta?.maxy, plotData[plotData.length - 1]) ?? 100;
+        const minY = resolveDomainBound(yvalMeta?.miny, plotData[plotData.length - 1]) ?? 0;
+        const maxX = plotData[plotData.length - 1].ts;
+        const minX = maxX - targetLen * 1000;
+        return Plot.plot({
+            axis: !sparkline,
+            x: {
+                grid: true,
+                label: "time",
+                tickFormat: (d) => `${dayjs.unix(d / 1000).format("HH:mm:ss")}`,
+                domain: [minX, maxX],
+            },
+            y: { label: labelY, domain: [minY, maxY] },
+            width: plotWidth,
+            height: plotHeight,
+            marks: marks,
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [...plotMemoKey(plotData, yval, yvalMeta, defaultColor, plotWidth, plotHeight, targetLen), title, sparkline]);
 
     React.useEffect(() => {
         containerRef.current.append(plot);
@@ -607,7 +673,7 @@ function SingleLinePlot({
         return () => {
             plot.remove();
         };
-    }, [plot, plotWidth, plotHeight]);
+    }, [plot]);
 
     return (
         <div className="relative min-h-[100px]">
