@@ -4,11 +4,12 @@
 import { RpcApi } from "@/app/store/wshclientapi";
 import { adaptFromElectronKeyEvent, checkKeyPressed } from "@/util/keyutil";
 import { CHORD_TIMEOUT } from "@/util/sharedconst";
-import { Rectangle, shell, WebContentsView } from "electron";
+import { Rectangle, screen, shell, WebContentsView } from "electron";
 import { createNewRemoteTermWindow, getRemoteTermWindowById } from "emain/emain-window";
 import path from "path";
 import { setWasActive } from "./emain-activity";
-import { getElectronAppBasePath, isDevVite, unamePlatform } from "./emain-platform";
+import { getElectronAppBasePath, getWebviewPreloadPath, isDevVite, unamePlatform } from "./emain-platform";
+import { installGuestWindowOpenHandler } from "./emain-popup";
 import { handleTabDidFailLoad, handleTabRenderProcessGone, handleTabUnresponsive } from "./emain-tab-lifecycle";
 import {
     decreaseZoomLevel,
@@ -323,12 +324,20 @@ export async function getOrCreateWebViewForTab(
     tabView.webContents.on("will-navigate", shNavHandler);
     tabView.webContents.on("will-frame-navigate", shFrameNavHandler);
     tabView.webContents.on("did-attach-webview", (event, wc) => {
-        wc.setWindowOpenHandler((details) => {
-            if (wc == null || wc.isDestroyed() || tabView.webContents == null || tabView.webContents.isDestroyed()) {
-                return { action: "deny" };
-            }
-            tabView.webContents.send("webview-new-window", wc.id, details);
-            return { action: "deny" };
+        installGuestWindowOpenHandler(wc, {
+            rootGuestId: wc.id,
+            sendToTab: (guestId, details) => {
+                if (tabView.webContents == null || tabView.webContents.isDestroyed()) {
+                    return;
+                }
+                tabView.webContents.send("webview-new-window", guestId, details);
+            },
+            getParentWindow: () => getRemoteTermWindowById(tabView.remoteTermWindowId) ?? null,
+            getWorkArea: (parent) => {
+                const display = parent == null ? screen.getPrimaryDisplay() : screen.getDisplayMatching(parent.getBounds());
+                return display.workArea;
+            },
+            preloadPath: getWebviewPreloadPath(),
         });
     });
     tabView.webContents.on("before-input-event", (e, input) => {
