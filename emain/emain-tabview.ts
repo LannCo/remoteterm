@@ -359,7 +359,7 @@ export async function getOrCreateWebViewForTab(
             }
         }
     });
-    tabView.webContents.setWindowOpenHandler(({ url, frameName }) => {
+    tabView.webContents.setWindowOpenHandler(({ url }) => {
         if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("file://")) {
             console.log("openExternal fallback", url);
             shell.openExternal(url);
