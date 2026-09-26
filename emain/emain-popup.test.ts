@@ -87,3 +87,223 @@ describe("computePopupBounds", () => {
         expect(r.height).toBe(150);
     });
 });
+
+import { session } from "electron";
+import { EventEmitter } from "events";
+import {
+    buildPopupWindowOptions,
+    handleGuestWindowOpen,
+    hardenCreatedPopup,
+    installGuestWindowOpenHandler,
+    livePopupCount,
+    MaxLivePopupsPerOpener,
+} from "./emain-popup";
+import { registerAppWebContents, WebBlockPartition } from "./emain-websecurity";
+
+const PreloadPath = "/app/preload/preload-webview.cjs";
+const GuestSession = { id: "persist:webblock" };
+let nextId = 5000;
+
+function fakeWebContents(sessionObj: any = GuestSession): any {
+    const wc = new EventEmitter() as any;
+    wc.id = nextId++;
+    wc.session = sessionObj;
+    wc.destroyed = false;
+    wc.isDestroyed = () => wc.destroyed;
+    wc.windowOpenHandler = null;
+    wc.setWindowOpenHandler = (h: any) => (wc.windowOpenHandler = h);
+    return wc;
+}
+
+function fakeWindow(sessionObj: any = GuestSession): any {
+    const win = new EventEmitter() as any;
+    win.webContents = fakeWebContents(sessionObj);
+    win.destroyed = false;
+    win.isDestroyed = () => win.destroyed;
+    win.destroy = () => {
+        win.destroyed = true;
+        win.emit("closed");
+    };
+    win.setMenuBarVisibility = vi.fn();
+    win.getBounds = () => ({ x: 100, y: 100, width: 1200, height: 800 });
+    return win;
+}
+
+function ctxFor(root: any, parent: any = fakeWindow()) {
+    const sent: any[] = [];
+    return {
+        ctx: {
+            rootGuestId: root.id,
+            sendToTab: (guestId: number, details: any) => sent.push({ guestId, details }),
+            getParentWindow: () => parent,
+            getWorkArea: () => ({ x: 0, y: 0, width: 1920, height: 1080 }),
+            preloadPath: PreloadPath,
+        },
+        sent,
+        parent,
+    };
+}
+
+const PopupDetails: any = {
+    url: "https://accounts.example.test/auth",
+    frameName: "auth",
+    features: "width=480,height=600",
+    disposition: "new-window",
+    referrer: { url: "", policy: "default" },
+};
+
+describe("buildPopupWindowOptions", () => {
+    it("hardens webPreferences identically to a webview guest and pins the preload", () => {
+        const root = fakeWebContents();
+        const { ctx, parent } = ctxFor(root);
+        const opts = buildPopupWindowOptions(PopupDetails, ctx);
+        expect(opts.webPreferences).toEqual({
+            preload: PreloadPath,
+            nodeIntegration: false,
+            nodeIntegrationInSubFrames: false,
+            nodeIntegrationInWorker: false,
+            contextIsolation: true,
+            sandbox: true,
+            webSecurity: true,
+            allowRunningInsecureContent: false,
+            experimentalFeatures: false,
+            webviewTag: false,
+        });
+        expect(opts.parent).toBe(parent);
+        expect(opts.autoHideMenuBar).toBe(true);
+        expect(opts).toMatchObject({ width: 480, height: 600 });
+    });
+
+    it("omits a destroyed parent", () => {
+        const root = fakeWebContents();
+        const { ctx, parent } = ctxFor(root);
+        parent.destroyed = true;
+        expect(buildPopupWindowOptions(PopupDetails, ctx).parent).toBeUndefined();
+    });
+});
+
+describe("handleGuestWindowOpen", () => {
+    it("allows a popup with override options", () => {
+        const root = fakeWebContents();
+        const { ctx, sent } = ctxFor(root);
+        const resp = handleGuestWindowOpen(root, PopupDetails, ctx);
+        expect(resp.action).toBe("allow");
+        expect(resp.overrideBrowserWindowOptions?.webPreferences?.sandbox).toBe(true);
+        expect(resp.outlivesOpener).toBeUndefined();
+        expect(sent).toEqual([]);
+    });
+
+    it("forwards tab routes to the renderer and denies", () => {
+        const root = fakeWebContents();
+        const { ctx, sent } = ctxFor(root);
+        const details = { ...PopupDetails, disposition: "foreground-tab", features: "" };
+        expect(handleGuestWindowOpen(root, details, ctx)).toEqual({ action: "deny" });
+        expect(sent).toEqual([{ guestId: root.id, details }]);
+    });
+
+    it("denies non-web popup urls without forwarding", () => {
+        const root = fakeWebContents();
+        const { ctx, sent } = ctxFor(root);
+        expect(handleGuestWindowOpen(root, { ...PopupDetails, url: "file:///x" }, ctx)).toEqual({ action: "deny" });
+        expect(sent).toEqual([]);
+    });
+
+    it("denies when the opener is destroyed", () => {
+        const root = fakeWebContents();
+        const { ctx } = ctxFor(root);
+        root.destroyed = true;
+        expect(handleGuestWindowOpen(root, PopupDetails, ctx)).toEqual({ action: "deny" });
+    });
+});
+
+describe("hardenCreatedPopup", () => {
+    const createdDetails: any = { url: PopupDetails.url, frameName: "auth", options: { webPreferences: { preload: PreloadPath } }, disposition: "new-window" };
+
+    it("accepts a same-session popup, hides the menu bar, guards navigation, and tracks it", () => {
+        const root = fakeWebContents();
+        const { ctx } = ctxFor(root);
+        const child = fakeWindow();
+        expect(hardenCreatedPopup(child, root, createdDetails, ctx)).toBe(true);
+        expect(child.destroyed).toBe(false);
+        expect(child.setMenuBarVisibility).toHaveBeenCalledWith(false);
+        expect(livePopupCount(root.id)).toBe(1);
+        const ev = { preventDefault: vi.fn() };
+        child.webContents.emit("will-navigate", ev, "file:///etc/passwd");
+        expect(ev.preventDefault).toHaveBeenCalled();
+        const ev2 = { preventDefault: vi.fn() };
+        child.webContents.emit("will-navigate", ev2, "https://ok.test/");
+        expect(ev2.preventDefault).not.toHaveBeenCalled();
+        child.destroy();
+        expect(livePopupCount(root.id)).toBe(0);
+    });
+
+    it("destroys a popup that landed on a different session or the default session", () => {
+        const root = fakeWebContents();
+        const { ctx } = ctxFor(root);
+        const other = fakeWindow({ id: "persist:other" });
+        expect(hardenCreatedPopup(other, root, createdDetails, ctx)).toBe(false);
+        expect(other.destroyed).toBe(true);
+        // Same object on both sides so the "differs from opener" check passes and the
+        // default-session check is the one that fires.
+        const rootOnDefault = fakeWebContents(session.defaultSession);
+        const onDefault = fakeWindow(session.defaultSession);
+        expect(hardenCreatedPopup(onDefault, rootOnDefault, createdDetails, ctx)).toBe(false);
+        expect(onDefault.destroyed).toBe(true);
+    });
+
+    it("destroys a popup carrying an unexpected preload or an app-owned id", () => {
+        const root = fakeWebContents();
+        const { ctx } = ctxFor(root);
+        const badPreload = fakeWindow();
+        const d: any = { ...createdDetails, options: { webPreferences: { preload: "/tmp/evil.js" } } };
+        expect(hardenCreatedPopup(badPreload, root, d, ctx)).toBe(false);
+        expect(badPreload.destroyed).toBe(true);
+        const appOwned = fakeWindow();
+        registerAppWebContents(appOwned.webContents);
+        expect(hardenCreatedPopup(appOwned, root, createdDetails, ctx)).toBe(false);
+        expect(appOwned.destroyed).toBe(true);
+    });
+
+    it("installs the router on the popup so nested opens route through the root", () => {
+        const root = fakeWebContents();
+        const { ctx, sent } = ctxFor(root);
+        const child = fakeWindow();
+        hardenCreatedPopup(child, root, createdDetails, ctx);
+        expect(typeof child.webContents.windowOpenHandler).toBe("function");
+        const tabDetails = { ...PopupDetails, disposition: "foreground-tab", features: "" };
+        expect(child.webContents.windowOpenHandler(tabDetails)).toEqual({ action: "deny" });
+        expect(sent).toEqual([{ guestId: root.id, details: tabDetails }]);
+        expect(child.webContents.windowOpenHandler(PopupDetails).action).toBe("allow");
+        const grandchild = fakeWindow();
+        child.webContents.emit("did-create-window", grandchild, createdDetails);
+        expect(livePopupCount(root.id)).toBe(2);
+    });
+
+    it("caps live popups per root opener", () => {
+        const root = fakeWebContents();
+        const { ctx } = ctxFor(root);
+        const wins: any[] = [];
+        for (let i = 0; i < MaxLivePopupsPerOpener; i++) {
+            const w = fakeWindow();
+            hardenCreatedPopup(w, root, createdDetails, ctx);
+            wins.push(w);
+        }
+        expect(handleGuestWindowOpen(root, PopupDetails, ctx)).toEqual({ action: "deny" });
+        wins[0].destroy();
+        expect(handleGuestWindowOpen(root, PopupDetails, ctx).action).toBe("allow");
+    });
+});
+
+describe("installGuestWindowOpenHandler", () => {
+    it("wires setWindowOpenHandler and did-create-window on the guest and clears tracking on destroy", () => {
+        const root = fakeWebContents();
+        const { ctx } = ctxFor(root);
+        installGuestWindowOpenHandler(root, ctx);
+        expect(root.windowOpenHandler(PopupDetails).action).toBe("allow");
+        const child = fakeWindow();
+        root.emit("did-create-window", child, { url: PopupDetails.url, frameName: "auth", options: { webPreferences: { preload: PreloadPath } }, disposition: "new-window" });
+        expect(livePopupCount(root.id)).toBe(1);
+        root.emit("destroyed");
+        expect(livePopupCount(root.id)).toBe(0);
+    });
+});
