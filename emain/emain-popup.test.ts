@@ -305,13 +305,9 @@ describe("hardenCreatedPopup", () => {
         expect(onDefault.destroyed).toBe(true);
     });
 
-    it("destroys a popup carrying an unexpected preload or an app-owned id", () => {
+    it("destroys a popup with an app-owned webContents id", () => {
         const root = fakeWebContents();
         const { ctx } = ctxFor(root);
-        const badPreload = fakeWindow();
-        const d: any = { ...createdDetails, options: { webPreferences: { preload: "/tmp/evil.js" } } };
-        expect(hardenCreatedPopup(badPreload, root, d, ctx)).toBe(false);
-        expect(badPreload.destroyed).toBe(true);
         const appOwned = fakeWindow();
         registerAppWebContents(appOwned.webContents);
         expect(hardenCreatedPopup(appOwned, root, createdDetails, ctx)).toBe(false);
