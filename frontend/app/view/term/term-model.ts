@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { BlockNodeModel } from "@/app/block/blocktypes";
+import { resolvedAppearanceModeAtom } from "@/app/store/appearance-atoms";
 import { appHandleKeyDown } from "@/app/store/keymodel";
 import { modalsModel } from "@/app/store/modalmodel";
 import type { TabModel } from "@/app/store/tab-model";
@@ -35,7 +36,7 @@ import { isMacOS, isWindows } from "@/util/platformutil";
 import { boundNumber, fireAndForget, stringToBase64 } from "@/util/util";
 import * as jotai from "jotai";
 import * as React from "react";
-import { computeTheme, DefaultTermTheme, isLikelyOnSameHost, trimTerminalSelection } from "./termutil";
+import { computeTheme, DefaultTermTheme, getDefaultTermThemeName, isLikelyOnSameHost, trimTerminalSelection } from "./termutil";
 import { TermWrap, WebGLSupported } from "./termwrap";
 
 export class TermViewModel implements ViewModel {
@@ -245,7 +246,13 @@ export class TermViewModel implements ViewModel {
             const fullConfig = get(atoms.fullConfigAtom);
             const themeName = get(this.termThemeNameAtom);
             const termTransparency = get(this.termTransparencyAtom);
-            const [_, bgcolor] = computeTheme(fullConfig, themeName, termTransparency);
+            const appearanceMode = get(resolvedAppearanceModeAtom);
+            const [_, bgcolor] = computeTheme(
+                fullConfig,
+                themeName,
+                termTransparency,
+                getDefaultTermThemeName(appearanceMode)
+            );
             if (bgcolor != null) {
                 return { bg: bgcolor };
             }
