@@ -75,6 +75,12 @@ describe("classifyWindowOpen", () => {
             "resizable=yes,scrollbars=yes,status=yes,toolbar=yes,menubar=yes,location=yes";
         expect(classifyWindowOpen({ ...Popup, features: allowlistedOnly })).toBe("popup");
     });
+
+    it("routes a featureless new-window (shift-click) to the pane path", () => {
+        expect(classifyWindowOpen({ ...Popup, features: "" })).toBe("tab");
+        expect(classifyWindowOpen({ ...Popup, features: "   " })).toBe("tab");
+        expect(classifyWindowOpen({ ...Popup, features: undefined })).toBe("tab");
+    });
 });
 
 describe("computePopupBounds", () => {
@@ -174,12 +180,13 @@ const PopupDetails: any = {
 };
 
 describe("buildPopupWindowOptions", () => {
-    it("hardens webPreferences identically to a webview guest and pins the preload", () => {
+    it("hardens webPreferences identically to a webview guest, pins the preload, and pins the opener's session", () => {
         const root = fakeWebContents();
         const { ctx, parent } = ctxFor(root);
-        const opts = buildPopupWindowOptions(PopupDetails, ctx);
+        const opts = buildPopupWindowOptions(PopupDetails, root, ctx);
         expect(opts.webPreferences).toEqual({
             preload: PreloadPath,
+            session: root.session,
             nodeIntegration: false,
             nodeIntegrationInSubFrames: false,
             nodeIntegrationInWorker: false,
@@ -198,7 +205,7 @@ describe("buildPopupWindowOptions", () => {
     it("pins native window options a hostile features string could otherwise control (H-1 defence in depth)", () => {
         const root = fakeWebContents();
         const { ctx } = ctxFor(root);
-        const opts = buildPopupWindowOptions(PopupDetails, ctx);
+        const opts = buildPopupWindowOptions(PopupDetails, root, ctx);
         expect(opts).toMatchObject({
             frame: true,
             transparent: false,
@@ -225,7 +232,7 @@ describe("buildPopupWindowOptions", () => {
         const root = fakeWebContents();
         const { ctx, parent } = ctxFor(root);
         parent.destroyed = true;
-        expect(buildPopupWindowOptions(PopupDetails, ctx).parent).toBeUndefined();
+        expect(buildPopupWindowOptions(PopupDetails, root, ctx).parent).toBeUndefined();
     });
 });
 

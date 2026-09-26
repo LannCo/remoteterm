@@ -109,6 +109,14 @@ export function classifyWindowOpen(details: Pick<HandlerDetails, "url" | "dispos
     if (details.disposition !== "new-window") {
         return "tab";
     }
+    // A shift-clicked link also arrives as "new-window" but with no renderer-created child
+    // and an empty features string. Left unhandled, Electron builds a fresh BrowserWindow
+    // on the default session that hardenCreatedPopup then destroys, so the user sees
+    // nothing happen (M-1). Plain window.open(url) already arrives as foreground-tab, so
+    // this only catches the browser-initiated case.
+    if (details.features == null || details.features.trim() === "") {
+        return "tab";
+    }
     const parsed = parseWindowFeatures(details.features);
     if (hasDisallowedFeatureKey(parsed)) {
         return "tab";
@@ -177,12 +185,19 @@ function liveParent(ctx: PopupHostContext): BaseWindow | null {
     return parent;
 }
 
-export function buildPopupWindowOptions(details: HandlerDetails, ctx: PopupHostContext): BrowserWindowConstructorOptions {
+export function buildPopupWindowOptions(
+    details: HandlerDetails,
+    opener: WebContents,
+    ctx: PopupHostContext
+): BrowserWindowConstructorOptions {
     const parent = liveParent(ctx);
     const workArea = ctx.getWorkArea(parent);
     const parentBounds = parent?.getBounds() ?? workArea;
     const bounds = computePopupBounds(requestedPopupGeometry(details.features), parentBounds, workArea);
-    const webPreferences: BrowserWindowConstructorOptions["webPreferences"] = { preload: ctx.preloadPath };
+    const webPreferences: BrowserWindowConstructorOptions["webPreferences"] = {
+        preload: ctx.preloadPath,
+        session: opener.session,
+    };
     applyGuestWebPreferences(webPreferences);
     const opts: BrowserWindowConstructorOptions = {
         ...bounds,
@@ -236,7 +251,7 @@ export function handleGuestWindowOpen(
         console.log("[popup] cap reached for guest", ctx.rootGuestId);
         return { action: "deny" };
     }
-    return { action: "allow", overrideBrowserWindowOptions: buildPopupWindowOptions(details, ctx) };
+    return { action: "allow", overrideBrowserWindowOptions: buildPopupWindowOptions(details, opener, ctx) };
 }
 
 function destroyPopup(child: BrowserWindow, reason: string): false {
