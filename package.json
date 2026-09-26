@@ -84,7 +84,7 @@
         "@tanstack/react-table": "^8.21.3",
         "@tanstack/react-virtual": "^3.14.3",
         "@xterm/addon-fit": "^0.11.0",
-        "@xterm/addon-image": "^0.10.0-beta.287",
+        "@xterm/addon-image": "0.10.0-beta.287",
         "@xterm/addon-search": "^0.16.0",
         "@xterm/addon-serialize": "^0.14.0",
         "@xterm/addon-web-links": "^0.12.0",
