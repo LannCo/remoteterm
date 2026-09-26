@@ -153,6 +153,8 @@ function fakeWebContents(sessionObj: any = GuestSession): any {
     wc.isDestroyed = () => wc.destroyed;
     wc.windowOpenHandler = null;
     wc.setWindowOpenHandler = (h: any) => (wc.windowOpenHandler = h);
+    wc.prefs = { sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: false };
+    wc.getLastWebPreferences = () => wc.prefs;
     return wc;
 }
 
@@ -369,6 +371,40 @@ describe("hardenCreatedPopup", () => {
         registerAppWebContents(appOwned.webContents);
         expect(hardenCreatedPopup(appOwned, root, createdDetails, ctx)).toBe(false);
         expect(appOwned.destroyed).toBe(true);
+    });
+
+    it("destroys an about:blank popup whose opener is not sandboxed, even though the child reports hardened prefs", () => {
+        // Real Electron 41 (see .pi/evidence/2026-09-26-pr67-followup): the about:blank child
+        // runs in the opener's process yet getLastWebPreferences reports the hardened override.
+        const root = fakeWebContents();
+        root.prefs = { ...root.prefs, sandbox: false };
+        const { ctx } = ctxFor(root);
+        const child = fakeWindow();
+        const aboutBlank = { ...createdDetails, url: "about:blank" };
+        expect(hardenCreatedPopup(child, root, aboutBlank, ctx)).toBe(false);
+        expect(child.destroyed).toBe(true);
+        expect(livePopupCount(root.id)).toBe(0);
+    });
+
+    it("destroys a popup whose own webPreferences are weakened or unreadable", () => {
+        const weakenings = [{ contextIsolation: false }, { nodeIntegration: true }, { nodeIntegrationInSubFrames: true }, { sandbox: undefined }];
+        for (const weaken of weakenings) {
+            const root = fakeWebContents();
+            const { ctx } = ctxFor(root);
+            const child = fakeWindow();
+            child.webContents.prefs = { ...child.webContents.prefs, ...weaken };
+            expect(hardenCreatedPopup(child, root, createdDetails, ctx)).toBe(false);
+            expect(child.destroyed).toBe(true);
+        }
+        const root = fakeWebContents();
+        const { ctx } = ctxFor(root);
+        const noAccessor = fakeWindow();
+        delete noAccessor.webContents.getLastWebPreferences;
+        expect(hardenCreatedPopup(noAccessor, root, createdDetails, ctx)).toBe(false);
+        const nullPrefs = fakeWindow();
+        nullPrefs.webContents.prefs = null;
+        expect(hardenCreatedPopup(nullPrefs, root, createdDetails, ctx)).toBe(false);
+        expect(livePopupCount(root.id)).toBe(0);
     });
 
     it("installs the router on the popup so nested opens route through the root", () => {
