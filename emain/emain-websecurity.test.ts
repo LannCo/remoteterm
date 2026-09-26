@@ -5,8 +5,10 @@ import { EventEmitter } from "events";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthKey, configureAuthKeyRequestInjection } from "./authkey";
 import {
+    applyGuestWebPreferences,
     hardenWebviewAttach,
     installPermissionHandlers,
+    isAllowedPopupUrl,
     isAppWebContentsId,
     isPermissionAllowed,
     registerAppWebContents,
@@ -204,6 +206,42 @@ describe("hardenWebviewAttach", () => {
         }
         for (const src of ["javascript:alert(1)", "chrome://gpu", "devtools://devtools", "not a url"]) {
             expect(hardenWebviewAttach({} as any, { src }, PreloadPath)).toBe(false);
+        }
+    });
+});
+
+describe("applyGuestWebPreferences", () => {
+    it("forces the same secure values hardenWebviewAttach forces", () => {
+        const prefs: any = { nodeIntegration: true, sandbox: false, webviewTag: true, enableBlinkFeatures: "Foo" };
+        applyGuestWebPreferences(prefs);
+        expect(prefs).toEqual({
+            nodeIntegration: false,
+            nodeIntegrationInSubFrames: false,
+            nodeIntegrationInWorker: false,
+            contextIsolation: true,
+            sandbox: true,
+            webSecurity: true,
+            allowRunningInsecureContent: false,
+            experimentalFeatures: false,
+            webviewTag: false,
+        });
+    });
+
+    it("leaves partition and preload alone", () => {
+        const prefs: any = { partition: "persist:x", preload: PreloadPath };
+        applyGuestWebPreferences(prefs);
+        expect(prefs.partition).toBe("persist:x");
+        expect(prefs.preload).toBe(PreloadPath);
+    });
+});
+
+describe("isAllowedPopupUrl", () => {
+    it("allows http, https and about only", () => {
+        for (const u of ["http://x.test/", "https://x.test/a?b", "about:blank"]) {
+            expect(isAllowedPopupUrl(u)).toBe(true);
+        }
+        for (const u of ["file:///etc/passwd", "javascript:alert(1)", "chrome://gpu", "data:text/html,x", "", undefined, "not a url"]) {
+            expect(isAllowedPopupUrl(u)).toBe(false);
         }
     });
 });
