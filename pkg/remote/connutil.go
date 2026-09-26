@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
@@ -24,6 +25,15 @@ import (
 	"github.com/LannCo/remoteterm/pkg/util/iterfn"
 	"github.com/LannCo/remoteterm/pkg/util/shellutil"
 	"golang.org/x/crypto/ssh"
+)
+
+// wshCopyStallTimeout/wshCopyStallCheckInterval govern CpWshToRemote's
+// binary-copy step: the transfer is killed only after this many seconds
+// with no forward progress, not after a fixed wall-clock budget regardless
+// of whether bytes are still moving (a slow-but-steady link should finish).
+const (
+	wshCopyStallTimeout       = 10 * time.Second
+	wshCopyStallCheckInterval = 1 * time.Second
 )
 
 var userHostRe = regexp.MustCompile(`^([a-zA-Z0-9][a-zA-Z0-9._@\\-]*@)?([a-zA-Z0-9][a-zA-Z0-9.-]*)(?::([0-9]+))?$`)
@@ -139,18 +149,49 @@ func CpWshToRemote(ctx context.Context, client *ssh.Client, clientOs string, cli
 	if err := genCmd.Start(); err != nil {
 		return fmt.Errorf("failed to start remote command: %w", err)
 	}
+
+	// The copy is bounded by two independent limits, whichever fires first:
+	// wshCopyStallTimeout with no bytes written (a genuinely stuck transfer),
+	// or ctx's own deadline/cancel as the hard outer cap. stallCtx derives
+	// directly from ctx so a real ctx cancellation (deadline or explicit)
+	// propagates its actual error rather than always reporting a plain
+	// context.Canceled from the watchdog's own stall-firing cancel.
+	//
+	// Once the local io.Copy finishes, all bytes have been handed to the SSH
+	// stdin pipe, but the remote side still has to finish cat's EOF handling,
+	// mv, and chmod -- with no further local Write() calls to reset the stall
+	// clock. The watchdog is stopped as soon as the copy goroutine finishes
+	// (see stopWatch below) so that remaining tail is bounded only by ctx,
+	// not misread as a stall.
+	stallCtx, stallCancel := context.WithCancel(ctx)
+	defer stallCancel()
+	tracker := genconn.MakeProgressTracker(nil)
+	stallTicker := time.NewTicker(wshCopyStallCheckInterval)
+	defer stallTicker.Stop()
+	watchStop := make(chan struct{})
+	var watchStopOnce sync.Once
+	stopWatch := func() { watchStopOnce.Do(func() { close(watchStop) }) }
+	defer stopWatch()
+	go genconn.WatchForStall(ctx, tracker, wshCopyStallTimeout, stallTicker.C, watchStop, stallCancel)
+
 	copyDone := make(chan error, 1)
 	go func() {
 		defer close(copyDone)
 		defer stdin.Close()
-		if _, err := io.Copy(stdin, input); err != nil && err != io.EOF {
-			copyDone <- fmt.Errorf("failed to copy data: %w", err)
+		progressStdin := &genconn.ProgressWriter{Dst: stdin, Tracker: tracker}
+		_, copyErr := io.Copy(progressStdin, input)
+		stopWatch()
+		if copyErr != nil && copyErr != io.EOF {
+			copyDone <- fmt.Errorf("failed to copy data: %w", copyErr)
 		} else {
 			copyDone <- nil
 		}
 	}()
-	procErr := genconn.ProcessContextWait(ctx, genCmd)
+	procErr := genconn.ProcessContextWait(stallCtx, genCmd)
 	if procErr != nil {
+		if stallCtx.Err() != nil && ctx.Err() == nil {
+			return fmt.Errorf("remote command failed: wsh binary copy stalled (no progress for %v): %w (stderr: %s)", wshCopyStallTimeout, procErr, stderrBuf.String())
+		}
 		return fmt.Errorf("remote command failed: %w (stderr: %s)", procErr, stderrBuf.String())
 	}
 	copyErr := <-copyDone
