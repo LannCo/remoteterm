@@ -21,7 +21,7 @@ func init() {
 	rootCmd.AddCommand(tokenCmd)
 }
 
-func tokenCmdRun(cmd *cobra.Command, args []string) (rtnErr error) {
+func tokenCmdRun(cmd *cobra.Command, args []string) error {
 	if len(args) != 2 {
 		OutputHelpMessage(cmd)
 		return fmt.Errorf("wsh token requires exactly 2 arguments, got %d", len(args))
