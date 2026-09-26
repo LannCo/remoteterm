@@ -36,7 +36,7 @@ import { isMacOS, isWindows } from "@/util/platformutil";
 import { boundNumber, fireAndForget, stringToBase64 } from "@/util/util";
 import * as jotai from "jotai";
 import * as React from "react";
-import { computeTheme, DefaultTermTheme, getDefaultTermThemeName, isLikelyOnSameHost, trimTerminalSelection } from "./termutil";
+import { computeTheme, getDefaultTermThemeName, isLikelyOnSameHost, resolveTermThemeName, trimTerminalSelection } from "./termutil";
 import { TermWrap, WebGLSupported } from "./termwrap";
 
 export class TermViewModel implements ViewModel {
@@ -233,7 +233,8 @@ export class TermViewModel implements ViewModel {
         this.termBPMAtom = getOverrideConfigAtom(blockId, "term:allowbracketedpaste");
         this.termThemeNameAtom = useBlockAtom(blockId, "termthemeatom", () => {
             return jotai.atom<string>((get) => {
-                return get(getOverrideConfigAtom(this.blockId, "term:theme")) ?? DefaultTermTheme;
+                const override = get(getOverrideConfigAtom(this.blockId, "term:theme"));
+                return resolveTermThemeName(override, get(resolvedAppearanceModeAtom));
             });
         });
         this.termTransparencyAtom = useBlockAtom(blockId, "termtransparencyatom", () => {
