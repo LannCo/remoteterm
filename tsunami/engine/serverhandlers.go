@@ -10,8 +10,13 @@ import (
 	"io/fs"
 	"log"
 	"mime"
+	"net"
 	"net/http"
 	"os"
+	"reflect"
+	"regexp"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +27,7 @@ import (
 )
 
 const SSEKeepAliveDuration = 5 * time.Second
+const MaxConfigPostBytes = 1 << 20
 
 func init() {
 	// Add explicit mapping for .json files
@@ -76,6 +82,45 @@ func setCORSHeaders(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
+func isLoopbackHostname(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func requestHostname(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		return strings.Trim(r.Host, "[]")
+	}
+	return host
+}
+
+// loopbackHostGuard rejects requests whose Host header is not a loopback name. When the
+// server is bound to loopback, any other Host means a DNS-rebinding page in a browser.
+func loopbackHostGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackHostname(requestHostname(r)) {
+			http.Error(w, "invalid host", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// requireJSONContentType forces cross-origin callers through a CORS preflight: a page on
+// another site can only send a no-preflight POST as text/plain, form or multipart.
+func requireJSONContentType(w http.ResponseWriter, r *http.Request) bool {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		http.Error(w, "content-type must be application/json", http.StatusUnsupportedMediaType)
+		return false
+	}
+	return true
+}
+
 func (h *httpHandlers) registerHandlers(mux *http.ServeMux, opts handlerOpts) {
 	mux.HandleFunc("/api/render", h.handleRender)
 	mux.HandleFunc("/api/updates", h.handleSSE)
@@ -110,6 +155,9 @@ func (h *httpHandlers) handleRender(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !requireJSONContentType(w, r) {
 		return
 	}
 
@@ -205,7 +253,7 @@ func (h *httpHandlers) processFrontendUpdate(feUpdate *rpctypes.VDomFrontendUpda
 	var update *rpctypes.VDomBackendUpdate
 	var renderErr error
 
-	if feUpdate.Resync || true {
+	if feUpdate.Resync {
 		update, renderErr = h.Client.fullRender()
 	} else {
 		update, renderErr = h.Client.incrementalRender()
@@ -285,8 +333,65 @@ func (h *httpHandlers) handleConfigGet(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
+func validateConfigValue(root *RootElem, atomName string, value any) error {
+	meta, atomType, ok := root.GetAtomMeta(atomName)
+	if !ok {
+		return fmt.Errorf("unknown config key")
+	}
+	if value == nil {
+		return fmt.Errorf("null is not allowed")
+	}
+	jsonBytes, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("invalid value: %w", err)
+	}
+	if err := json.Unmarshal(jsonBytes, reflect.New(atomType).Interface()); err != nil {
+		return fmt.Errorf("value does not match type %s", atomType)
+	}
+	if meta == nil {
+		return nil
+	}
+	if num, isNum := value.(float64); isNum {
+		if meta.Min != nil && num < *meta.Min {
+			return fmt.Errorf("value %v is below minimum %v", num, *meta.Min)
+		}
+		if meta.Max != nil && num > *meta.Max {
+			return fmt.Errorf("value %v is above maximum %v", num, *meta.Max)
+		}
+	}
+	str, isStr := value.(string)
+	if !isStr {
+		return nil
+	}
+	if len(meta.Enum) > 0 && !slices.Contains(meta.Enum, str) {
+		return fmt.Errorf("value %q is not one of the allowed values", str)
+	}
+	if meta.Pattern != "" {
+		re, err := regexp.Compile(meta.Pattern)
+		if err != nil {
+			return fmt.Errorf("atom has invalid pattern: %w", err)
+		}
+		if !re.MatchString(str) {
+			return fmt.Errorf("value %q does not match pattern", str)
+		}
+	}
+	return nil
+}
+
+func writeJSONResponse(w http.ResponseWriter, status int, response map[string]any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("failed to encode response: %v", err)
+	}
+}
+
 func (h *httpHandlers) handleConfigPost(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
+	if !requireJSONContentType(w, r) {
+		return
+	}
+
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxConfigPostBytes))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to read request body: %v", err), http.StatusBadRequest)
 		return
@@ -298,30 +403,38 @@ func (h *httpHandlers) handleConfigPost(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	invalid := make(map[string]string)
+	for key, value := range configData {
+		if err := validateConfigValue(h.Client.Root, "$config."+key, value); err != nil {
+			invalid[key] = err.Error()
+		}
+	}
+	if len(invalid) > 0 {
+		writeJSONResponse(w, http.StatusBadRequest, map[string]any{
+			"error":   "invalid config values; nothing was updated",
+			"invalid": invalid,
+		})
+		return
+	}
+
 	var failedKeys []string
 	for key, value := range configData {
 		atomName := "$config." + key
 		if err := h.Client.Root.SetAtomVal(atomName, value); err != nil {
 			failedKeys = append(failedKeys, key)
+			continue
 		}
+		h.Client.Root.AtomAddRenderWork(atomName)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-
-	var response map[string]any
 	if len(failedKeys) > 0 {
-		response = map[string]any{
+		sort.Strings(failedKeys)
+		writeJSONResponse(w, http.StatusInternalServerError, map[string]any{
 			"error": fmt.Sprintf("Failed to update keys: %s", strings.Join(failedKeys, ", ")),
-		}
-	} else {
-		response = map[string]any{
-			"success": true,
-		}
+		})
+		return
 	}
-
-	w.WriteHeader(http.StatusOK)
-
-	json.NewEncoder(w).Encode(response)
+	writeJSONResponse(w, http.StatusOK, map[string]any{"success": true})
 }
 
 func (h *httpHandlers) handleSchemas(w http.ResponseWriter, r *http.Request) {
@@ -374,6 +487,9 @@ func (h *httpHandlers) handleModalResult(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !requireJSONContentType(w, r) {
+		return
+	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -406,6 +522,9 @@ func (h *httpHandlers) handleTermInput(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !requireJSONContentType(w, r) {
 		return
 	}
 
