@@ -251,6 +251,52 @@ export function handleGuestWindowOpen(
     return { action: "allow", overrideBrowserWindowOptions: buildPopupWindowOptions(details, opener, ctx) };
 }
 
+export function isLivePopup(win: BaseWindow): boolean {
+    for (const set of livePopups.values()) {
+        if (set.has(win as BrowserWindow)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+export function popupWindowTitle(url: string, pageTitle: string): string {
+    let host = "";
+    try {
+        host = new URL(url).host;
+    } catch {
+        host = "";
+    }
+    if (host === "") {
+        host = url;
+    }
+    const title = pageTitle?.trim();
+    return title ? `${host} - ${title}` : host;
+}
+
+// The popup has no URL bar and sits above the main window, so a page-chosen title alone
+// would let any web block open a convincing fake "Sign in - Google" window.
+function installOriginTitle(child: BrowserWindow, initialUrl: string): void {
+    let currentUrl = initialUrl;
+    let pageTitle = "";
+    const apply = () => {
+        if (!child.isDestroyed()) {
+            child.setTitle(popupWindowTitle(currentUrl, pageTitle));
+        }
+    };
+    child.on("page-title-updated", (event, title) => {
+        event.preventDefault();
+        pageTitle = title;
+        apply();
+    });
+    child.webContents.on("did-navigate", (_event, url) => {
+        currentUrl = url;
+        pageTitle = "";
+        apply();
+    });
+    apply();
+}
+
 function destroyPopup(child: BrowserWindow, reason: string): false {
     console.log(`[popup] destroying child window: ${reason}`);
     if (!child.isDestroyed()) {
@@ -278,13 +324,19 @@ export function hardenCreatedPopup(
     if (isAppWebContentsId(wc.id)) {
         return destroyPopup(child, "popup webContents is app-owned");
     }
-    child.setMenuBarVisibility(false);
-    wc.on("will-navigate", (event, url) => {
-        if (!isAllowedPopupUrl(url)) {
-            console.log("[popup] blocked navigation to", url);
+    // setMenuBarVisibility only hides the inherited app menu; its accelerators would still
+    // fire against this window, and those handlers assume a RemoteTerm window.
+    child.removeMenu();
+    const blockDisallowedNavigation = (event: Electron.Event<{ url: string }>) => {
+        if (!isAllowedPopupUrl(event.url)) {
+            console.log("[popup] blocked navigation to", event.url);
             event.preventDefault();
         }
-    });
+    };
+    wc.on("will-navigate", blockDisallowedNavigation);
+    // Server-side 3xx redirects fire only will-redirect, never will-navigate.
+    wc.on("will-redirect", blockDisallowedNavigation);
+    installOriginTitle(child, details.url);
     installGuestWindowOpenHandler(wc, ctx);
     trackPopup(ctx.rootGuestId, child);
     return true;
