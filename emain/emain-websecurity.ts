@@ -7,6 +7,8 @@ import type { Session, WebContents, WebPreferences } from "electron";
 export const WebBlockPartition = "persist:webblock";
 
 const AllowedWebviewSrcProtocols = new Set(["http:", "https:", "file:", "about:"]);
+// Popups never need file:; an OAuth or share popup that navigates to file: is hostile.
+const AllowedPopupUrlProtocols = new Set(["http:", "https:", "about:"]);
 const GuestAllowedPermissions = new Set(["fullscreen", "clipboard-sanitized-write"]);
 
 const appWebContentsIds = new Set<number>();
@@ -50,16 +52,7 @@ function isAllowedWebviewSrc(src: string | undefined): boolean {
     }
 }
 
-// Returns false when the attach must be refused.
-export function hardenWebviewAttach(
-    webPreferences: WebPreferences,
-    params: Record<string, string>,
-    webviewPreloadPath: string
-): boolean {
-    if (webPreferences.preload != null && webPreferences.preload !== webviewPreloadPath) {
-        console.log(`[will-attach-webview] dropping unexpected preload ${webPreferences.preload}`);
-        delete webPreferences.preload;
-    }
+export function applyGuestWebPreferences(webPreferences: WebPreferences): void {
     webPreferences.nodeIntegration = false;
     webPreferences.nodeIntegrationInSubFrames = false;
     webPreferences.nodeIntegrationInWorker = false;
@@ -70,6 +63,30 @@ export function hardenWebviewAttach(
     webPreferences.experimentalFeatures = false;
     webPreferences.webviewTag = false;
     delete webPreferences.enableBlinkFeatures;
+}
+
+export function isAllowedPopupUrl(url: string | undefined): boolean {
+    if (!url) {
+        return false;
+    }
+    try {
+        return AllowedPopupUrlProtocols.has(new URL(url).protocol);
+    } catch {
+        return false;
+    }
+}
+
+// Returns false when the attach must be refused.
+export function hardenWebviewAttach(
+    webPreferences: WebPreferences,
+    params: Record<string, string>,
+    webviewPreloadPath: string
+): boolean {
+    if (webPreferences.preload != null && webPreferences.preload !== webviewPreloadPath) {
+        console.log(`[will-attach-webview] dropping unexpected preload ${webPreferences.preload}`);
+        delete webPreferences.preload;
+    }
+    applyGuestWebPreferences(webPreferences);
     if (!webPreferences.partition) {
         webPreferences.partition = WebBlockPartition;
     }
