@@ -1099,19 +1099,13 @@ const wshStartupMaxRetries = 3
 // deadline expiring mid-backoff.
 const wshStartupTimeout = 30 * time.Second
 
-// wshApprovalTimeout bounds the install-approval wait (conn:askbeforewshinstall
-// == true). A human clicking "Allow" takes far longer than a network
-// round-trip, so this must not share wshStartupTimeout's clock with the
-// binary transfer: a slow approval click and a slow upload would otherwise
-// compete for the same 30s budget.
-const wshApprovalTimeout = 10 * time.Minute
-
 // wshInstallTimeout bounds InstallWsh (platform detection + binary copy)
 // independently of wshStartupTimeout, so a slow upload isn't killed by the
 // same deadline that covers the pre-install connserver check. The binary
-// copy itself is governed by a stall timeout, not a wall clock (see
-// CpWshToRemote/wshCopyStallTimeout in pkg/remote/connutil.go); this is a
-// generous outer bound on the rest of InstallWsh's work.
+// copy itself (CpWshToRemote/wshCopyStallTimeout in pkg/remote/connutil.go)
+// is killed early only if it stalls (no forward progress); this timeout is
+// the hard outer wall-clock cap on top of that -- a copy that keeps making
+// progress is still bounded by this deadline, not just the stall watchdog.
 const wshInstallTimeout = 5 * time.Minute
 
 // wshPostInstallVerifyTimeout re-runs startConnServerWithRetry after install
@@ -1121,7 +1115,7 @@ const wshInstallTimeout = 5 * time.Minute
 const wshPostInstallVerifyTimeout = wshStartupTimeout
 
 // detachedTimeout derives an independent timeout for a wsh sub-phase
-// (install-approval wait, install, or post-install re-verify), detached via
+// (connect-phase startup, install, or post-install re-verify), detached via
 // context.WithoutCancel from parent's own deadline so that deadline expiring
 // doesn't kill a sub-phase that needs more room. parent (wshCtx) is never
 // canceled before tryEnableWsh returns -- its cancel is only called as
@@ -1940,9 +1934,13 @@ func (conn *SSHConn) tryEnableWsh(ctx context.Context, clientDisplayName string)
 		return WshCheckResult{NoWshReason: "conn:wshenabled set to false", NoWshCode: NoWshCode_Disabled}
 	}
 	if askBeforeInstall {
-		approvalCtx, approvalCancel := detachedTimeout(ctx, wshApprovalTimeout)
-		allowInstall, err := conn.getPermissionToInstallWsh(approvalCtx, clientDisplayName)
-		approvalCancel()
+		// The approval wait uses ctx directly: userinput.GetUserInput ignores any
+		// deadline on the context it is given and runs its own internal 60s
+		// prompt timeout, so wrapping this call in a separate timeout context
+		// achieves nothing. What matters is that the wait for a human click does
+		// not consume the connect-phase budget below -- see the fresh
+		// connectCtx created after this returns.
+		allowInstall, err := conn.getPermissionToInstallWsh(ctx, clientDisplayName)
 		if err != nil {
 			log.Printf("error getting permission to install wsh: %v\n", err)
 			return WshCheckResult{NoWshReason: "error getting user permission to install", NoWshCode: NoWshCode_PermissionError, WshError: err}
@@ -1951,13 +1949,19 @@ func (conn *SSHConn) tryEnableWsh(ctx context.Context, clientDisplayName string)
 			return WshCheckResult{NoWshReason: "user selected not to install wsh extensions", NoWshCode: NoWshCode_UserDeclined}
 		}
 	}
-	err := conn.OpenDomainSocketListener(ctx)
+	// ctx's own deadline (wshStartupTimeout) started ticking before the approval
+	// prompt above was even shown, so an approval wait of more than a few seconds
+	// can leave little or no time for the actual connect-phase work below. Give
+	// that work its own fresh budget, started only now that approval is settled.
+	connectCtx, connectCancel := detachedTimeout(ctx, wshStartupTimeout)
+	defer connectCancel()
+	err := conn.OpenDomainSocketListener(connectCtx)
 	if err != nil {
 		conn.Infof(ctx, "ERROR opening domain socket listener: %v\n", err)
 		err = fmt.Errorf("error opening domain socket listener: %w", err)
 		return WshCheckResult{NoWshReason: "error opening domain socket", NoWshCode: NoWshCode_DomainSocketError, WshError: err}
 	}
-	needsInstall, clientVersion, osArchStr, err := conn.startConnServerWithRetry(ctx, false, true)
+	needsInstall, clientVersion, osArchStr, err := conn.startConnServerWithRetry(connectCtx, false, true)
 	if err != nil {
 		conn.Infof(ctx, "ERROR starting conn server: %v\n", err)
 		return WshCheckResult{NoWshReason: "error starting connserver", NoWshCode: NoWshCode_ConnServerStartError, WshError: fmt.Errorf("error starting conn server: %w", err)}

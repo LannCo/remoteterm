@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
@@ -149,18 +150,28 @@ func CpWshToRemote(ctx context.Context, client *ssh.Client, clientOs string, cli
 		return fmt.Errorf("failed to start remote command: %w", err)
 	}
 
-	// The copy is bounded by a stall timeout, not ctx's wall clock: kill it
-	// only once wshCopyStallTimeout passes with no bytes written, so a
-	// slow-but-moving link finishes instead of racing a fixed deadline.
-	// stallCtx still ends if ctx itself is genuinely canceled (e.g. app
-	// shutdown), just not by ctx's deadline.
-	stallCtx, stallCancel := context.WithCancel(context.WithoutCancel(ctx))
+	// The copy is bounded by two independent limits, whichever fires first:
+	// wshCopyStallTimeout with no bytes written (a genuinely stuck transfer),
+	// or ctx's own deadline/cancel as the hard outer cap. stallCtx derives
+	// directly from ctx so a real ctx cancellation (deadline or explicit)
+	// propagates its actual error rather than always reporting a plain
+	// context.Canceled from the watchdog's own stall-firing cancel.
+	//
+	// Once the local io.Copy finishes, all bytes have been handed to the SSH
+	// stdin pipe, but the remote side still has to finish cat's EOF handling,
+	// mv, and chmod -- with no further local Write() calls to reset the stall
+	// clock. The watchdog is stopped as soon as the copy goroutine finishes
+	// (see stopWatch below) so that remaining tail is bounded only by ctx,
+	// not misread as a stall.
+	stallCtx, stallCancel := context.WithCancel(ctx)
 	defer stallCancel()
 	tracker := genconn.MakeProgressTracker(nil)
 	stallTicker := time.NewTicker(wshCopyStallCheckInterval)
 	defer stallTicker.Stop()
 	watchStop := make(chan struct{})
-	defer close(watchStop)
+	var watchStopOnce sync.Once
+	stopWatch := func() { watchStopOnce.Do(func() { close(watchStop) }) }
+	defer stopWatch()
 	go genconn.WatchForStall(ctx, tracker, wshCopyStallTimeout, stallTicker.C, watchStop, stallCancel)
 
 	copyDone := make(chan error, 1)
@@ -168,8 +179,10 @@ func CpWshToRemote(ctx context.Context, client *ssh.Client, clientOs string, cli
 		defer close(copyDone)
 		defer stdin.Close()
 		progressStdin := &genconn.ProgressWriter{Dst: stdin, Tracker: tracker}
-		if _, err := io.Copy(progressStdin, input); err != nil && err != io.EOF {
-			copyDone <- fmt.Errorf("failed to copy data: %w", err)
+		_, copyErr := io.Copy(progressStdin, input)
+		stopWatch()
+		if copyErr != nil && copyErr != io.EOF {
+			copyDone <- fmt.Errorf("failed to copy data: %w", copyErr)
 		} else {
 			copyDone <- nil
 		}

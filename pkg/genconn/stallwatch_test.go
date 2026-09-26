@@ -116,10 +116,16 @@ func TestWatchForStall(t *testing.T) {
 		clock.Advance(2 * time.Second)
 		ticks <- clock.Now()
 
+		// A send completing only proves the watchdog has begun receiving this
+		// tick, not that it has finished evaluating IdleSince() against it (a
+		// second unbuffered send here would race that evaluation against the
+		// clock.Advance below, not synchronize it -- confirmed by reproducing a
+		// deterministic false stall this way). Give the watchdog a short bounded
+		// window to actually run instead of checking with a non-blocking default.
 		select {
 		case <-canceled:
 			t.Fatal("canceled before stall timeout elapsed")
-		default:
+		case <-time.After(50 * time.Millisecond):
 		}
 
 		clock.Advance(4 * time.Second) // total idle now 6s, past the 5s stall timeout
@@ -156,17 +162,22 @@ func TestWatchForStall(t *testing.T) {
 			tracker.Touch()
 		}
 
-		select {
-		case <-canceled:
-			t.Fatal("expected no cancel: writes kept resetting the idle clock")
-		default:
-		}
-
+		// Close stop and wait for the watchdog to actually exit before
+		// asserting on canceled: closing stop only takes effect once the
+		// watchdog is back at its top-level select, which happens after it has
+		// fully processed the last tick sent above (including any cancel
+		// decision) -- checking canceled beforehand would race that decision.
 		close(stop)
 		select {
 		case <-finished:
 		case <-time.After(2 * time.Second):
 			t.Fatal("expected WatchForStall to return after stop is closed")
+		}
+
+		select {
+		case <-canceled:
+			t.Fatal("expected no cancel: writes kept resetting the idle clock")
+		default:
 		}
 	})
 
