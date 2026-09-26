@@ -54,6 +54,27 @@ describe("classifyWindowOpen", () => {
             expect(classifyWindowOpen({ url, disposition: "new-window", features: "width=1" })).toBe("deny");
         }
     });
+
+    it("routes a features string with any key outside the allowlist to the pane path", () => {
+        const dangerous = [
+            "popup,frame=no,transparent=yes,fullscreen=yes,alwaysOnTop=yes,closable=no,opacity=0.02",
+            "width=480,alwaysOnTop=yes",
+            "width=480,AlwaysOnTop=yes",
+            "width=480,alwaysontop=1",
+            "width=480,webContents=1",
+            "kiosk",
+        ];
+        for (const features of dangerous) {
+            expect(classifyWindowOpen({ ...Popup, features })).toBe("tab");
+        }
+    });
+
+    it("routes an allowlisted-only features string to popup", () => {
+        const allowlistedOnly =
+            "popup,width=480,height=600,left=10,top=20,innerWidth=1,innerHeight=1,screenX=1,screenY=1," +
+            "resizable=yes,scrollbars=yes,status=yes,toolbar=yes,menubar=yes,location=yes";
+        expect(classifyWindowOpen({ ...Popup, features: allowlistedOnly })).toBe("popup");
+    });
 });
 
 describe("computePopupBounds", () => {
@@ -172,6 +193,32 @@ describe("buildPopupWindowOptions", () => {
         expect(opts.parent).toBe(parent);
         expect(opts.autoHideMenuBar).toBe(true);
         expect(opts).toMatchObject({ width: 480, height: 600 });
+    });
+
+    it("pins native window options a hostile features string could otherwise control (H-1 defence in depth)", () => {
+        const root = fakeWebContents();
+        const { ctx } = ctxFor(root);
+        const opts = buildPopupWindowOptions(PopupDetails, ctx);
+        expect(opts).toMatchObject({
+            frame: true,
+            transparent: false,
+            fullscreen: false,
+            fullscreenable: true,
+            kiosk: false,
+            alwaysOnTop: false,
+            skipTaskbar: false,
+            closable: true,
+            minimizable: true,
+            focusable: true,
+            show: true,
+            opacity: 1,
+            modal: false,
+            minWidth: 200,
+            minHeight: 150,
+            maxWidth: 1920,
+            maxHeight: 1080,
+        });
+        expect(opts.webPreferences).not.toHaveProperty("webContents");
     });
 
     it("omits a destroyed parent", () => {
