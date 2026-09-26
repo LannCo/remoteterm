@@ -9,13 +9,15 @@ import * as path from "path";
 import { PNG } from "pngjs";
 import { Readable } from "stream";
 import { RpcApi } from "../frontend/app/store/wshclientapi";
-import { getWebServerEndpoint } from "../frontend/util/endpoints";
+import { getWebServerEndpoint, WebServerEndpointVarName, WSServerEndpointVarName } from "../frontend/util/endpoints";
+import { RemoteTermDevVarName, RemoteTermDevViteVarName } from "../frontend/util/isdev";
 import * as keyutil from "../frontend/util/keyutil";
 import { fireAndForget, parseDataUrl } from "../frontend/util/util";
 import {    setWasActive,
 } from "./emain-activity";
 import { createBuilderWindow, getAllBuilderWindows, getBuilderWindowByWebContentsId } from "./emain-builder";
 import { callWithOriginalXdgCurrentDesktopAsync, unamePlatform } from "./emain-platform";
+import { handleTabLoadSucceeded } from "./emain-tab-lifecycle";
 import { getRemoteTermTabViewByWebContentsId } from "./emain-tabview";
 import { handleCtrlShiftState } from "./emain-util";
 import { getRemoteTermVersion } from "./emain-remotetermsrv";
@@ -23,6 +25,22 @@ import { createNewRemoteTermWindow, getRemoteTermWindowByWebContentsId } from ".
 import { ElectronWshClient } from "./emain-wsh";
 
 const electronApp = electron.app;
+
+const OpenExternalProtocols = new Set(["http:", "https:", "mailto:", "file:"]);
+const RendererEnvVarNames = new Set([
+    RemoteTermDevVarName,
+    RemoteTermDevViteVarName,
+    WebServerEndpointVarName,
+    WSServerEndpointVarName,
+]);
+
+function isAllowedExternalUrl(url: string): boolean {
+    try {
+        return OpenExternalProtocols.has(new URL(url).protocol);
+    } catch {
+        return false;
+    }
+}
 
 let webviewFocusId: number = null;
 let webviewKeys: string[] = [];
@@ -189,7 +207,7 @@ function saveImageFileWithNativeDialog(
 
 export function initIpcHandlers() {
     electron.ipcMain.on("open-external", (event, url) => {
-        if (url && typeof url === "string") {
+        if (url && typeof url === "string" && isAllowedExternalUrl(url)) {
             fireAndForget(() =>
                 callWithOriginalXdgCurrentDesktopAsync(() =>
                     electron.shell.openExternal(url).catch((err) => {
@@ -198,7 +216,7 @@ export function initIpcHandlers() {
                 )
             );
         } else {
-            console.error("Invalid URL received in open-external event:", url);
+            console.error("Invalid or disallowed URL received in open-external event:", url);
         }
     });
 
@@ -272,7 +290,7 @@ export function initIpcHandlers() {
     });
 
     electron.ipcMain.on("get-env", (event, varName) => {
-        event.returnValue = process.env[varName] ?? null;
+        event.returnValue = RendererEnvVarNames.has(varName) ? (process.env[varName] ?? null) : null;
     });
 
     electron.ipcMain.on("get-about-modal-details", (event) => {
@@ -378,10 +396,16 @@ export function initIpcHandlers() {
     electron.ipcMain.handle("clear-webview-storage", async (event, webContentsId: number) => {
         try {
             const wc = electron.webContents.fromId(webContentsId);
-            if (wc && wc.session) {
-                await wc.session.clearStorageData();
-                console.log("Cleared cookies and storage for webContentsId:", webContentsId);
+            if (
+                wc == null ||
+                wc.getType() !== "webview" ||
+                wc.hostWebContents?.id !== event.sender.id ||
+                wc.session === electron.session.defaultSession
+            ) {
+                throw new Error(`refusing to clear storage for webContentsId ${webContentsId}`);
             }
+            await wc.session.clearStorageData();
+            console.log("Cleared cookies and storage for webContentsId:", webContentsId);
         } catch (e) {
             console.error("Failed to clear cookies and storage:", e);
             throw e;
@@ -390,7 +414,7 @@ export function initIpcHandlers() {
 
     electron.ipcMain.on("open-native-path", (event, filePath: string) => {
         console.log("open-native-path", filePath);
-        filePath = filePath.replace("~", electronApp.getPath("home"));
+        filePath = filePath.replace(/^~(?=$|\/)/, electronApp.getPath("home"));
         fireAndForget(() =>
             callWithOriginalXdgCurrentDesktopAsync(() =>
                 electron.shell.openPath(filePath).then((excuse) => {
@@ -404,6 +428,7 @@ export function initIpcHandlers() {
         const tabView = getRemoteTermTabViewByWebContentsId(event.sender.id);
         if (tabView != null && tabView.initResolve != null) {
             if (status === "ready") {
+                handleTabLoadSucceeded(tabView);
                 tabView.initResolve();
                 if (tabView.savedInitOpts) {
                     console.log("savedInitOpts calling remoteterm-init", tabView.remoteTermTabId);

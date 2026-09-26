@@ -44,6 +44,27 @@ export const SecretNameRegex = /^[A-Za-z][A-Za-z0-9_]*$/;
 // Mirrors the Go userHostRe in pkg/remote/connutil.go ParseOpts() — keep in sync.
 export const ConnectionQuickAddRegex = /^([a-zA-Z0-9][a-zA-Z0-9._@-]*@)?([a-zA-Z0-9][a-zA-Z0-9.-]*)(?::([0-9]+))?$/;
 
+// `count` strictly increasing display:order values strictly between the two bounds (a
+// missing bound is unbounded), or null when the gap cannot hold them.
+export function orderValuesBetween(lower: number | undefined, upper: number | undefined, count: number): number[] | null {
+    const values: number[] = [];
+    for (let i = 1; i <= count; i++) {
+        if (lower != null && upper != null) {
+            values.push(lower + ((upper - lower) * i) / (count + 1));
+        } else if (lower != null) {
+            values.push(lower + i);
+        } else if (upper != null) {
+            values.push(upper - count - 1 + i);
+        } else {
+            values.push(i - 1);
+        }
+    }
+    const fits = values.every(
+        (v, i) => (i === 0 ? lower == null || v > lower : v > values[i - 1]) && (upper == null || v < upper)
+    );
+    return fits ? values : null;
+}
+
 function makeConfigFiles(isWindows: boolean): ConfigFile[] {
     return [
         {
@@ -160,6 +181,7 @@ export class RemoteTermConfigViewModel implements ViewModel {
     activeTabBackgroundKeyAtom: Atom<string>;
     // Same reasoning as widgetsWriteQueue above -- not a Jotai atom on purpose.
     backgroundsWriteQueue: Promise<unknown> = Promise.resolve();
+    loadSeq: number = 0;
     backgroundsAddOpenAtom: PrimitiveAtom<boolean>;
     backgroundsAddNameAtom: PrimitiveAtom<string>;
     backgroundsAddBgAtom: PrimitiveAtom<string>;
@@ -373,6 +395,7 @@ export class RemoteTermConfigViewModel implements ViewModel {
     }
 
     async loadFile(file: ConfigFile) {
+        const seq = ++this.loadSeq;
         globalStore.set(this.isLoadingAtom, true);
         globalStore.set(this.errorMessageAtom, null);
         globalStore.set(this.hasEditedAtom, false);
@@ -394,6 +417,7 @@ export class RemoteTermConfigViewModel implements ViewModel {
             const fileData = await this.env.rpc.FileReadCommand(TabRpcClient, {
                 info: { path: fullPath },
             });
+            if (seq !== this.loadSeq) return;
             const content = fileData?.data64 ? base64ToString(fileData.data64) : "";
             globalStore.set(this.originalContentAtom, content);
             if (content.trim() === "") {
@@ -407,12 +431,37 @@ export class RemoteTermConfigViewModel implements ViewModel {
                 meta: { file: file.path },
             });
         } catch (err) {
+            if (seq !== this.loadSeq) return;
             globalStore.set(this.errorMessageAtom, `Failed to load ${file.name}: ${err.message || String(err)}`);
             globalStore.set(this.fileContentAtom, "");
             globalStore.set(this.originalContentAtom, "");
         } finally {
-            globalStore.set(this.isLoadingAtom, false);
+            if (seq === this.loadSeq) {
+                globalStore.set(this.isLoadingAtom, false);
+            }
         }
+    }
+
+    // widgets.json and backgrounds.json are also written by the visual tabs' queued
+    // read-modify-writes; a Raw JSON save joins the same queue so a write that read the file
+    // before this save cannot land after it and restore the pre-save content.
+    async writeConfigFile(path: string, content: string) {
+        const write = () =>
+            this.env.rpc.FileWriteCommand(TabRpcClient, {
+                info: { path: `${this.configDir}/${path}` },
+                data64: stringToBase64(content),
+            });
+        if (path === "widgets.json") {
+            const next = this.widgetsWriteQueue.then(write, write);
+            this.widgetsWriteQueue = next;
+            return next;
+        }
+        if (path === "backgrounds.json") {
+            const next = this.backgroundsWriteQueue.then(write, write);
+            this.backgroundsWriteQueue = next;
+            return next;
+        }
+        return write();
     }
 
     async saveFile() {
@@ -427,11 +476,7 @@ export class RemoteTermConfigViewModel implements ViewModel {
             globalStore.set(this.validationErrorAtom, null);
 
             try {
-                const fullPath = `${this.configDir}/${selectedFile.path}`;
-                await this.env.rpc.FileWriteCommand(TabRpcClient, {
-                    info: { path: fullPath },
-                    data64: stringToBase64(""),
-                });
+                await this.writeConfigFile(selectedFile.path, "");
                 globalStore.set(this.fileContentAtom, "");
                 globalStore.set(this.originalContentAtom, "");
                 globalStore.set(this.hasEditedAtom, false);
@@ -469,11 +514,7 @@ export class RemoteTermConfigViewModel implements ViewModel {
             globalStore.set(this.validationErrorAtom, null);
 
             try {
-                const fullPath = `${this.configDir}/${selectedFile.path}`;
-                await this.env.rpc.FileWriteCommand(TabRpcClient, {
-                    info: { path: fullPath },
-                    data64: stringToBase64(formatted),
-                });
+                await this.writeConfigFile(selectedFile.path, formatted);
                 globalStore.set(this.fileContentAtom, formatted);
                 globalStore.set(this.originalContentAtom, formatted);
                 globalStore.set(this.hasEditedAtom, false);
@@ -708,6 +749,15 @@ export class RemoteTermConfigViewModel implements ViewModel {
         }
     }
 
+    // A visual-tab write can complete after the user has started typing in the Raw JSON tab;
+    // the unsaved buffer is kept, and only the discard baseline moves to what is now on disk.
+    syncEditorWithDisk(content: string) {
+        globalStore.set(this.originalContentAtom, content);
+        if (!globalStore.get(this.hasEditedAtom)) {
+            globalStore.set(this.fileContentAtom, content);
+        }
+    }
+
     // Keeps originalContentAtom/fileContentAtom (and therefore generalRawSettingsAtom, and the
     // Raw JSON tab) in sync after a visual-tab write, the same way writeWidgetPatch/
     // writeBackgroundPatch do for their own files. Best-effort: setGeneralSetting's RPC already
@@ -724,8 +774,7 @@ export class RemoteTermConfigViewModel implements ViewModel {
             });
             const content = fileData?.data64 ? base64ToString(fileData.data64) : "";
             const formatted = content.trim() === "" ? "{\n\n}" : content;
-            globalStore.set(this.originalContentAtom, formatted);
-            globalStore.set(this.fileContentAtom, formatted);
+            this.syncEditorWithDisk(formatted);
         } catch {
             // ignore -- best-effort refresh only
         }
@@ -818,8 +867,7 @@ export class RemoteTermConfigViewModel implements ViewModel {
             });
             const selectedFile = globalStore.get(this.selectedFileAtom);
             if (selectedFile?.path === "widgets.json") {
-                globalStore.set(this.originalContentAtom, formatted);
-                globalStore.set(this.fileContentAtom, formatted);
+                this.syncEditorWithDisk(formatted);
             }
             return true;
         } catch (err) {
@@ -829,33 +877,42 @@ export class RemoteTermConfigViewModel implements ViewModel {
     }
 
     // Assigns the moved widget a display:order strictly between its new neighbors'
-    // existing values (fractional indexing) so a drag only ever touches the one
-    // widget that moved — neighbors keep their current order untouched. Neighbor orders
-    // are read inside the queued step for the same reason as the patch itself: a drag
-    // landing right after another would otherwise place itself against the pre-drag order.
+    // existing values (fractional indexing) so a drag normally touches only the one
+    // widget that moved. When no such value exists (neighbors share an order, e.g. custom
+    // widgets that never had one and all count as 0, or repeated bisection exhausted float
+    // precision), the window around the move widens until its outer neighbors leave room,
+    // and only the widgets inside it are renumbered. Widening stays local so untouched
+    // built-in defaults are not forked into the user's widgets.json. Orders are read inside
+    // the queued step for the same reason as the patch itself: a drag landing right after
+    // another would otherwise place itself against the pre-drag order.
     async reorderWidget(movedKey: string, newIndex: number, orderedKeys: string[]) {
         if (globalStore.get(this.widgetsMapAtom)[movedKey] == null) return;
 
-        const prevKey = orderedKeys[newIndex - 1];
-        const nextKey = orderedKeys[newIndex + 1];
-
         await this.persistWidgetPatch((raw) => {
-            const latest = this.getLatestWidget(raw, movedKey);
-            if (latest == null) return null;
-            const prevOrder = prevKey != null ? (this.getLatestWidget(raw, prevKey)?.["display:order"] ?? 0) : null;
-            const nextOrder = nextKey != null ? (this.getLatestWidget(raw, nextKey)?.["display:order"] ?? 0) : null;
+            const entries = orderedKeys
+                .map((key) => [key, this.getLatestWidget(raw, key)] as const)
+                .filter(([, widget]) => widget != null);
+            const movedIndex = entries.findIndex(([key]) => key === movedKey);
+            if (movedIndex < 0) return null;
+            const orders = entries.map(([, widget]) => widget["display:order"] ?? 0);
 
-            let newOrder: number;
-            if (prevOrder != null && nextOrder != null) {
-                newOrder = (prevOrder + nextOrder) / 2;
-            } else if (prevOrder != null) {
-                newOrder = prevOrder + 1;
-            } else if (nextOrder != null) {
-                newOrder = nextOrder - 1;
-            } else {
-                newOrder = 0;
+            let lo = movedIndex;
+            let hi = movedIndex;
+            let assigned = orderValuesBetween(orders[lo - 1], orders[hi + 1], 1);
+            while (assigned == null) {
+                lo = Math.max(0, lo - 1);
+                hi = Math.min(entries.length - 1, hi + 1);
+                assigned = orderValuesBetween(orders[lo - 1], orders[hi + 1], hi - lo + 1);
             }
-            return { [movedKey]: { ...latest, "display:order": newOrder } };
+
+            const updates: { [key: string]: WidgetConfigType } = {};
+            for (let i = lo; i <= hi; i++) {
+                const [key, widget] = entries[i];
+                const order = assigned[i - lo];
+                if (key !== movedKey && widget["display:order"] === order) continue;
+                updates[key] = { ...widget, "display:order": order };
+            }
+            return updates;
         });
     }
 
@@ -941,8 +998,7 @@ export class RemoteTermConfigViewModel implements ViewModel {
             });
             const selectedFile = globalStore.get(this.selectedFileAtom);
             if (selectedFile?.path === "backgrounds.json") {
-                globalStore.set(this.originalContentAtom, formatted);
-                globalStore.set(this.fileContentAtom, formatted);
+                this.syncEditorWithDisk(formatted);
             }
             return true;
         } catch (err) {
@@ -984,28 +1040,31 @@ export class RemoteTermConfigViewModel implements ViewModel {
     async addBackground(displayName: string, bg: string) {
         const name = displayName.trim();
         if (!name) return;
-        const backgroundsMap = globalStore.get(this.backgroundsMapAtom);
         const slug = name
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, "-")
             .replace(/(^-|-$)/g, "");
-        let key = `bg@${slug || "custom"}`;
-        let suffix = 2;
-        while (backgroundsMap[key] != null) {
-            key = `bg@${slug || "custom"}-${suffix}`;
-            suffix++;
-        }
-        const maxOrder = Object.values(backgroundsMap).reduce(
-            (max, entry) => Math.max(max, entry["display:order"] ?? 0),
-            0
-        );
-        // 0.3 matches the shipped defaultconfig presets that (like a hand-typed quick-add)
-        // are a single flat CSS value rather than a multi-layer gradient — Rainbow, Green,
-        // Blue, and Red in pkg/wconfig/defaultconfig/backgrounds.json all use it, and none
-        // of those set bg:blendmode either.
-        const saved = await this.persistBackgroundPatch(() => ({
-            [key]: { "display:name": name, bg, "bg:opacity": 0.3, "display:order": maxOrder + 1 },
-        }));
+        let key: string = null;
+        // Key and order are derived inside the queued step so a second add queued before the
+        // config watcher catches up sees the first one (via raw) instead of reusing its key.
+        const saved = await this.persistBackgroundPatch((raw) => {
+            const backgroundsMap = { ...globalStore.get(this.backgroundsMapAtom), ...raw };
+            key = `bg@${slug || "custom"}`;
+            let suffix = 2;
+            while (backgroundsMap[key] != null) {
+                key = `bg@${slug || "custom"}-${suffix}`;
+                suffix++;
+            }
+            const maxOrder = Object.values(backgroundsMap).reduce(
+                (max, entry) => Math.max(max, entry["display:order"] ?? 0),
+                0
+            );
+            // 0.3 matches the shipped defaultconfig presets that (like a hand-typed quick-add)
+            // are a single flat CSS value rather than a multi-layer gradient — Rainbow, Green,
+            // Blue, and Red in pkg/wconfig/defaultconfig/backgrounds.json all use it, and none
+            // of those set bg:blendmode either.
+            return { [key]: { "display:name": name, bg, "bg:opacity": 0.3, "display:order": maxOrder + 1 } };
+        });
         return saved ? key : null;
     }
 

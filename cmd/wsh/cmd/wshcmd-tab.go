@@ -89,10 +89,7 @@ func getWorkspaceForId(wsId string, workspaces []wshrpc.WorkspaceInfoData) (*rem
 	return nil, fmt.Errorf("workspace %q not found", wsId)
 }
 
-func tabListRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func tabListRun(cmd *cobra.Command, args []string) error {
 	wsId, err := resolveWorkspaceId()
 	if err != nil {
 		return err
@@ -151,10 +148,7 @@ func tabListRun(cmd *cobra.Command, args []string) (rtnErr error) {
 	return nil
 }
 
-func tabMoveRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func tabMoveRun(cmd *cobra.Command, args []string) error {
 	tabId := args[0]
 	wsId, err := resolveWorkspaceId()
 	if err != nil {

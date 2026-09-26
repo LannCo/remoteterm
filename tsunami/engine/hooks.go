@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"reflect"
 	"strconv"
 
 	"github.com/LannCo/remoteterm/tsunami/vdom"
@@ -114,11 +115,25 @@ func depsEqual(deps1 []any, deps2 []any) bool {
 		return false
 	}
 	for i := range deps1 {
-		if deps1[i] != deps2[i] {
+		if !depEqual(deps1[i], deps2[i]) {
 			return false
 		}
 	}
 	return true
+}
+
+// depEqual uses == where the dynamic values allow it (== on an interface holding a
+// slice or map panics), and falls back to reflect.DeepEqual otherwise.
+func depEqual(a, b any) bool {
+	va := reflect.ValueOf(a)
+	vb := reflect.ValueOf(b)
+	if !va.IsValid() || !vb.IsValid() {
+		return va.IsValid() == vb.IsValid()
+	}
+	if va.Comparable() && vb.Comparable() {
+		return a == b
+	}
+	return reflect.DeepEqual(a, b)
 }
 
 func UseEffect(vc *RenderContextImpl, fn func() func(), deps []any) {

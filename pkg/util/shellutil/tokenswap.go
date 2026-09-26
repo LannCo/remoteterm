@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/remotetermbase"
 	"github.com/LannCo/remoteterm/pkg/wshrpc"
 )
 
@@ -108,6 +109,30 @@ func RedactSecret(s string) string {
 		return "<redacted>"
 	}
 	return fmt.Sprintf("%s...<redacted, len=%d>", s[:8], len(s))
+}
+
+var secretEnvVarNames = []string{
+	remotetermbase.WaveSwapTokenVarName,
+	remotetermbase.WaveJwtTokenVarName,
+	remotetermbase.LegacyWaveJwtTokenVarName,
+}
+
+// RedactSecretEnv returns a copy of env with credential-bearing variables passed through
+// RedactSecret, for anything that outlives the process: logs and DB rows.
+func RedactSecretEnv(env map[string]string) map[string]string {
+	if env == nil {
+		return nil
+	}
+	rtn := make(map[string]string, len(env))
+	for k, v := range env {
+		rtn[k] = v
+	}
+	for _, name := range secretEnvVarNames {
+		if v, ok := rtn[name]; ok {
+			rtn[name] = RedactSecret(v)
+		}
+	}
+	return rtn
 }
 
 func encodeEnvVarsForBash(env map[string]string) (string, error) {

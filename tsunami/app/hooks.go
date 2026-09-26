@@ -53,7 +53,7 @@ func (tr *TermRef) TermSize() *vdom.VDomTermSize {
 	if tr.VDomRef == nil {
 		return nil
 	}
-	return tr.VDomRef.TermSize
+	return tr.VDomRef.TermSize.Load()
 }
 
 // UseTermRef returns a TermRef that can be passed as a ref to "wave:term" elements
@@ -233,12 +233,16 @@ type ModalConfig struct {
 	OnResult   func(bool) `json:"-"`                    // Optional callback for confirm modals with the result (true = confirmed, false = cancelled)
 }
 
+func openIfClosed(open bool) (bool, bool) {
+	return true, !open
+}
+
 // UseAlertModal returns a boolean indicating if the modal is open and a function to trigger it
 func UseAlertModal() (modalOpen bool, triggerAlert func(config ModalConfig)) {
 	isOpen := UseLocal(false)
 
 	trigger := func(config ModalConfig) {
-		if isOpen.Get() {
+		if !isOpen.trySetFn(openIfClosed) {
 			log.Printf("warning: UseAlertModal trigger called while modal is already open")
 			if config.OnClose != nil {
 				go func() {
@@ -251,7 +255,6 @@ func UseAlertModal() (modalOpen bool, triggerAlert func(config ModalConfig)) {
 			}
 			return
 		}
-		isOpen.Set(true)
 
 		// Create modal config for backend
 		modalId := uuid.New().String()
@@ -287,7 +290,7 @@ func UseConfirmModal() (modalOpen bool, triggerConfirm func(config ModalConfig))
 	isOpen := UseLocal(false)
 
 	trigger := func(config ModalConfig) {
-		if isOpen.Get() {
+		if !isOpen.trySetFn(openIfClosed) {
 			log.Printf("warning: UseConfirmModal trigger called while modal is already open")
 			if config.OnResult != nil {
 				go func() {
@@ -300,7 +303,6 @@ func UseConfirmModal() (modalOpen bool, triggerConfirm func(config ModalConfig))
 			}
 			return
 		}
-		isOpen.Set(true)
 
 		// Create modal config for backend
 		modalId := uuid.New().String()

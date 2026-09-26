@@ -18,6 +18,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"runtime"
@@ -28,6 +29,8 @@ import (
 	"text/template"
 	"time"
 	"unicode/utf8"
+
+	"golang.org/x/mod/modfile"
 )
 
 var HexDigits = []byte{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'}
@@ -886,6 +889,26 @@ func WriteFileIfDifferent(fileName string, contents []byte) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// ChdirToModuleRoot lets code generators use repo-relative output paths regardless of the
+// directory they are run from. Matching on module path skips nested go.mod files.
+func ChdirToModuleRoot(modulePath string) error {
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	for {
+		data, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+		if err == nil && modfile.ModulePath(data) == modulePath {
+			return os.Chdir(dir)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return fmt.Errorf("go.mod for module %s not found in any parent of the current directory", modulePath)
+		}
+		dir = parent
+	}
 }
 
 func GetLineColFromOffset(barr []byte, offset int) (int, int) {

@@ -87,7 +87,7 @@ func termScrollbackRun(cmd *cobra.Command, args []string) error {
 
 	// Write to file or stdout
 	if termScrollbackOutputFile != "" {
-		err = os.WriteFile(termScrollbackOutputFile, []byte(output), 0644)
+		err = os.WriteFile(termScrollbackOutputFile, []byte(output), 0600)
 		if err != nil {
 			return fmt.Errorf("error writing to file %s: %w", termScrollbackOutputFile, err)
 		}
