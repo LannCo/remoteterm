@@ -7,23 +7,21 @@ import { act, render } from "@testing-library/react";
 import { createStore, PrimitiveAtom, Provider } from "jotai";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-const { staticTabIdAtom, resolvedModeAtom } = vi.hoisted(() => {
-    const jotai = require("jotai");
-    return {
-        staticTabIdAtom: jotai.atom("test-tab-1"),
-        resolvedModeAtom: jotai.atom("light") as PrimitiveAtom<"light" | "dark">,
-    };
+vi.mock("@/store/global", async () => {
+    const { atom } = await import("jotai");
+    return { atoms: { staticTabId: atom("test-tab-1") } };
 });
 
-vi.mock("@/store/global", () => ({
-    atoms: { staticTabId: staticTabIdAtom },
-}));
+vi.mock("@/app/store/appearance-atoms", async () => {
+    const { atom } = await import("jotai");
+    const resolvedModeAtom = atom("light");
+    return { getResolvedAppearanceModeAtom: () => resolvedModeAtom };
+});
 
-vi.mock("@/app/store/appearance-atoms", () => ({
-    getResolvedAppearanceModeAtom: () => resolvedModeAtom,
-}));
-
+import { getResolvedAppearanceModeAtom } from "@/app/store/appearance-atoms";
 import { AppThemeUpdater } from "./appearance-theme-updater";
+
+const resolvedModeAtom = getResolvedAppearanceModeAtom("test-tab-1") as PrimitiveAtom<"light" | "dark">;
 
 describe("AppThemeUpdater", () => {
     beforeEach(() => {

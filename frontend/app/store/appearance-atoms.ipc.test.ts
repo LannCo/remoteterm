@@ -3,17 +3,13 @@
 
 // @vitest-environment happy-dom
 
-import type { PrimitiveAtom } from "jotai";
+import { atom, PrimitiveAtom } from "jotai";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-const { tabModeAtom, settingModeAtom, staticTabIdAtom } = vi.hoisted(() => {
-    const jotai = require("jotai");
-    return {
-        tabModeAtom: jotai.atom(null) as PrimitiveAtom<string>,
-        settingModeAtom: jotai.atom("system") as PrimitiveAtom<string>,
-        staticTabIdAtom: jotai.atom("tab-1"),
-    };
-});
+// The mock factory runs lazily inside loadFresh(), after these are initialised
+const tabModeAtom = atom(null) as PrimitiveAtom<string>;
+const settingModeAtom = atom("system") as PrimitiveAtom<string>;
+const staticTabIdAtom = atom("tab-1");
 
 vi.mock("@/app/store/global", () => ({
     getApi: () => (window as any).api,

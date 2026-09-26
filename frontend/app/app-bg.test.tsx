@@ -7,34 +7,40 @@ import { act, render } from "@testing-library/react";
 import { createStore, PrimitiveAtom, Provider } from "jotai";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-const { modeAtom, nullAtom, updateWindowControlsOverlay } = vi.hoisted(() => {
-    const jotai = require("jotai");
-    return {
-        modeAtom: jotai.atom("dark") as PrimitiveAtom<"light" | "dark">,
-        nullAtom: jotai.atom(null),
-        updateWindowControlsOverlay: vi.fn(),
-    };
-});
+const { updateWindowControlsOverlay } = vi.hoisted(() => ({ updateWindowControlsOverlay: vi.fn() }));
 
-vi.mock("@/app/store/appearance-atoms", () => ({ resolvedAppearanceModeAtom: modeAtom }));
+vi.mock("@/app/store/appearance-atoms", async () => {
+    const { atom } = await import("jotai");
+    return { resolvedAppearanceModeAtom: atom("dark") };
+});
 vi.mock("@/util/platformutil", () => ({ PLATFORM: "linux", PlatformMacOS: "darwin" }));
 vi.mock("@/util/remotetermutil", () => ({ computeBgStyleFromMeta: () => ({}) }));
 vi.mock("@react-hook/resize-observer", () => ({ default: () => {} }));
 vi.mock("throttle-debounce", () => ({ debounce: (_ms: number, fn: () => void) => fn }));
-vi.mock("@/app/remotetermenv/remotetermenv", () => ({
-    useWaveEnv: () => ({
-        getTabMetaKeyAtom: () => nullAtom,
-        getConfigBackgroundAtom: () => nullAtom,
-    }),
-}));
-vi.mock("./store/global", () => ({
-    atoms: { staticTabId: nullAtom },
-    getApi: () => ({ updateWindowControlsOverlay }),
-    WOS: { makeORef: (t: string, id: string) => `${t}:${id}` },
-}));
+vi.mock("@/app/remotetermenv/remotetermenv", async () => {
+    const { atom } = await import("jotai");
+    const nullAtom = atom(null);
+    return {
+        useWaveEnv: () => ({
+            getTabMetaKeyAtom: () => nullAtom,
+            getConfigBackgroundAtom: () => nullAtom,
+        }),
+    };
+});
+vi.mock("./store/global", async () => {
+    const { atom } = await import("jotai");
+    return {
+        atoms: { staticTabId: atom(null) },
+        getApi: () => ({ updateWindowControlsOverlay }),
+        WOS: { makeORef: (t: string, id: string) => `${t}:${id}` },
+    };
+});
 vi.mock("./store/wos", () => ({ useWaveObjectValue: () => [{ meta: {} }] }));
 
+import { resolvedAppearanceModeAtom } from "@/app/store/appearance-atoms";
 import { AppBackground } from "./app-bg";
+
+const modeAtom = resolvedAppearanceModeAtom as PrimitiveAtom<"light" | "dark">;
 
 describe("AppBackground titlebar sampling", () => {
     beforeEach(() => {
