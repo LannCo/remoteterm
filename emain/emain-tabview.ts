@@ -7,7 +7,6 @@ import { CHORD_TIMEOUT } from "@/util/sharedconst";
 import { Rectangle, shell, WebContentsView } from "electron";
 import { createNewRemoteTermWindow, getRemoteTermWindowById } from "emain/emain-window";
 import path from "path";
-import { configureAuthKeyRequestInjection } from "./authkey";
 import { setWasActive } from "./emain-activity";
 import { getElectronAppBasePath, isDevVite, unamePlatform } from "./emain-platform";
 import { handleTabDidFailLoad, handleTabRenderProcessGone, handleTabUnresponsive } from "./emain-tab-lifecycle";
@@ -20,6 +19,7 @@ import {
     shFrameNavHandler,
     shNavHandler,
 } from "./emain-util";
+import { registerAppWebContents } from "./emain-websecurity";
 import { ElectronWshClient } from "./emain-wsh";
 
 function handleWindowsMenuAccelerators(
@@ -158,6 +158,7 @@ export class RemoteTermTabView extends WebContentsView {
         });
         const wcId = this.webContents.id;
         wcIdToRemoteTermTabMap.set(wcId, this);
+        registerAppWebContents(this.webContents);
         if (isDevVite) {
             this.webContents.loadURL(`${process.env.ELECTRON_RENDERER_URL}/index.html`);
         } else {
@@ -360,7 +361,6 @@ export async function getOrCreateWebViewForTab(
     tabView.webContents.on("blur", () => {
         handleCtrlShiftFocus(tabView.webContents, false);
     });
-    configureAuthKeyRequestInjection(tabView.webContents.session);
     return [tabView, false];
 }
 
