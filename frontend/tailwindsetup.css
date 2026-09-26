@@ -101,6 +101,10 @@
     --color-highlightbg: rgba(0, 0, 0, 0.08);
     --color-surface: rgba(0, 0, 0, 0.04);
     --color-activebg: rgba(88, 193, 66, 0.12);
+    /* darker/more-saturated variants of the dark-mode hues, tuned for 4.5:1+ body-text contrast on white */
+    --color-error: rgb(196, 42, 20);
+    --color-warning: rgb(154, 108, 8);
+    --color-success: rgb(58, 115, 5);
 }
 
 /* Applied when body.nohover is set — used to suppress hover effects during tab remount to prevent ghost-hover flicker */

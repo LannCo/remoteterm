@@ -19,7 +19,7 @@ const ErrorDisplay = memo(({ message, variant = "error" }: ErrorDisplayProps) =>
     return (
         <div className={cn("flex items-center gap-2 px-3 py-2.5 border rounded-md text-xs", variantClasses)}>
             <i aria-hidden="true" className={`fa-sharp fa-solid ${icon}`} />
-            <span className={variant === "error" ? "text-primary" : undefined}>{message}</span>
+            <span className="text-primary">{message}</span>
         </div>
     );
 });
