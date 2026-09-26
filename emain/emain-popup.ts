@@ -43,6 +43,10 @@ const AllowedPopupFeatureKeys = new Set([
     "toolbar",
     "menubar",
     "location",
+    // Legacy no-op window.open() keys (never mapped to a BrowserWindowConstructorOptions
+    // field) that Google's real Identity Services popup still sends, per rtapp.log capture.
+    "directories",
+    "copyhistory",
 ]);
 
 export function parseWindowFeatures(features: string | undefined): Record<string, string | boolean> {

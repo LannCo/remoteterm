@@ -72,8 +72,20 @@ describe("classifyWindowOpen", () => {
     it("routes an allowlisted-only features string to popup", () => {
         const allowlistedOnly =
             "popup,width=480,height=600,left=10,top=20,innerWidth=1,innerHeight=1,screenX=1,screenY=1," +
-            "resizable=yes,scrollbars=yes,status=yes,toolbar=yes,menubar=yes,location=yes";
+            "resizable=yes,scrollbars=yes,status=yes,toolbar=yes,menubar=yes,location=yes,directories=no,copyhistory=no";
         expect(classifyWindowOpen({ ...Popup, features: allowlistedOnly })).toBe("popup");
+    });
+
+    it("routes Google Identity Services' real sign-in popup to the popup path (captured from rtapp.log)", () => {
+        const gsiFeatures =
+            "toolbar=no,location=no,directories=no,status=no,menubar=no,scrollbars=no,resizable=no," +
+            "copyhistory=no,width=590,height=830,top=305,left=985";
+        const gsiUrl =
+            "https://accounts.google.com/o/oauth2/v2/auth?gsiwebsdk=gis_attributes&client_id=example.apps.googleusercontent.com" +
+            "&scope=openid%20profile%20email&redirect_uri=gis_transform&response_type=code&display=popup";
+        expect(
+            classifyWindowOpen({ url: gsiUrl, disposition: "new-window", features: gsiFeatures })
+        ).toBe("popup");
     });
 
     it("routes a featureless new-window (shift-click) to the pane path", () => {
