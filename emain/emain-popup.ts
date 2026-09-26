@@ -23,6 +23,31 @@ const MinPopupWidth = 200;
 const MinPopupHeight = 150;
 const FalseyFeatureValues = new Set(["0", "no", "false"]);
 
+// Every key the page's features string is allowed to influence. openGuestWindow spreads
+// every parsed feature key straight into BrowserWindowConstructorOptions (Electron 41.1.0
+// guest-window-manager.ts), so a key outside this set (frame, transparent, alwaysOnTop,
+// webContents, kiosk, ...) lets the page dictate native window chrome or, via webContents,
+// orphan the child onto a fresh default-session window (H-1/H-1b).
+const AllowedPopupFeatureKeys = new Set([
+    "popup",
+    "width",
+    "height",
+    "left",
+    "top",
+    "innerwidth",
+    "innerheight",
+    "screenx",
+    "screeny",
+    "noopener",
+    "noreferrer",
+    "resizable",
+    "scrollbars",
+    "status",
+    "toolbar",
+    "menubar",
+    "location",
+]);
+
 export function parseWindowFeatures(features: string | undefined): Record<string, string | boolean> {
     const rtn: Record<string, string | boolean> = {};
     if (!features) {
@@ -74,6 +99,10 @@ export function requestedPopupGeometry(features: string | undefined): {
     };
 }
 
+function hasDisallowedFeatureKey(parsed: Record<string, string | boolean>): boolean {
+    return Object.keys(parsed).some((key) => !AllowedPopupFeatureKeys.has(key));
+}
+
 // Chromium reports "new-window" only when window.open() was given a features string
 // (its NEW_POPUP disposition); plain window.open(url) and target=_blank are tabs.
 export function classifyWindowOpen(details: Pick<HandlerDetails, "url" | "disposition" | "features">): WindowOpenRoute {
@@ -81,6 +110,9 @@ export function classifyWindowOpen(details: Pick<HandlerDetails, "url" | "dispos
         return "tab";
     }
     const parsed = parseWindowFeatures(details.features);
+    if (hasDisallowedFeatureKey(parsed)) {
+        return "tab";
+    }
     if (parsed["noopener"] === true || parsed["noreferrer"] === true) {
         return "tab";
     }
@@ -154,7 +186,27 @@ export function buildPopupWindowOptions(details: HandlerDetails, ctx: PopupHostC
     applyGuestWebPreferences(webPreferences);
     const opts: BrowserWindowConstructorOptions = {
         ...bounds,
+        minWidth: MinPopupWidth,
+        minHeight: MinPopupHeight,
+        maxWidth: workArea.width,
+        maxHeight: workArea.height,
         autoHideMenuBar: true,
+        // openGuestWindow spreads the page's parsed features before this object, so these
+        // fields must be pinned here too, not just filtered by classifyWindowOpen's
+        // allowlist: any parsed key we missed still can't reach the native window (H-1).
+        frame: true,
+        transparent: false,
+        fullscreen: false,
+        fullscreenable: true,
+        kiosk: false,
+        alwaysOnTop: false,
+        skipTaskbar: false,
+        closable: true,
+        minimizable: true,
+        focusable: true,
+        show: true,
+        opacity: 1,
+        modal: false,
         webPreferences,
     };
     if (parent != null) {
