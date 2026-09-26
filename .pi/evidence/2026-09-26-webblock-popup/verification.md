@@ -1,5 +1,9 @@
 # Task 7 — Live verification with real Electron 41 (headless)
 
+**Superseded by `49186e11`** — this run predates the will-redirect guard,
+menu-removal, and origin-title fixes and does not cover them. See
+`docs/qa-review/pr67-fixes-applied.md` for their (non-live) verification.
+
 Verifies `emain/emain-popup.ts` + `emain/emain-websecurity.ts` against real
 Electron/Chromium behaviour, per Task 7 of
 `.pi/plans/2026-09-26-webblock-popup-support.md` (remoteterm-daily) and the
