@@ -430,12 +430,12 @@ type SysinfoViewProps = {
 };
 
 /**
- * A plot only needs a full Plot.plot() rebuild when something it actually renders has changed —
- * this metric's own latest value, its dimensions, or its display meta. `dataAtom` pushes a new
- * row every tick (as often as 1s, driven by the fastest collector tier) even for metrics on a
- * slower tier whose value is just carried forward unchanged, so keying a memo off this instead of
- * off plotData's object identity skips that redundant rebuild+DOM-swap work for idle metrics
- * without touching ones that do change every tick.
+ * A plot only needs a full Plot.plot() rebuild when something it renders has visibly changed.
+ * Data is append-only, so the rendered content is determined by the newest point (value and
+ * domain bounds), the x-domain [maxX - targetLen s, maxX], dimensions, and display meta. The
+ * x-domain slides with every new row even when the value is constant (older points and tick
+ * labels scroll), so maxX is keyed at one-pixel resolution: rebuilds are skipped only while the
+ * axis has moved less than a pixel since the last one.
  */
 export function plotMemoKey(
     plotData: DataItem[],
@@ -448,11 +448,16 @@ export function plotMemoKey(
 ): readonly unknown[] {
     const latestItem = plotData[plotData.length - 1];
     const latestValue = latestItem?.[yval];
+    const maxX = latestItem?.ts;
+    const msPerPixel = plotWidth > 0 ? (targetLen * 1000) / plotWidth : 0;
+    const axisPosition = msPerPixel > 0 && maxX != null ? Math.floor(maxX / msPerPixel) : maxX;
     const color = yvalMeta?.color ?? defaultColor;
     const maxY = resolveDomainBound(yvalMeta?.maxy, latestItem) ?? 100;
     const minY = resolveDomainBound(yvalMeta?.miny, latestItem) ?? 0;
     return [
         latestValue,
+        axisPosition,
+        yvalMeta?.name,
         plotWidth,
         plotHeight,
         color,
@@ -502,7 +507,6 @@ function SysinfoView({ model, blockId }: SysinfoViewProps) {
             scope: connName,
             handler: (event) => model.handleSysinfoEvent(event),
         });
-        console.log("subscribe to sysinfo", connName);
         return () => {
             unsubFn();
         };
@@ -544,14 +548,9 @@ function SingleLinePlot({
     const plotHeight = domRect?.height ?? 0;
     const plotWidth = domRect?.width ?? 0;
 
-    // `dataAtom` pushes a new row every tick (as often as 1s), even for metrics on a slower
-    // collector tier whose value is just carried forward unchanged — rebuilding the whole
-    // Plot.plot() SVG on every such tick is pure churn. Memoizing on plotMemoKey's flattened
-    // primitives (this metric's own latest value + everything else the plot actually renders),
-    // rather than on plotData's object identity, skips that rebuild for idle metrics while still
-    // rebuilding every tick for ones that do change. Trade-off: the x-axis window only advances
-    // when this metric gets a real new value, not every tick — for an unchanging value the line is
-    // flat either way, so a skipped intermediate redraw isn't visually distinguishable.
+    // Memoized on plotMemoKey's primitives rather than plotData's identity, so ticks that leave
+    // the plot visually unchanged (sub-pixel axis travel, same newest value) skip the full
+    // Plot.plot() rebuild and DOM swap.
     const plot = React.useMemo(() => {
         const marks: Plot.Markish[] = [];
         const decimalPlaces = yvalMeta?.decimalPlaces ?? 0;
@@ -664,7 +663,6 @@ function SingleLinePlot({
             height: plotHeight,
             marks: marks,
         });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [...plotMemoKey(plotData, yval, yvalMeta, defaultColor, plotWidth, plotHeight, targetLen), title, sparkline]);
 
     React.useEffect(() => {
@@ -736,5 +734,6 @@ const SysinfoViewInner = React.memo(({ model }: SysinfoViewProps) => {
         </OverlayScrollbarsComponent>
     );
 });
+SysinfoViewInner.displayName = "SysinfoViewInner";
 
 export { SysinfoViewModel };
