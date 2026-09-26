@@ -23,11 +23,8 @@ const MinPopupWidth = 200;
 const MinPopupHeight = 150;
 const FalseyFeatureValues = new Set(["0", "no", "false"]);
 
-// Every key the page's features string is allowed to influence. openGuestWindow spreads
-// every parsed feature key straight into BrowserWindowConstructorOptions (Electron 41.1.0
-// guest-window-manager.ts), so a key outside this set (frame, transparent, alwaysOnTop,
-// webContents, kiosk, ...) lets the page dictate native window chrome or, via webContents,
-// orphan the child onto a fresh default-session window (H-1/H-1b).
+// openGuestWindow spreads every parsed features key straight into BrowserWindowConstructorOptions,
+// so a key outside this set could let the page dictate native window chrome, or orphan the child via webContents.
 const AllowedPopupFeatureKeys = new Set([
     "popup",
     "width",
@@ -109,11 +106,8 @@ export function classifyWindowOpen(details: Pick<HandlerDetails, "url" | "dispos
     if (details.disposition !== "new-window") {
         return "tab";
     }
-    // A shift-clicked link also arrives as "new-window" but with no renderer-created child
-    // and an empty features string. Left unhandled, Electron builds a fresh BrowserWindow
-    // on the default session that hardenCreatedPopup then destroys, so the user sees
-    // nothing happen (M-1). Plain window.open(url) already arrives as foreground-tab, so
-    // this only catches the browser-initiated case.
+    // Shift-clicked links also arrive as "new-window", but with no renderer-created child
+    // and no features string; window.open(url) already arrives as foreground-tab regardless.
     if (details.features == null || details.features.trim() === "") {
         return "tab";
     }
@@ -206,9 +200,8 @@ export function buildPopupWindowOptions(
         maxWidth: workArea.width,
         maxHeight: workArea.height,
         autoHideMenuBar: true,
-        // openGuestWindow spreads the page's parsed features before this object, so these
-        // fields must be pinned here too, not just filtered by classifyWindowOpen's
-        // allowlist: any parsed key we missed still can't reach the native window (H-1).
+        // Parsed features are spread into BrowserWindowConstructorOptions before this object,
+        // so these fields stay pinned even if the allowlist above misses a key.
         frame: true,
         transparent: false,
         fullscreen: false,
