@@ -34,6 +34,7 @@ import {
     getMigrationFailures,
     getRemoteTermConfigDir,
     getRemoteTermDataDir,
+    getWebviewPreloadPath,
     isDev,
     resolveIncompleteMigrationBlock,
     resolveLegacyInstanceBlock,
@@ -41,6 +42,7 @@ import {
     unamePlatform,
 } from "./emain-platform";
 import { ensureHotSpareTab, setMaxTabCacheSize } from "./emain-tabview";
+import { hardenWebviewAttach, installPermissionHandlers, isAppWebContentsId } from "./emain-websecurity";
 import { getIsRemoteTermSrvDead, getRemoteTermSrvProc, getRemoteTermSrvReady, runRemoteTermSrv } from "./emain-remotetermsrv";
 import {
     createBrowserWindow,
@@ -155,6 +157,18 @@ function hideWindowWithCatch(window: RemoteTermBrowserWindow) {
         console.log("error hiding window", e);
     }
 }
+
+electronApp.on("session-created", installPermissionHandlers);
+electronApp.on("web-contents-created", (_event, contents) => {
+    contents.on("will-attach-webview", (event, webPreferences, params) => {
+        if (
+            !isAppWebContentsId(contents.id) ||
+            !hardenWebviewAttach(webPreferences, params, getWebviewPreloadPath())
+        ) {
+            event.preventDefault();
+        }
+    });
+});
 
 electronApp.on("window-all-closed", () => {
     if (getGlobalIsRelaunching()) {
