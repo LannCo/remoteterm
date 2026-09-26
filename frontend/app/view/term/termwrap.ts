@@ -31,6 +31,7 @@ import * as TermTypes from "@xterm/xterm";
 import { Terminal } from "@xterm/xterm";
 import debug from "debug";
 import * as jotai from "jotai";
+import type { Subscription } from "rxjs";
 import { debounce } from "throttle-debounce";
 import {
     handleOsc16162Command,
@@ -231,6 +232,7 @@ export class TermWrap {
     searchAddon: SearchAddon;
     serializeAddon: SerializeAddon;
     mainFileSubject: SubjectWithRef<WSFileEventData>;
+    mainFileSubjectSubscription: Subscription;
     loaded: boolean;
     heldData: Uint8Array[];
     handleResize_debounced: () => void;
@@ -595,6 +597,7 @@ export class TermWrap {
         });
         this.connectElem = connectElem;
         this.mainFileSubject = null;
+        this.mainFileSubjectSubscription = null;
         this.heldData = [];
         this.handleResize_debounced = debounce(50, this.handleResize.bind(this));
         this.terminal.open(this.connectElem);
@@ -767,7 +770,7 @@ export class TermWrap {
         }
 
         this.mainFileSubject = getFileSubject(this.getZoneId(), TermFileName);
-        this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
+        this.mainFileSubjectSubscription = this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
 
         try {
             const rtInfo = await RpcApi.GetRTInfoCommand(TabRpcClient, {
@@ -862,7 +865,8 @@ export class TermWrap {
                 /* nothing */
             }
         });
-        this.mainFileSubject.release();
+        this.mainFileSubjectSubscription?.unsubscribe();
+        this.mainFileSubject?.release();
     }
 
     handleTermData(data: string) {
