@@ -225,10 +225,15 @@ func (c *ClientImpl) listenAndServe(ctx context.Context) error {
 		listenAddr = DefaultListenAddr
 	}
 
+	var handler http.Handler = mux
+	if listenHost, _, err := net.SplitHostPort(listenAddr); err == nil && isLoopbackHostname(listenHost) {
+		handler = loopbackHostGuard(mux)
+	}
+
 	// Create server and listen on specified address
 	server := &http.Server{
 		Addr:    listenAddr,
-		Handler: mux,
+		Handler: handler,
 	}
 
 	// Start listening
@@ -280,25 +285,32 @@ func (c *ClientImpl) UnregisterSSEChannel(connectionId string) {
 }
 
 func (c *ClientImpl) SendSSEvent(event ssEvent) error {
+	_, err := c.broadcastSSEvent(event)
+	return err
+}
+
+// broadcastSSEvent returns the number of SSE connections that accepted the event.
+func (c *ClientImpl) broadcastSSEvent(event ssEvent) (int, error) {
 	if c.GetIsDone() {
-		return fmt.Errorf("client is done")
+		return 0, fmt.Errorf("client is done")
 	}
 
 	c.SSEChannelsLock.Lock()
 	defer c.SSEChannelsLock.Unlock()
 
+	delivered := 0
 	// Send to all registered SSE channels
 	for _, ch := range c.SSEChannels {
 		select {
 		case ch <- event:
-			// Successfully sent
+			delivered++
 		default:
 			// silently drop (below is just for debugging).  this wont happen in general
 			// log.Printf("SSEvent channel is full for connection %s, skipping event", connectionId)
 		}
 	}
 
-	return nil
+	return delivered, nil
 }
 
 func (c *ClientImpl) SendAsyncInitiation() error {
@@ -351,7 +363,10 @@ func (c *ClientImpl) registerComponent(name string, cfunc any) error {
 
 func (c *ClientImpl) fullRender() (*rpctypes.VDomBackendUpdate, error) {
 	opts := &RenderOpts{Resync: true}
-	c.Root.RunWork(opts)
+	// RunWork would render too when work is pending; a second render here would queue
+	// every nil-deps effect twice and run their cleanups twice (or never).
+	c.Root.runEffectWork()
+	c.Root.getAndClearRenderWork()
 	c.Root.Render(c.RootElem, opts)
 	renderedVDom := c.Root.MakeRendered()
 	if renderedVDom == nil {
@@ -442,11 +457,15 @@ func (c *ClientImpl) ShowModal(config rpctypes.ModalConfig) chan bool {
 		return resultChan
 	}
 
-	err = c.SendSSEvent(ssEvent{Event: "showmodal", Data: data})
+	delivered, err := c.broadcastSSEvent(ssEvent{Event: "showmodal", Data: data})
 	if err != nil {
 		log.Printf("failed to send modal SSE event: %v", err)
 		c.CloseModal(config.ModalId, false)
 		return resultChan
+	}
+	if delivered == 0 {
+		log.Printf("no frontend connection accepted modal %s, cancelling it", config.ModalId)
+		c.CloseModal(config.ModalId, false)
 	}
 
 	return resultChan
