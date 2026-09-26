@@ -258,7 +258,7 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
                         <label className="text-xs text-muted w-20 text-right">Username</label>
                         <input
                             type="text"
-                            className="flex-1 px-3 py-2 text-xs bg-black/20 border border-border rounded outline-none focus:border-accent text-primary"
+                            className="flex-1 px-3 py-2 text-xs bg-inputbg border border-border rounded outline-none focus:border-accent-text text-primary"
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}
                             onKeyDown={handleKeyDown}
@@ -271,7 +271,7 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
                         <label className="text-xs text-muted w-20 text-right">Password</label>
                         <input
                             type="password"
-                            className="flex-1 px-3 py-2 text-xs bg-black/20 border border-border rounded outline-none focus:border-accent text-primary"
+                            className="flex-1 px-3 py-2 text-xs bg-inputbg border border-border rounded outline-none focus:border-accent-text text-primary"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             onKeyDown={handleKeyDown}
@@ -344,7 +344,7 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
                     <button
                         className={`px-3 py-1.5 text-xs rounded font-medium transition-colors cursor-pointer ${
                             username && password && !isSubmitting
-                                ? "bg-accent/80 hover:bg-accent text-background"
+                                ? "bg-accent/80 hover:bg-accent text-onaccent"
                                 : "bg-panel text-muted"
                         }`}
                         onClick={handleSubmit}
@@ -481,7 +481,7 @@ const CommitInput = memo(({ model, hasStagedChanges, hasUnpushedCommits }: {
     return (
         <div className="flex flex-col gap-2">
             <textarea
-                className="w-full px-2 py-1.5 text-xs bg-surface border border-border rounded resize-none outline-none focus:border-accent placeholder:text-muted overflow-hidden text-ellipsis [&::placeholder]:whitespace-nowrap [&::placeholder]:overflow-hidden [&::placeholder]:text-ellipsis"
+                className="w-full px-2 py-1.5 text-xs bg-surface border border-border rounded resize-none outline-none focus:border-accent-text placeholder:text-muted overflow-hidden text-ellipsis [&::placeholder]:whitespace-nowrap [&::placeholder]:overflow-hidden [&::placeholder]:text-ellipsis"
                 placeholder="Commit message (Ctrl+Enter to commit)"
                 rows={1}
                 value={commitMessage}
@@ -750,7 +750,7 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
                     ref={panelFocusAnchorRef}
                     tabIndex={-1}
                     aria-label={`Source Control: ${status?.branch || "detached"}`}
-                    className="flex items-center gap-2 text-xs rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+                    className="flex items-center gap-2 text-xs rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-text focus-visible:outline-offset-2"
                 >
                     <i className="fa-solid fa-code-branch text-muted" />
                     <span className="font-medium">{status?.branch || "detached"}</span>
