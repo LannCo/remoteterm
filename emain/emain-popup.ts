@@ -281,10 +281,6 @@ export function hardenCreatedPopup(
     if (isAppWebContentsId(wc.id)) {
         return destroyPopup(child, "popup webContents is app-owned");
     }
-    const preload = details.options?.webPreferences?.preload;
-    if (preload != null && preload !== ctx.preloadPath) {
-        return destroyPopup(child, `unexpected preload ${preload}`);
-    }
     child.setMenuBarVisibility(false);
     wc.on("will-navigate", (event, url) => {
         if (!isAllowedPopupUrl(url)) {
