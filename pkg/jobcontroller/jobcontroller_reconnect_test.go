@@ -40,9 +40,12 @@ func TestMain(m *testing.M) {
 }
 
 // blockStatusRecorder captures BlockJobStatus events published through wps.Broker.
+// Publish is synchronous, so a hook installed with setHook runs on the publishing goroutine
+// and can pause it.
 type blockStatusRecorder struct {
 	lock   sync.Mutex
 	events []*wshrpc.BlockJobStatusData
+	hook   func(*wshrpc.BlockJobStatusData)
 }
 
 func (r *blockStatusRecorder) SendEvent(routeId string, ev wps.WaveEvent) {
@@ -53,9 +56,22 @@ func (r *blockStatusRecorder) SendEvent(routeId string, ev wps.WaveEvent) {
 	if !ok {
 		return
 	}
+	if hook := r.recordEvent(data); hook != nil {
+		hook(data)
+	}
+}
+
+func (r *blockStatusRecorder) recordEvent(data *wshrpc.BlockJobStatusData) func(*wshrpc.BlockJobStatusData) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	r.events = append(r.events, data)
+	return r.hook
+}
+
+func (r *blockStatusRecorder) setHook(hook func(*wshrpc.BlockJobStatusData)) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	r.hook = hook
 }
 
 func (r *blockStatusRecorder) statusesForBlock(blockId string) []string {

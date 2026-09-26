@@ -1033,20 +1033,9 @@ func (conn *SSHConn) StartConnServer(ctx context.Context, afterUpdate bool, useR
 		defer func() {
 			panichandler.PanicHandler("conncontroller:sshSession.Wait", recover())
 		}()
-		// wait for termination, clear the controller
-		var waitErr error
-		defer conn.WithLock(func() {
-			if conn.ConnController != nil {
-				conn.WshEnabled.Store(false)
-				conn.NoWshReason = "connserver terminated"
-				if waitErr != nil {
-					conn.WshError = fmt.Sprintf("connserver terminated unexpectedly with error: %v", waitErr)
-				}
-			}
-			conn.ConnController = nil
-		})
-		waitErr = sshSession.Wait()
+		waitErr := sshSession.Wait()
 		log.Printf("conn controller (%q) terminated: %v", conn.GetName(), waitErr)
+		conn.markConnControllerTerminated(sshSession, waitErr)
 	}()
 	go func() {
 		defer func() {
@@ -1074,6 +1063,7 @@ func (conn *SSHConn) StartConnServer(ctx context.Context, afterUpdate bool, useR
 	connRoute := wshutil.MakeConnectionRouteId(rpcCtx.Conn)
 	err = wshutil.DefaultRouter.WaitForRegister(regCtx, connRoute)
 	if err != nil {
+		conn.abandonConnController(sshSession)
 		return false, clientVersion, "", fmt.Errorf("timeout waiting for connserver to register")
 	}
 	time.Sleep(300 * time.Millisecond) // TODO remove this sleep (but we need to wait until connserver is "ready")
@@ -1083,10 +1073,39 @@ func (conn *SSHConn) StartConnServer(ctx context.Context, afterUpdate bool, useR
 		&wshrpc.RpcOpts{Route: connRoute},
 	)
 	if err != nil {
+		conn.abandonConnController(sshSession)
 		return false, clientVersion, "", fmt.Errorf("connserver init failed: %w", err)
 	}
 	conn.Infof(ctx, "connserver is registered and ready\n")
 	return false, clientVersion, "", nil
+}
+
+// markConnControllerTerminated only acts if session is still the live controller: after a
+// reconnect or a StartConnServer retry, a superseded session can exit late and must not
+// mark the replacement connection wsh-disabled.
+func (conn *SSHConn) markConnControllerTerminated(session *ssh.Session, waitErr error) {
+	conn.WithLock(func() {
+		if conn.ConnController != session {
+			return
+		}
+		conn.WshEnabled.Store(false)
+		conn.NoWshReason = "connserver terminated"
+		if waitErr != nil {
+			conn.WshError = fmt.Sprintf("connserver terminated unexpectedly with error: %v", waitErr)
+		}
+		conn.ConnController = nil
+	})
+}
+
+// abandonConnController unpublishes session before closing it, so its Wait goroutine sees
+// a mismatch and leaves wsh state to the caller that is handling the startup error.
+func (conn *SSHConn) abandonConnController(session *ssh.Session) {
+	conn.WithLock(func() {
+		if conn.ConnController == session {
+			conn.ConnController = nil
+		}
+	})
+	session.Close()
 }
 
 const wshStartupMaxRetries = 3
@@ -1222,7 +1241,7 @@ func (conn *SSHConn) getPermissionToInstallWsh(ctx context.Context, clientDispla
 		setConfigErr := rtconfig.SetBaseConfigValue(meta)
 		if setConfigErr != nil {
 			// this is not a critical error, just log and continue
-			log.Printf("warning: error writing to base config file: %v", err)
+			log.Printf("warning: error writing to base config file: %v", setConfigErr)
 		}
 	}
 	return true, nil

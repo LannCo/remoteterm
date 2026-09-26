@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -3157,5 +3158,52 @@ func TestDetachedTimeoutSurvivesParentDeadlineExpiry(t *testing.T) {
 	case <-child.Done():
 		t.Fatal("expected child to still be running after parent's shorter deadline expired")
 	default:
+	}
+}
+
+func TestMarkConnControllerTerminated_StaleSessionLeavesNewControllerAlone(t *testing.T) {
+	conn := makeTestConn(Status_Connected)
+	defer cleanupTestConn(conn)
+	oldSession := &ssh.Session{}
+	newSession := &ssh.Session{}
+	conn.ConnController = newSession
+	conn.WshEnabled.Store(true)
+
+	conn.markConnControllerTerminated(oldSession, fmt.Errorf("old session exited"))
+
+	if conn.ConnController != newSession {
+		t.Fatal("stale session exit cleared the live ConnController")
+	}
+	if !conn.WshEnabled.Load() || conn.NoWshReason != "" || conn.WshError != "" {
+		t.Fatalf("stale session exit changed wsh state: enabled=%v reason=%q err=%q", conn.WshEnabled.Load(), conn.NoWshReason, conn.WshError)
+	}
+}
+
+func TestMarkConnControllerTerminated_CurrentSessionDisablesWsh(t *testing.T) {
+	conn := makeTestConn(Status_Connected)
+	defer cleanupTestConn(conn)
+	session := &ssh.Session{}
+	conn.ConnController = session
+	conn.WshEnabled.Store(true)
+
+	conn.markConnControllerTerminated(session, fmt.Errorf("boom"))
+
+	if conn.ConnController != nil {
+		t.Fatal("ConnController not cleared when its own session terminated")
+	}
+	if conn.WshEnabled.Load() || conn.NoWshReason != "connserver terminated" || !strings.Contains(conn.WshError, "boom") {
+		t.Fatalf("unexpected wsh state: enabled=%v reason=%q err=%q", conn.WshEnabled.Load(), conn.NoWshReason, conn.WshError)
+	}
+}
+
+func TestMarkConnControllerTerminated_IntentionalCloseKeepsWshState(t *testing.T) {
+	conn := makeTestConn(Status_Connected)
+	defer cleanupTestConn(conn)
+	conn.WshEnabled.Store(true)
+
+	conn.markConnControllerTerminated(&ssh.Session{}, nil)
+
+	if !conn.WshEnabled.Load() || conn.NoWshReason != "" {
+		t.Fatalf("session closed via closeInternal changed wsh state: enabled=%v reason=%q", conn.WshEnabled.Load(), conn.NoWshReason)
 	}
 }

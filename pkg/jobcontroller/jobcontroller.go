@@ -37,11 +37,21 @@ import (
 	"github.com/LannCo/remoteterm/pkg/wshrpc"
 	"github.com/LannCo/remoteterm/pkg/wshrpc/wshclient"
 	"github.com/LannCo/remoteterm/pkg/wshutil"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"golang.org/x/sync/singleflight"
 )
 
 const DefaultTimeout = 2 * time.Second
+
+// retiringStreamIdPrefix marks a job's stream as superseded while restartStreaming drains
+// it, before the replacement stream exists.
+const retiringStreamIdPrefix = "retiring:"
+
+// JobAccessTokenExpiry bounds the main-server JWT handed to a job manager. A fresh token is
+// minted for every start/reconnect and checked immediately, but against the remote host's
+// clock, so the margin covers clock skew rather than token lifetime.
+const JobAccessTokenExpiry = time.Hour
 
 const (
 	JobManagerStatus_Init    = "init"
@@ -1632,6 +1642,7 @@ func StartJob(ctx context.Context, params StartJobParams) (string, error) {
 		MainServer: true,
 		JobId:      jobId,
 	}
+	jobAccessClaims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(JobAccessTokenExpiry))
 	jobAccessToken, err := remotetermjwt.Sign(jobAccessClaims)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate job access token: %w", err)
@@ -1643,7 +1654,7 @@ func StartJob(ctx context.Context, params StartJobParams) (string, error) {
 		JobKind:          params.JobKind,
 		Cmd:              params.Cmd,
 		CmdArgs:          params.Args,
-		CmdEnv:           params.Env,
+		CmdEnv:           shellutil.RedactSecretEnv(params.Env),
 		CmdTermSize:      *params.TermSize,
 		JobAuthToken:     jobAuthToken,
 		JobManagerStatus: JobManagerStatus_Init,
@@ -1711,7 +1722,7 @@ func StartJob(ctx context.Context, params StartJobParams) (string, error) {
 	writeSessionSeparatorToTerminal(params.BlockId, params.TermSize.Cols)
 
 	log.Printf("[job:%s] sending RemoteStartJobCommand to connection %s, cmd=%q, args=%v", jobId, params.ConnName, params.Cmd, params.Args)
-	log.Printf("[job:%s] env=%v", jobId, params.Env)
+	log.Printf("[job:%s] env=%v", jobId, shellutil.RedactSecretEnv(params.Env))
 	rtnData, err := wshclient.RemoteStartJobCommand(bareRpc, startJobData, rpcOpts)
 	if err != nil {
 		log.Printf("[job:%s] RemoteStartJobCommand failed: %v", jobId, err)
@@ -2195,6 +2206,7 @@ func doReconnectJob(ctx context.Context, jobId string, rtOpts *remotetermobj.Run
 		MainServer: true,
 		JobId:      jobId,
 	}
+	jobAccessClaims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(JobAccessTokenExpiry))
 	jobAccessToken, err := remotetermjwt.Sign(jobAccessClaims)
 	if err != nil {
 		return fmt.Errorf("failed to generate job access token: %w", err)
@@ -2336,7 +2348,7 @@ func waitForStreamLoopExit(jobId string, streamId string, timeout time.Duration)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	log.Printf("[job:%s] warning: output loop [stream:%s] did not exit within %v; proceeding without seq adjustment", jobId, streamId, timeout)
+	log.Printf("[job:%s] warning: output loop [stream:%s] did not exit within %v; proceeding, its last chunk may land out of order", jobId, streamId, timeout)
 }
 
 // RestartBlockStream restarts the output stream for a block's job, re-establishing
@@ -2361,6 +2373,35 @@ func RestartBlockStream(ctx context.Context, blockId string) error {
 	}
 	log.Printf("[block:%s] reconnect stream completed for job %s", blockId, block.JobId)
 	return nil
+}
+
+// retirePrevStream shuts down the job's current output stream and moves every byte it
+// received into WaveFS, in stream order, before the caller computes the next seq. Buffered
+// bytes were already ACKed to the remote StreamManager, so dropping them would leave a hole
+// in the term file that neither force-refresh nor reconnect can repair.
+//
+// Order matters. The supersession marker goes up first so the old runOutputLoop exits via
+// its clean "superseded" break when Close unblocks its Read, not via the error path (which
+// would mark the stream done and terminate the job manager). The drain runs only after the
+// loop has exited: the loop may hold a chunk it already took from the buffer but has not
+// yet appended, and draining earlier would append the later bytes first.
+func retirePrevStream(ctx context.Context, jobId string) {
+	prevReader, prevReaderOk := jobReaders.GetEx(jobId)
+	if !prevReaderOk {
+		return
+	}
+	oldStreamId, _ := jobStreamIds.GetEx(jobId)
+	jobStreamIds.Set(jobId, retiringStreamIdPrefix+oldStreamId)
+	prevReader.Close()
+	waitForStreamLoopExit(jobId, oldStreamId, 1*time.Second)
+	drained := prevReader.DrainBuffered()
+	if len(drained) == 0 {
+		return
+	}
+	appendErr := handleAppendJobFile(ctx, jobId, JobOutputFileName, drained)
+	if appendErr != nil {
+		log.Printf("[job:%s] error appending drained data to WaveFS: %v", jobId, appendErr)
+	}
 }
 
 func restartStreaming(ctx context.Context, jobId string, knownConnected bool, rtOpts *remotetermobj.RuntimeOpts) error {
@@ -2395,26 +2436,7 @@ func restartStreaming(ctx context.Context, jobId string, knownConnected bool, rt
 		}
 	}
 
-	// Retrieve the previous reader (if any) before creating the new one.
-	// It will be closed after the new streamId is set so that the old
-	// runOutputLoop's supersession check (jobStreamIds != old streamId) fires
-	// and exits cleanly instead of blocking forever on the dead stream.
-	prevReader, prevReaderOk := jobReaders.GetEx(jobId)
-
-	// Drain any bytes the previous reader already received (and ACKed to the
-	// remote StreamManager) into WaveFS before computing currentSeq. Those bytes
-	// are part of the remote stream seq space but not yet in the term file; if
-	// they are dropped (the reader is closed below without draining), they are
-	// permanently lost — a hole in the term file that a force-refresh cannot
-	// repair, plus a bogus reconnect gap.
-	if prevReaderOk {
-		if drained := prevReader.DrainBuffered(); len(drained) > 0 {
-			appendErr := handleAppendJobFile(ctx, jobId, JobOutputFileName, drained)
-			if appendErr != nil {
-				log.Printf("[job:%s] error appending drained data to WaveFS: %v", jobId, appendErr)
-			}
-		}
-	}
+	retirePrevStream(ctx, jobId)
 
 	var currentSeq int64 = 0
 	var totalGap int64 = 0
@@ -2432,36 +2454,9 @@ func restartStreaming(ctx context.Context, jobId string, knownConnected bool, rt
 	readerRouteId := wshclient.GetBareRpcClientRouteId()
 	writerRouteId := wshutil.MakeJobRouteId(jobId)
 
-	oldStreamId, _ := jobStreamIds.GetEx(jobId)
 	reader, streamMeta := broker.CreateStreamReaderWithSeq(readerRouteId, writerRouteId, DefaultStreamRwnd, currentSeq)
 	jobStreamIds.Set(jobId, streamMeta.Id)
 	jobReaders.Set(jobId, reader)
-
-	// Close the previous reader to unblock its runOutputLoop. The old stream
-	// is superseded by the new one (jobStreamIds was just updated), so the old
-	// loop's supersession check will see the new streamId and break cleanly
-	// ("stream superseded by [new]") rather than hitting the error path.
-	// Reader.Close is safe to call on an already-closed reader.
-	if prevReaderOk {
-		prevReader.Close()
-	}
-
-	// The old runOutputLoop may still be appending bytes it read from the
-	// previous reader right before the supersession. Wait (bounded) for it to
-	// exit so those in-flight bytes land in WaveFS, then re-stat the job file and
-	// adjust currentSeq if it grew. Skipping this would double-count those bytes
-	// (present both in the file and in totalGap), shifting every future stream seq
-	// and potentially causing "client seq beyond stream end" failures on reconnect.
-	waitForStreamLoopExit(jobId, oldStreamId, 1*time.Second)
-	waveFile2, statErr2 := filestore.WFS.Stat(ctx, jobId, JobOutputFileName)
-	if statErr2 == nil {
-		recomputedSeq := waveFile2.Size + totalGap
-		if recomputedSeq > currentSeq {
-			log.Printf("[job:%s] adjusted stream seq after draining in-flight output: %d -> %d", jobId, currentSeq, recomputedSeq)
-			currentSeq = recomputedSeq
-			reader.UpdateNextSeq(currentSeq)
-		}
-	}
 
 	prepareData := wshrpc.CommandJobPrepareConnectData{
 		StreamMeta: *streamMeta,
@@ -2670,7 +2665,13 @@ func DeleteJob(ctx context.Context, jobId string) error {
 	if err != nil {
 		log.Printf("[job:%s] warning: error deleting WaveFS zone: %v", jobId, err)
 	}
-	return rtstore.DBDelete(ctx, remotetermobj.OType_Job, jobId)
+	err = rtstore.DBDelete(ctx, remotetermobj.OType_Job, jobId)
+	if err != nil {
+		return err
+	}
+	// Only after the row is gone: a reconnect that creates a fresh mutex now fails its job lookup.
+	jobReconnectLocks.Delete(jobId)
+	return nil
 }
 
 func AttachJobToBlock(ctx context.Context, jobId string, blockId string) error {
