@@ -10,6 +10,7 @@ import type {
     HandlerDetails,
     Rectangle,
     WebContents,
+    WebPreferences,
     WindowOpenHandlerResponse,
 } from "electron";
 import { applyGuestWebPreferences, isAllowedPopupUrl, isAppWebContentsId } from "./emain-websecurity";
@@ -183,6 +184,11 @@ function liveParent(ctx: PopupHostContext): BaseWindow | null {
     return parent;
 }
 
+// Electron ignores these webPreferences for window.open("about:blank"): Chromium skips
+// browser-side navigation, so the child runs in the opener's renderer process with the
+// opener's effective settings. They only bite for http(s) popups; about:blank relies on
+// the opener already being hardened (hardenWebviewAttach for root guests, this function
+// for nested popup openers), which hardenCreatedPopup enforces via hasHardenedPreferences.
 export function buildPopupWindowOptions(
     details: HandlerDetails,
     opener: WebContents,
@@ -297,6 +303,24 @@ function installOriginTitle(child: BrowserWindow, initialUrl: string): void {
     apply();
 }
 
+type WebContentsWithLastPreferences = WebContents & { getLastWebPreferences?: () => WebPreferences | null };
+
+// getLastWebPreferences is a real Electron 41 WebContents method (Electron's own
+// guest-window-manager reads it to inherit security prefs) but is missing from
+// electron.d.ts. A missing accessor or prefs object fails closed.
+function hasHardenedPreferences(wc: WebContents): boolean {
+    const prefs = (wc as WebContentsWithLastPreferences).getLastWebPreferences?.();
+    if (prefs == null) {
+        return false;
+    }
+    return (
+        prefs.sandbox === true &&
+        prefs.contextIsolation === true &&
+        prefs.nodeIntegration !== true &&
+        prefs.nodeIntegrationInSubFrames !== true
+    );
+}
+
 function destroyPopup(child: BrowserWindow, reason: string): false {
     console.log(`[popup] destroying child window: ${reason}`);
     if (!child.isDestroyed()) {
@@ -323,6 +347,14 @@ export function hardenCreatedPopup(
     }
     if (isAppWebContentsId(wc.id)) {
         return destroyPopup(child, "popup webContents is app-owned");
+    }
+    // The child's own prefs report the hardened override even for about:blank, where it
+    // actually runs in the opener's process; the opener check is what covers that case.
+    if (!hasHardenedPreferences(wc)) {
+        return destroyPopup(child, "popup webPreferences are not hardened");
+    }
+    if (!hasHardenedPreferences(opener)) {
+        return destroyPopup(child, "opener webPreferences are not hardened");
     }
     // setMenuBarVisibility only hides the inherited app menu; its accelerators would still
     // fire against this window, and those handlers assume a RemoteTerm window.
