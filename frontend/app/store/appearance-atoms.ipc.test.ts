@@ -6,11 +6,12 @@
 import type { PrimitiveAtom } from "jotai";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-const { tabModeAtom, settingModeAtom } = vi.hoisted(() => {
+const { tabModeAtom, settingModeAtom, staticTabIdAtom } = vi.hoisted(() => {
     const jotai = require("jotai");
     return {
         tabModeAtom: jotai.atom(null) as PrimitiveAtom<string>,
         settingModeAtom: jotai.atom("system") as PrimitiveAtom<string>,
+        staticTabIdAtom: jotai.atom("tab-1"),
     };
 });
 
@@ -18,6 +19,7 @@ vi.mock("@/app/store/global", () => ({
     getApi: () => (window as any).api,
     getTabMetaKeyAtom: () => tabModeAtom,
     getSettingsKeyAtom: () => settingModeAtom,
+    atoms: { staticTabId: staticTabIdAtom },
 }));
 
 async function loadFresh() {
@@ -80,5 +82,13 @@ describe("appearance-atoms native-theme IPC binding", () => {
         globalStore.set(settingModeAtom, "system");
         expect(globalStore.get(getResolvedAppearanceModeAtom("tab-ipc-2"))).toBe("dark");
         expect(console.log).toHaveBeenCalled();
+    });
+
+    test("resolvedAppearanceModeAtom follows the static tab's resolved mode", async () => {
+        const { resolvedAppearanceModeAtom, globalStore } = await loadFresh();
+        globalStore.set(settingModeAtom, "light");
+        expect(globalStore.get(resolvedAppearanceModeAtom)).toBe("light");
+        globalStore.set(tabModeAtom, "dark");
+        expect(globalStore.get(resolvedAppearanceModeAtom)).toBe("dark");
     });
 });

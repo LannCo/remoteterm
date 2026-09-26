@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { getApi, getSettingsKeyAtom, getTabMetaKeyAtom } from "@/app/store/global";
+import { atoms, getApi, getSettingsKeyAtom, getTabMetaKeyAtom } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import * as jotai from "jotai";
 import type { Atom } from "jotai";
@@ -49,3 +49,7 @@ export function getResolvedAppearanceModeAtom(tabId: string): Atom<"light" | "da
     appearanceModeAtomCache.set(tabId, derived);
     return derived;
 }
+
+export const resolvedAppearanceModeAtom: Atom<"light" | "dark"> = jotai.atom((get) => {
+    return get(getResolvedAppearanceModeAtom(get(atoms.staticTabId)));
+});

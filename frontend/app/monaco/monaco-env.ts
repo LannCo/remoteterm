@@ -8,7 +8,10 @@ import "monaco-editor/esm/vs/language/json/monaco.contribution";
 import "monaco-editor/esm/vs/language/typescript/monaco.contribution";
 import { configureMonacoYaml } from "monaco-yaml";
 
+import { monacoThemeForMode } from "@/app/monaco/monaco-theme";
 import { MonacoSchemas } from "@/app/monaco/schemaendpoints";
+import { resolvedAppearanceModeAtom } from "@/app/store/appearance-atoms";
+import { globalStore } from "@/app/store/jotaiStore";
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import cssWorker from "monaco-editor/esm/vs/language/css/css.worker?worker";
 import htmlWorker from "monaco-editor/esm/vs/language/html/html.worker?worker";
@@ -60,7 +63,7 @@ export function loadMonaco() {
         inherit: true,
         rules: [],
         colors: {
-            "editor.background": "#fefefe",
+            "editor.background": "#00000000",
             focusBorder: "#00000000",
         },
     });
@@ -68,7 +71,7 @@ export function loadMonaco() {
         validate: true,
         schemas: [],
     });
-    monaco.editor.setTheme("wave-theme-dark");
+    monaco.editor.setTheme(monacoThemeForMode(globalStore.get(resolvedAppearanceModeAtom)));
     // Disable default validation errors for typescript and javascript
     monaco.typescript.typescriptDefaults.setDiagnosticsOptions({
         noSemanticValidation: true,

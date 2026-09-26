@@ -10,6 +10,7 @@ import { CSSProperties, useCallback, useLayoutEffect, useRef } from "react";
 import { debounce } from "throttle-debounce";
 import { atoms, getApi, WOS } from "./store/global";
 import { useWaveObjectValue } from "./store/wos";
+import { resolvedAppearanceModeAtom } from "@/app/store/appearance-atoms";
 
 type AppBgEnv = WaveEnvSubset<{
     getTabMetaKeyAtom: MetaKeyAtomFnType<"tab:background">;
@@ -23,6 +24,7 @@ export function AppBackground() {
     const env = useWaveEnv<AppBgEnv>();
     const tabBg = useAtomValue(env.getTabMetaKeyAtom(tabId, "tab:background"));
     const configBg = useAtomValue(env.getConfigBackgroundAtom(tabBg));
+    const appearanceMode = useAtomValue(resolvedAppearanceModeAtom);
     const resolvedMeta: Omit<BackgroundConfigType, "display:name"> = tabBg && configBg ? configBg : tabData?.meta;
     const style: CSSProperties = computeBgStyleFromMeta(resolvedMeta, 0.5) ?? {};
     const getAvgColor = useCallback(
@@ -47,7 +49,7 @@ export function AppBackground() {
                 }
             }
         }),
-        [bgRef, style]
+        [bgRef, style, appearanceMode]
     );
     useLayoutEffect(getAvgColor, [getAvgColor]);
     useResizeObserver(bgRef, getAvgColor);

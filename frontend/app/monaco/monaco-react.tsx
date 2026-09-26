@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { loadMonaco } from "@/app/monaco/monaco-env";
+import { useMonacoAppearanceTheme } from "@/app/monaco/monaco-theme";
 import type * as MonacoTypes from "monaco-editor";
 import * as monaco from "monaco-editor";
 import { useEffect, useRef } from "react";
@@ -23,6 +24,7 @@ type CodeEditorProps = {
 };
 
 export function MonacoCodeEditor({ text, readonly, language, onChange, onMount, path, options }: CodeEditorProps) {
+    useMonacoAppearanceTheme();
     const divRef = useRef<HTMLDivElement>(null);
     const editorRef = useRef<MonacoTypes.editor.IStandaloneCodeEditor | null>(null);
     const onUnmountRef = useRef<(() => void) | null>(null);
@@ -126,6 +128,7 @@ type DiffViewerProps = {
 };
 
 export function MonacoDiffViewer({ original, modified, language, path, options, onMount }: DiffViewerProps) {
+    useMonacoAppearanceTheme();
     const divRef = useRef<HTMLDivElement>(null);
     const diffRef = useRef<MonacoTypes.editor.IStandaloneDiffEditor | null>(null);
     const currentPathRef = useRef<string>(path);
