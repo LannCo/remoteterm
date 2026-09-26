@@ -19,4 +19,6 @@ export const DefaultFullConfig: FullConfigType = {
     bookmarks: {},
     backgrounds: backgroundsJson as { [key: string]: BackgroundConfigType },
     configerrors: [],
+    version: "",
+    buildtime: "",
 };
