@@ -126,6 +126,11 @@ function getFileSubject(zoneId: string, fileName: string): SubjectWithRef<WSFile
     return subject;
 }
 
+function peekFileSubject(zoneId: string, fileName: string): SubjectWithRef<WSFileEventData> | null {
+    const subjectKey = zoneId + "|" + fileName;
+    return fileSubjects.get(subjectKey) ?? null;
+}
+
 function handleWaveEvent(event: WaveEvent) {
     const subjects = waveEventSubjects.get(event.event);
     if (subjects == null) {
@@ -148,6 +153,7 @@ function handleWaveEvent(event: WaveEvent) {
 export {
     getFileSubject,
     handleWaveEvent,
+    peekFileSubject,
     setWpsRpcClient,
     waveEventSubscribeSingle,
     waveEventUnsubscribe,
