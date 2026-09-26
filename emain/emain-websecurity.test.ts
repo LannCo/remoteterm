@@ -85,11 +85,18 @@ describe("auth key injection", () => {
         expect(send(listener, wc.id)["X-AuthKey"]).toBe(AuthKey);
     });
 
-    it("does not add X-AuthKey for web-block guests or requests without a webContents", () => {
+    it("does not add X-AuthKey for web-block guests", () => {
         const guest = makeWebContents();
         const { listener } = captureListener();
         expect(send(listener, guest.id)).toEqual({ Accept: "*/*" });
-        expect(send(listener, undefined)).toEqual({ Accept: "*/*" });
+    });
+
+    it("adds X-AuthKey for requests with no webContents (main process)", () => {
+        // Only Electron's own main-process net.request/fetch calls surface a null/undefined
+        // webContentsId here - any request a web page can trigger always carries that page's
+        // own (non-app) webContents id, so this can't be spoofed by a web block.
+        const { listener } = captureListener();
+        expect(send(listener, undefined)["X-AuthKey"]).toBe(AuthKey);
     });
 
     it("stops adding X-AuthKey once the app webContents is destroyed", () => {
