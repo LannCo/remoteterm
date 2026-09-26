@@ -7,6 +7,7 @@ import { Terminal } from "@xterm/xterm";
 // pre-existing defect from an earlier IIP/TIFF patch, unrelated to Kitty).
 // Importing the exact file the shipped app uses keeps this test honest.
 import { ImageAddon } from "@xterm/addon-image/lib/addon-image.mjs";
+import { arrayToBase64 } from "@/util/util";
 
 // These tests exercise the real (unmocked) @xterm/addon-image Kitty graphics
 // handler directly against a real xterm.js Terminal core (no DOM attach, so
@@ -17,13 +18,20 @@ import { ImageAddon } from "@xterm/addon-image/lib/addon-image.mjs";
 // (see image-addon.test.ts) would never exercise it.
 
 function toBase64(bytes: Uint8Array): string {
-    let s = "";
-    for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
-    return btoa(s);
+    return arrayToBase64(bytes);
 }
 
 function writeAsync(term: Terminal, data: string | Uint8Array): Promise<void> {
     return new Promise((resolve) => term.write(data, resolve));
+}
+
+// Converts an ASCII control/payload string into the Uint32Array-of-codepoints
+// shape the APC handler's put() expects, for tests that drive start()/put()/
+// end() directly rather than through the terminal's escape-sequence parser.
+function toCodepoints(str: string): Uint32Array {
+    const arr = new Uint32Array(str.length);
+    for (let i = 0; i < str.length; i++) arr[i] = str.charCodeAt(i);
+    return arr;
 }
 
 function solidColorRgba(width: number, height: number, r: number, g: number, b: number): Uint8Array {
@@ -53,7 +61,6 @@ function independentlyPaddedChunks(bytes: Uint8Array, blockSize: number): string
 describe("Kitty graphics protocol chunked transmission (real addon-image handler)", () => {
     let term: Terminal;
     let imageAddon: ImageAddon;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let kittyHandler: any;
     let responses: string[];
 
@@ -66,7 +73,6 @@ describe("Kitty graphics protocol chunked transmission (real addon-image handler
             enableSizeReports: true,
         });
         term.loadAddon(imageAddon);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         kittyHandler = (imageAddon as any)._handlers.get("kitty");
         responses = [];
         term.onData((d) => responses.push(d));
@@ -167,6 +173,104 @@ describe("Kitty graphics protocol chunked transmission (real addon-image handler
 
         expect(kittyHandler.pendingTransmissions.size).toBe(0);
         const stored = kittyHandler.images.get(7);
+        expect(stored).toBeDefined();
+        const storedBytes = new Uint8Array(await stored.data.arrayBuffer());
+        expect(storedBytes).toEqual(rgba);
+    });
+
+    it("keeps a final chunk's own payload after an earlier padded m=1 chunk finalized the shared decoder", async () => {
+        // Regression for the "final chunk drops payload" bug: a metadata-
+        // only opener registers a pending entry with decoder=null, a padded
+        // m=1 chunk finalizes+releases its own decoder (leaving
+        // pending.decoder null again), and then the *final* m=0 chunk
+        // carries real bytes of its own. Before the fix, _processChunk
+        // unconditionally took `decoder = pending.decoder` (null) and threw
+        // away the fresh decoder _streamPayload had just created for the
+        // final chunk's own payload, silently dropping those bytes.
+        const width = 3;
+        const height = 2;
+        const rgba = solidColorRgba(width, height, 5, 6, 7);
+        const id = 55;
+        const chunks = independentlyPaddedChunks(rgba, 13);
+        expect(chunks.length).toBe(2);
+
+        await writeAsync(term, `\x1b_Ga=t,f=32,s=${width},v=${height},i=${id},m=1\x1b\\`);
+        await writeAsync(term, `\x1b_Gm=1;${chunks[0]}\x1b\\`);
+        await writeAsync(term, `\x1b_Gm=0;${chunks[1]}\x1b\\`);
+
+        expect(kittyHandler.pendingTransmissions.size).toBe(0);
+        const stored = kittyHandler.images.get(id);
+        expect(stored).toBeDefined();
+        const storedBytes = new Uint8Array(await stored.data.arrayBuffer());
+        expect(storedBytes).toEqual(rgba);
+    });
+
+    it("handles a first chunk that itself carries m=1 padding with no metadata-only opener", async () => {
+        // Regression for the "first-chunk padding, no opener yet" bug: the
+        // very first escape sequence for this transmission is itself
+        // `m=1;<payload>` with no prior opener, so no pending entry exists
+        // when its trailing '=' is seen. The pre-fix pad-detection only
+        // looked at an already-existing pending entry, so this chunk's
+        // decoder was left dangling (not finalized) and corrupted whatever
+        // arrived in the next chunk's put() call.
+        const width = 3;
+        const height = 3;
+        const rgba = solidColorRgba(width, height, 8, 9, 10);
+        const id = 56;
+        const chunks = independentlyPaddedChunks(rgba, 13);
+        expect(chunks.length).toBe(3);
+
+        await writeAsync(term, `\x1b_Ga=t,f=32,s=${width},v=${height},i=${id},m=1;${chunks[0]}\x1b\\`);
+        await writeAsync(term, `\x1b_Gm=1;${chunks[1]}\x1b\\`);
+        await writeAsync(term, `\x1b_Gm=0;${chunks[2]}\x1b\\`);
+
+        expect(kittyHandler.pendingTransmissions.size).toBe(0);
+        const stored = kittyHandler.images.get(id);
+        expect(stored).toBeDefined();
+        const storedBytes = new Uint8Array(await stored.data.arrayBuffer());
+        expect(storedBytes).toEqual(rgba);
+        expect(responses).toContain(`\x1b_Gi=${id};OK\x1b\\`);
+    });
+
+    it("keeps decoding when a later chunk's '==' padding is split across two separate put() calls", async () => {
+        // Regression for the "slice-boundary split-pad" bug. This needs a
+        // pending entry to already exist (from an earlier, non-padded m=1
+        // chunk) before the padded chunk arrives - the pre-fix pad-detection
+        // only ever acted when `pending` was already set (see the previous
+        // test for the no-pending case). With a decoder already open and
+        // accumulating from chunk A, chunk B's own '==' pad is then split so
+        // the first put() call ends on the lone first '=' and the second
+        // carries only the trailing '='. The pre-fix code decided whether to
+        // finalize by looking at data[end-1] of each individual put() slice,
+        // so it finalized (and released the shared decoder, discarding
+        // chunk A's still-open bytes) on the first call's lone '=', then fed
+        // the second call's stray '=' into a brand-new decoder as its very
+        // first byte - which the decoder rejects, aborting the transfer.
+        const width = 2;
+        const height = 2;
+        const rgba = solidColorRgba(width, height, 42, 84, 126);
+        const id = 99;
+        const chunkABytes = rgba.subarray(0, 12); // multiple of 3 -> no padding
+        const chunkBBytes = rgba.subarray(12); // remaining 4 bytes -> "==" padding
+        const chunkAB64 = toBase64(chunkABytes);
+        const chunkBB64 = toBase64(chunkBBytes);
+        expect(chunkAB64.endsWith("=")).toBe(false);
+        expect(chunkBB64.endsWith("==")).toBe(true);
+
+        await writeAsync(term, `\x1b_Ga=t,f=32,s=${width},v=${height},i=${id},m=1;${chunkAB64}\x1b\\`);
+
+        const bodyB = `m=1;${chunkBB64}`;
+        const dataB = toCodepoints(bodyB);
+        const splitAt = bodyB.length - 1;
+
+        kittyHandler.start();
+        kittyHandler.put(dataB, 0, splitAt);
+        kittyHandler.put(dataB, splitAt, dataB.length);
+        await kittyHandler.end(true);
+        await writeAsync(term, "\x1b_Gm=0\x1b\\");
+
+        expect(kittyHandler.pendingTransmissions.size).toBe(0);
+        const stored = kittyHandler.images.get(id);
         expect(stored).toBeDefined();
         const storedBytes = new Uint8Array(await stored.data.arrayBuffer());
         expect(storedBytes).toEqual(rgba);
