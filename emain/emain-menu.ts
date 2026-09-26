@@ -8,6 +8,7 @@ import { fireAndForget } from "../frontend/util/util";
 import { focusedBuilderWindow, getBuilderWindowById } from "./emain-builder";
 import { openBuilderWindow } from "./emain-ipc";
 import { isDev, unamePlatform } from "./emain-platform";
+import { isLivePopup } from "./emain-popup";
 import { clearTabCache } from "./emain-tabview";
 import { decreaseZoomLevel, increaseZoomLevel, resetZoomLevel } from "./emain-util";
 import {
@@ -43,12 +44,18 @@ function getWindowWebContents(window: electron.BaseWindow): electron.WebContents
     return null;
 }
 
+// On macOS the app menu stays global, so the focused window can be a web-block popup or a
+// builder window rather than a RemoteTermBrowserWindow.
+function asRemoteTermWindow(window: electron.BaseWindow): RemoteTermBrowserWindow {
+    return window instanceof RemoteTermBrowserWindow ? window : null;
+}
+
 async function getWorkspaceMenu(ww?: RemoteTermBrowserWindow): Promise<Electron.MenuItemConstructorOptions[]> {
     const workspaceList = await RpcApi.WorkspaceListCommand(ElectronWshClient);
     const workspaceMenu: Electron.MenuItemConstructorOptions[] = [
         {
             label: "Create Workspace",
-            click: (_, window) => fireAndForget(() => createWorkspace((window as RemoteTermBrowserWindow) ?? ww)),
+            click: (_, window) => fireAndForget(() => createWorkspace(asRemoteTermWindow(window) ?? ww)),
         },
     ];
     function getWorkspaceSwitchAccelerator(i: number): string {
@@ -63,7 +70,7 @@ async function getWorkspaceMenu(ww?: RemoteTermBrowserWindow): Promise<Electron.
                 return {
                     label: `${workspace.workspacedata.name}`,
                     click: (_, window) => {
-                        ((window as RemoteTermBrowserWindow) ?? ww)?.switchWorkspace(workspace.workspacedata.oid);
+                        (asRemoteTermWindow(window) ?? ww)?.switchWorkspace(workspace.workspacedata.oid);
                     },
                     accelerator: getWorkspaceSwitchAccelerator(i),
                 };
@@ -137,7 +144,11 @@ function makeFileMenu(
         {
             role: "close",
             accelerator: "",
-            click: () => {
+            click: (_, window) => {
+                if (window != null && isLivePopup(window)) {
+                    window.close();
+                    return;
+                }
                 focusedRemoteTermWindow?.close();
             },
         },
