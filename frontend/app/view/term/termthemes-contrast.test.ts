@@ -32,7 +32,10 @@ const ForegroundKeys = [
 ] as const;
 
 describe("default-light palette", () => {
-    const theme = (termthemes as Record<string, Record<string, string>>)["default-light"];
+    const theme = (termthemes as Record<string, Record<string, unknown>>)["default-light"] as Record<
+        string,
+        string
+    >;
 
     test("exists with a white background and display metadata", () => {
         expect(theme).toBeDefined();
