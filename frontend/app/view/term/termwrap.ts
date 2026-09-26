@@ -865,8 +865,8 @@ export class TermWrap {
                 /* nothing */
             }
         });
-        this.mainFileSubjectSubscription.unsubscribe();
-        this.mainFileSubject.release();
+        this.mainFileSubjectSubscription?.unsubscribe();
+        this.mainFileSubject?.release();
     }
 
     handleTermData(data: string) {
