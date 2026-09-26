@@ -202,7 +202,7 @@ describe("buildPopupWindowOptions", () => {
         expect(opts).toMatchObject({ width: 480, height: 600 });
     });
 
-    it("pins native window options a hostile features string could otherwise control (H-1 defence in depth)", () => {
+    it("pins native window options a hostile features string could otherwise control", () => {
         const root = fakeWebContents();
         const { ctx } = ctxFor(root);
         const opts = buildPopupWindowOptions(PopupDetails, root, ctx);
