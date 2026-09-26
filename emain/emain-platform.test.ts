@@ -255,17 +255,11 @@ describe("data-dir migration shim", () => {
             makeDir(legacyData(), { "wave.lock": "" });
             const override = path.join(tmpHome, "custom-data");
             process.env[varName] = override;
-            let mod = await loadPlatform(true);
-            const markerFile = path.join(override, MarkerFileName);
-            expect(fs.readFileSync(markerFile, "utf8")).toMatch(/^no-migration-needed:override\n/);
+            const mod = await loadPlatform(true);
+            expect(fs.existsSync(path.join(override, MarkerFileName))).toBe(false);
             expect(fs.existsSync(path.join(legacyData(), "wave.lock"))).toBe(true);
             expect(fs.existsSync(newData())).toBe(false);
             expect(mod.getRemoteTermDataDir()).toBe(override);
-
-            fs.writeFileSync(markerFile, "sentinel");
-            vi.resetModules();
-            mod = await loadPlatform(true);
-            expect(fs.readFileSync(markerFile, "utf8")).toBe("sentinel");
             expect(mod.getMigrationFailures()).toEqual([]);
         }
     );

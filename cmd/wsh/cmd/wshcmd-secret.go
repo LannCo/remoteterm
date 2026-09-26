@@ -114,7 +114,7 @@ func secretSetRun(cmd *cobra.Command, args []string) error {
 	}
 
 	if backend == "basic_text" || backend == "unknown" {
-		return fmt.Errorf("No appropriate secret manager found, cannot set secrets")
+		return fmt.Errorf("no appropriate secret manager found, cannot set secrets")
 	}
 
 	secrets := map[string]*string{name: &value}

@@ -21,18 +21,23 @@ type AtomMeta struct {
 }
 
 type AtomImpl[T any] struct {
-	lock   *sync.Mutex
-	val    T
-	usedBy map[string]bool // component waveid -> true
-	meta   *AtomMeta       // optional metadata
+	lock *sync.Mutex
+	// writeLock serialises writers across a whole read-modify-write. It is separate from
+	// lock so that UpdateVal's callback (user code, which may read other atoms and so take
+	// RootElem.atomLock) never runs while holding lock, which RootElem takes under atomLock.
+	writeLock *sync.Mutex
+	val       T
+	usedBy    map[string]bool // component waveid -> true
+	meta      *AtomMeta       // optional metadata
 }
 
 func MakeAtomImpl[T any](initialVal T, meta *AtomMeta) *AtomImpl[T] {
 	return &AtomImpl[T]{
-		lock:   &sync.Mutex{},
-		val:    initialVal,
-		usedBy: make(map[string]bool),
-		meta:   meta,
+		lock:      &sync.Mutex{},
+		writeLock: &sync.Mutex{},
+		val:       initialVal,
+		usedBy:    make(map[string]bool),
+		meta:      meta,
 	}
 }
 
@@ -71,10 +76,28 @@ func (a *AtomImpl[T]) setVal_nolock(val any) error {
 	return nil
 }
 
-func (a *AtomImpl[T]) SetVal(val any) error {
+func (a *AtomImpl[T]) storeVal(val any) error {
 	a.lock.Lock()
 	defer a.lock.Unlock()
 	return a.setVal_nolock(val)
+}
+
+func (a *AtomImpl[T]) SetVal(val any) error {
+	a.writeLock.Lock()
+	defer a.writeLock.Unlock()
+	return a.storeVal(val)
+}
+
+// UpdateVal atomically replaces the value with fn(current). If fn returns an error the
+// value is left unchanged and the error is returned. fn must not write to this atom.
+func (a *AtomImpl[T]) UpdateVal(fn func(any) (any, error)) error {
+	a.writeLock.Lock()
+	defer a.writeLock.Unlock()
+	newVal, err := fn(a.GetVal())
+	if err != nil {
+		return err
+	}
+	return a.storeVal(newVal)
 }
 
 func (a *AtomImpl[T]) SetUsedBy(waveId string, used bool) {

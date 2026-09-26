@@ -41,7 +41,8 @@ it("first-run logo demo types and shows the RemoteTerm logo, not Wave art", () =
 
     const file = path.join(PublicDir, src.replace(/^\//, ""));
     expect(fs.existsSync(file), file).toBe(true);
-    expect(pngSize(file)).toEqual(pngSize(path.join(PublicDir, "logos/wave-logo.png")));
+    // Matches the pre-rename wave-logo.png it replaced, so the demo block lays out unchanged.
+    expect(pngSize(file)).toEqual([1563, 1563]);
 });
 
 it("first-run .bashrc demo aliases wsh as rt, not wave", () => {

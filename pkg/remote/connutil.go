@@ -34,6 +34,10 @@ import (
 const (
 	wshCopyStallTimeout       = 10 * time.Second
 	wshCopyStallCheckInterval = 1 * time.Second
+	// Each Write blocks until its whole chunk is on the SSH channel, and progress is only
+	// seen per Write, so the chunk size sets the slowest link the stall watchdog tolerates:
+	// 4 KB per 10s is about 400 B/s, where io.Copy's default 32 KB needed about 3.2 KB/s.
+	wshCopyChunkSize = 4 * 1024
 )
 
 var userHostRe = regexp.MustCompile(`^([a-zA-Z0-9][a-zA-Z0-9._@\\-]*@)?([a-zA-Z0-9][a-zA-Z0-9.-]*)(?::([0-9]+))?$`)
@@ -179,7 +183,8 @@ func CpWshToRemote(ctx context.Context, client *ssh.Client, clientOs string, cli
 		defer close(copyDone)
 		defer stdin.Close()
 		progressStdin := &genconn.ProgressWriter{Dst: stdin, Tracker: tracker}
-		_, copyErr := io.Copy(progressStdin, input)
+		// Hide *os.File's WriterTo, which would bypass the buffer and write 32 KB chunks.
+		_, copyErr := io.CopyBuffer(progressStdin, struct{ io.Reader }{input}, make([]byte, wshCopyChunkSize))
 		stopWatch()
 		if copyErr != nil && copyErr != io.EOF {
 			copyDone <- fmt.Errorf("failed to copy data: %w", copyErr)

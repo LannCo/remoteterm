@@ -346,19 +346,10 @@ export async function resolveLegacyInstanceBlock(): Promise<boolean> {
 }
 
 function migrateDataRoot(spec: MigrationRootSpec) {
-    const markerFile = path.join(spec.dest, MigrationMarkerFileName);
     if (spec.overridden) {
-        if (existsSync(markerFile)) {
-            return;
-        }
-        try {
-            mkdirSync(spec.dest, { recursive: true });
-            writeFileSync(markerFile, `no-migration-needed:override\n${new Date().toISOString()}\n`);
-        } catch (e) {
-            recordMigrationFailure(`failed to write override marker for ${spec.name} root`, e);
-        }
         return;
     }
+    const markerFile = path.join(spec.dest, MigrationMarkerFileName);
     if (existsSync(markerFile)) {
         return;
     }
@@ -774,8 +765,13 @@ ipcMain.on("get-user-name", (event) => {
 ipcMain.on("get-host-name", (event) => {
     event.returnValue = os.hostname();
 });
+
+export function getWebviewPreloadPath(): string {
+    return path.join(getElectronAppBasePath(), "preload", "preload-webview.cjs");
+}
+
 ipcMain.on("get-webview-preload", (event) => {
-    event.returnValue = path.join(getElectronAppBasePath(), "preload", "preload-webview.cjs");
+    event.returnValue = getWebviewPreloadPath();
 });
 ipcMain.on("get-data-dir", (event) => {
     event.returnValue = getRemoteTermDataDir();

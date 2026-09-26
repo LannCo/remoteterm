@@ -27,6 +27,7 @@ type EffectWorkElem struct {
 type genAtom interface {
 	GetVal() any
 	SetVal(any) error
+	UpdateVal(func(any) (any, error)) error
 	SetUsedBy(string, bool)
 	GetUsedBy() []string
 	GetMeta() *AtomMeta
@@ -44,6 +45,7 @@ type RootElem struct {
 	Atoms           map[string]genAtom // key: atomName
 	atomLock        sync.Mutex
 	RefOperations   []vdom.VDomRefOperation
+	refOpsLock      sync.Mutex
 	Client          *ClientImpl
 }
 
@@ -204,26 +206,44 @@ func (r *RootElem) AtomAddRenderWork(atomName string) {
 	}
 }
 
-func (r *RootElem) GetAtomVal(name string) any {
+// getAtom releases atomLock before returning so callers never hold it while taking an
+// atom's writeLock (see AtomImpl.writeLock for the lock ordering this protects).
+func (r *RootElem) getAtom(name string) genAtom {
 	r.atomLock.Lock()
 	defer r.atomLock.Unlock()
+	return r.Atoms[name]
+}
 
-	atom, ok := r.Atoms[name]
-	if !ok {
+func (r *RootElem) GetAtomVal(name string) any {
+	atom := r.getAtom(name)
+	if atom == nil {
 		return nil
 	}
 	return atom.GetVal()
 }
 
 func (r *RootElem) SetAtomVal(name string, val any) error {
-	r.atomLock.Lock()
-	defer r.atomLock.Unlock()
-
-	atom, ok := r.Atoms[name]
-	if !ok {
+	atom := r.getAtom(name)
+	if atom == nil {
 		return fmt.Errorf("atom %q not found", name)
 	}
 	return atom.SetVal(val)
+}
+
+func (r *RootElem) UpdateAtomVal(name string, fn func(any) (any, error)) error {
+	atom := r.getAtom(name)
+	if atom == nil {
+		return fmt.Errorf("atom %q not found", name)
+	}
+	return atom.UpdateVal(fn)
+}
+
+func (r *RootElem) GetAtomMeta(name string) (*AtomMeta, reflect.Type, bool) {
+	atom := r.getAtom(name)
+	if atom == nil {
+		return nil, nil, false
+	}
+	return atom.GetMeta(), atom.GetAtomType(), true
 }
 
 func (r *RootElem) RemoveAtom(name string) {
@@ -356,8 +376,10 @@ func (r *RootElem) runEffectUnmount(work *EffectWorkElem, hook *Hook) {
 		WorkType: "unmount",
 		Root:     r,
 	}
+	unmountFn := hook.UnmountFn
+	hook.UnmountFn = nil
 	withGlobalEffectCtx(effectCtx, func() any {
-		hook.UnmountFn()
+		unmountFn()
 		return nil
 	})
 }
@@ -388,6 +410,14 @@ func (r *RootElem) runEffect(work *EffectWorkElem, hook *Hook) {
 // this will be called by the frontend to say the DOM has been mounted
 // it will eventually send any updated "refs" to the backend as well
 func (r *RootElem) RunWork(opts *RenderOpts) {
+	r.runEffectWork()
+	renderIds := r.getAndClearRenderWork()
+	if len(renderIds) > 0 {
+		r.render(r.Root.Elem, &r.Root, "root", opts)
+	}
+}
+
+func (r *RootElem) runEffectWork() {
 	workQueue := r.EffectWorkQueue
 	r.EffectWorkQueue = nil
 	// first, run effect cleanups
@@ -407,11 +437,6 @@ func (r *RootElem) RunWork(opts *RenderOpts) {
 		}
 		hook := comp.Hooks[work.EffectIndex]
 		r.runEffect(work, hook)
-	}
-	// now check if we need a render
-	renderIds := r.getAndClearRenderWork()
-	if len(renderIds) > 0 {
-		r.render(r.Root.Elem, &r.Root, "root", opts)
 	}
 }
 
@@ -444,17 +469,28 @@ func (r *RootElem) UpdateRef(updateRef rpctypes.VDomRefUpdate) {
 		return
 	}
 	ref.HasCurrent.Store(updateRef.HasCurrent)
-	ref.Position = updateRef.Position
+	ref.Position.Store(updateRef.Position)
 	if updateRef.TermSize != nil {
-		ref.TermSize = updateRef.TermSize
+		ref.TermSize.Store(updateRef.TermSize)
 	}
 }
 
-func (r *RootElem) QueueRefOp(op vdom.VDomRefOperation) {
+func (r *RootElem) appendRefOp(op vdom.VDomRefOperation) {
+	r.refOpsLock.Lock()
+	defer r.refOpsLock.Unlock()
 	r.RefOperations = append(r.RefOperations, op)
 }
 
+func (r *RootElem) QueueRefOp(op vdom.VDomRefOperation) {
+	r.appendRefOp(op)
+	if inContextType() == GlobalContextType_async {
+		r.Client.notifyAsyncRenderWork()
+	}
+}
+
 func (r *RootElem) GetRefOperations() []vdom.VDomRefOperation {
+	r.refOpsLock.Lock()
+	defer r.refOpsLock.Unlock()
 	ops := r.RefOperations
 	r.RefOperations = nil
 	return ops

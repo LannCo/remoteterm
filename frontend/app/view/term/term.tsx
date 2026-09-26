@@ -311,7 +311,7 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
                 macOptionIsMeta: termMacOptionIsMeta,
                 cursorStyle: termCursorStyle,
                 cursorBlink: termCursorBlink,
-                overviewRuler: { width: 6 },
+                scrollbar: { width: 6 },
             },
             {
                 keydownHandler: model.handleTerminalKeydown.bind(model),
@@ -338,6 +338,9 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
             }, 10);
         }
         return () => {
+            if ((window as any).term === termWrap) {
+                (window as any).term = null;
+            }
             termWrap.dispose();
             rszObs.disconnect();
             setTermWrapInst(null);

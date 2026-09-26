@@ -40,12 +40,12 @@ type VDomFunc struct {
 
 // used in props
 type VDomRef struct {
-	Type          string           `json:"type" tstype:"\"ref\""`
-	RefId         string           `json:"refid"`
-	TrackPosition bool             `json:"trackposition,omitempty"`
-	Position      *VDomRefPosition `json:"-"`
-	HasCurrent    atomic.Bool      `json:"-"`
-	TermSize      *VDomTermSize    `json:"-"`
+	Type          string                          `json:"type" tstype:"\"ref\""`
+	RefId         string                          `json:"refid"`
+	TrackPosition bool                            `json:"trackposition,omitempty"`
+	Position      atomic.Pointer[VDomRefPosition] `json:"-"`
+	HasCurrent    atomic.Bool                     `json:"-"`
+	TermSize      atomic.Pointer[VDomTermSize]    `json:"-"`
 }
 
 func (r *VDomRef) MarshalJSON() ([]byte, error) {

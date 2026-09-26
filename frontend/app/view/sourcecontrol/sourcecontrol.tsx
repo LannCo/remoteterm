@@ -8,7 +8,7 @@ import { Tooltip } from "@/app/element/tooltip";
 import { makeIconClass } from "@/util/util";
 import * as jotai from "jotai";
 import * as monaco from "monaco-editor";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { ActionErrorBanner } from "./action-error";
 import { DiffGutter } from "./DiffGutter";
@@ -139,6 +139,9 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
     const [saveScope, setSaveScope] = useState<"repo" | "host">("repo");
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    const dialogRef = useRef<HTMLDivElement>(null);
+    const titleId = useId();
+
     // Pre-fill username when dialog opens
     useEffect(() => {
         if (showAuthDialog) {
@@ -189,6 +192,30 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
         }
     }, [handleSubmit, handleCancel]);
 
+    // No shared FocusTrap component exists in this codebase (single use site) — trap directly here.
+    const handleDialogKeyDown = useCallback((e: React.KeyboardEvent) => {
+        if (e.key === "Escape") {
+            handleCancel();
+            return;
+        }
+        if (e.key !== "Tab") return;
+        const dialog = dialogRef.current;
+        if (!dialog) return;
+        const focusable = dialog.querySelectorAll<HTMLElement>(
+            'button, input, [href], select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+        }
+    }, [handleCancel]);
+
     if (!showAuthDialog) {
         return null;
     }
@@ -198,21 +225,28 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
-            <div className="bg-[#1e1e1e] border border-[#3e3e3e] rounded-lg shadow-2xl w-96 p-6">
+            <div
+                ref={dialogRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
+                onKeyDown={handleDialogKeyDown}
+                className="bg-modalbg border border-border rounded-lg shadow-2xl w-96 p-6"
+            >
                 <div className="flex items-center justify-center gap-2 mb-4">
-                    <i className="fa-solid fa-lock text-[#888]" />
-                    <h3 className="text-sm font-medium text-white">
+                    <i className="fa-solid fa-lock text-muted" />
+                    <h3 id={titleId} className="text-sm font-medium text-primary">
                         {authIsRetry ? "Authentication Failed" : "Authentication Required"}
                     </h3>
                 </div>
 
                 {authError && (
-                    <div className="mb-4 p-2 bg-red-500/20 border border-red-500/30 rounded text-xs text-red-400">
+                    <div role="alert" className="mb-4 p-2 bg-red-500/20 border border-red-500/30 rounded text-xs text-red-400">
                         {authError}
                     </div>
                 )}
 
-                <p className="text-xs text-[#888] mb-4">
+                <p className="text-xs text-muted mb-4">
                     {authIsRetry
                         ? `Stored credentials for ${displayHost} were rejected. Enter new credentials:`
                         : `git push to ${displayHost}`
@@ -221,10 +255,10 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
 
                 <div className="space-y-4">
                     <div className="flex items-center gap-3">
-                        <label className="text-xs text-[#888] w-20 text-right">Username</label>
+                        <label className="text-xs text-muted w-20 text-right">Username</label>
                         <input
                             type="text"
-                            className="flex-1 px-3 py-2 text-xs bg-[#2d2d2d] border border-[#3e3e3e] rounded outline-none focus:border-[#555] text-white"
+                            className="flex-1 px-3 py-2 text-xs bg-black/20 border border-border rounded outline-none focus:border-accent text-primary"
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}
                             onKeyDown={handleKeyDown}
@@ -234,10 +268,10 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
                     </div>
 
                     <div className="flex items-center gap-3">
-                        <label className="text-xs text-[#888] w-20 text-right">Password</label>
+                        <label className="text-xs text-muted w-20 text-right">Password</label>
                         <input
                             type="password"
-                            className="flex-1 px-3 py-2 text-xs bg-[#2d2d2d] border border-[#3e3e3e] rounded outline-none focus:border-[#555] text-white"
+                            className="flex-1 px-3 py-2 text-xs bg-black/20 border border-border rounded outline-none focus:border-accent text-primary"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             onKeyDown={handleKeyDown}
@@ -254,7 +288,7 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
                                     onChange={(e) => setSaveToSecrets(e.target.checked)}
                                     className="w-3 h-3"
                                 />
-                                <span className="text-xs text-[#888]">Save credentials in secrets store</span>
+                                <span className="text-xs text-muted">Save credentials in secrets store</span>
                             </label>
 
                             {saveToSecrets && (
@@ -267,7 +301,7 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
                                             onChange={() => setSaveScope("repo")}
                                             className="w-3 h-3"
                                         />
-                                        <span className="text-xs text-[#888]">This repo</span>
+                                        <span className="text-xs text-muted">This repo</span>
                                     </label>
                                     <label className="flex items-center gap-2 cursor-pointer">
                                         <input
@@ -277,7 +311,7 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
                                             onChange={() => setSaveScope("host")}
                                             className="w-3 h-3"
                                         />
-                                        <span className="text-xs text-[#888]">All repos for this remote</span>
+                                        <span className="text-xs text-muted">All repos for this remote</span>
                                     </label>
                                 </div>
                             )}
@@ -293,7 +327,7 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
                                     readOnly
                                     className="w-3 h-3"
                                 />
-                                <span className="text-xs text-[#888]">Update stored credentials</span>
+                                <span className="text-xs text-muted">Update stored credentials</span>
                             </label>
                         </div>
                     )}
@@ -301,17 +335,17 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
 
                 <div className="flex justify-end gap-2 mt-6">
                     <button
-                        className="px-3 py-1.5 text-xs rounded bg-[#3e3e3e] hover:bg-[#4e4e4e] text-white transition-colors"
+                        className="px-3 py-1.5 text-xs rounded bg-panel hover:bg-hoverbg text-primary transition-colors cursor-pointer"
                         onClick={handleCancel}
                         disabled={isSubmitting}
                     >
                         Cancel
                     </button>
                     <button
-                        className={`px-3 py-1.5 text-xs rounded font-medium transition-colors ${
+                        className={`px-3 py-1.5 text-xs rounded font-medium transition-colors cursor-pointer ${
                             username && password && !isSubmitting
-                                ? "bg-[#0e639c] hover:bg-[#1177bb] text-white"
-                                : "bg-[#3e3e3e] text-[#888] cursor-not-allowed"
+                                ? "bg-accent/80 hover:bg-accent text-background"
+                                : "bg-panel text-muted"
                         }`}
                         onClick={handleSubmit}
                         disabled={!username || !password || isSubmitting}
@@ -447,7 +481,7 @@ const CommitInput = memo(({ model, hasStagedChanges, hasUnpushedCommits }: {
     return (
         <div className="flex flex-col gap-2">
             <textarea
-                className="w-full px-2 py-1.5 text-xs bg-surface border border-border rounded resize-none outline-none focus:border-zinc-500 placeholder:text-muted overflow-hidden text-ellipsis [&::placeholder]:whitespace-nowrap [&::placeholder]:overflow-hidden [&::placeholder]:text-ellipsis"
+                className="w-full px-2 py-1.5 text-xs bg-surface border border-border rounded resize-none outline-none focus:border-accent placeholder:text-muted overflow-hidden text-ellipsis [&::placeholder]:whitespace-nowrap [&::placeholder]:overflow-hidden [&::placeholder]:text-ellipsis"
                 placeholder="Commit message (Ctrl+Enter to commit)"
                 rows={1}
                 value={commitMessage}
@@ -522,7 +556,7 @@ const ReviewDropdown = memo(({ totalCount, stagedCount, unstagedCount, onReviewA
             {open && (
                 <>
                     <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-                    <div className="absolute right-0 top-full mt-1 z-50 bg-[#252526] border border-[#3e3e3e] rounded shadow-lg min-w-[160px]">
+                    <div className="absolute right-0 top-full mt-1 z-50 bg-modalbg border border-border rounded shadow-lg min-w-[160px]">
                         <button
                             className="w-full text-left px-3 py-1.5 text-xs text-secondary hover:bg-hoverbg hover:text-white"
                             onClick={() => { setOpen(false); onReviewAll(); }}

@@ -168,6 +168,7 @@ tasks:
             - "cmd/generateschema/*.go"
             - "pkg/rtconfig/*.go"
         generates:
+            - "schema/*.json"
             - "dist/schema/**/*"
         cmds:
             - "{{.GO}} run cmd/generateschema/main-generateschema.go"

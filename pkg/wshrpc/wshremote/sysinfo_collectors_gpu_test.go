@@ -82,8 +82,8 @@ func TestNvidiaCollectorParsesMultiGpuCsv(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	want := map[string]float64{
-		"gpu:0:util":      45, "gpu:0:vram": 2048, "gpu:0:vramtotal": 8192, "gpu:0:temp": 62,
-		"gpu:1:util":      12, "gpu:1:vram": 512, "gpu:1:vramtotal": 8192, "gpu:1:temp": 51,
+		"gpu:0:util": 45, "gpu:0:vram": 2048, "gpu:0:vramtotal": 8192, "gpu:0:temp": 62,
+		"gpu:1:util": 12, "gpu:1:vram": 512, "gpu:1:vramtotal": 8192, "gpu:1:temp": 51,
 	}
 	for k, v := range want {
 		if values[k] != v {
@@ -161,7 +161,9 @@ func TestAmdCollectorParsesRocmSmiJson(t *testing.T) {
 
 func TestAmdCollectorProbeFalseOnMissingCommand(t *testing.T) {
 	withRocmPathSeams(t,
-		func(string) (string, error) { return "", errors.New("exec: \"rocm-smi\": executable file not found in $PATH") },
+		func(string) (string, error) {
+			return "", errors.New("exec: \"rocm-smi\": executable file not found in $PATH")
+		},
 		func(string) ([]string, error) { return nil, nil },
 	)
 	c := MakeAmdGpuCollector()
@@ -458,5 +460,32 @@ func TestIntelCollectorRejectsMalformedJson(t *testing.T) {
 	c.Probe()
 	if _, err := c.Collect(); err == nil {
 		t.Fatal("expected an error on malformed JSON, got nil")
+	}
+}
+
+func TestRunGpuToolTimesOutHungTool(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("sh not available")
+	}
+	start := time.Now()
+	// The backgrounded sleep inherits stdout, so this also covers a child outliving the kill.
+	_, err = runGpuTool(200*time.Millisecond, sh, "-c", "sleep 30 & sleep 30")
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatalf("expected a timeout error from a hung tool")
+	}
+	if elapsed > 3*time.Second {
+		t.Fatalf("runGpuTool took %v; timeout did not bound the call", elapsed)
+	}
+}
+
+func TestRunGpuToolReturnsOutput(t *testing.T) {
+	out, err := runGpuTool(5*time.Second, "echo", "ok")
+	if err != nil {
+		t.Fatalf("runGpuTool: %v", err)
+	}
+	if string(out) != "ok\n" {
+		t.Fatalf("output = %q, want %q", out, "ok\n")
 	}
 }
