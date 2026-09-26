@@ -40,4 +40,8 @@ Both are flagged here rather than fixed; fixing them is outside this plan's task
 
 ## Palette review
 - [ ] `default-light` colours acceptable as rendered. Adjustments go in `pkg/rtconfig/defaultconfig/termthemes.json`; `termthemes-contrast.test.ts` enforces 4.5:1.
-- [ ] Task 8 evidence (`.pi/evidence/2026-09-25-theme-cohesion/README.md`) flags the terminal's light-mode background as sampling `rgb(127,127,127)` rather than white in the nested-Xvfb capture; worth a look in a real session.
+- [x] Task 8 evidence flagged the terminal's light-mode background as sampling `rgb(127,127,127)`
+      rather than white. Rechecked 2026-09-26 (see README's "2026-09-26 recheck" section): does not
+      reproduce — two independent capture methods (CDP + native X11), multiple sample points, both
+      light and dark, all match the expected tokens. No fix needed; treat the original reading as a
+      measurement artifact.

@@ -75,3 +75,44 @@ Titlebar under global dark. Background `rgb(22,22,22)`, matching the tab-overrid
   review line, not a script-detectable pass/fail.
 - Command execution was confirmed via the terminal's own echoed `metadata set` / `config set`
   output, not just by screenshot timing.
+
+## 2026-09-26 recheck: `127,127,127` does not reproduce
+
+Re-ran the light-mode terminal capture at the same commit (`411a27fa`) under a fresh nested Xvfb
+(`:98`, isolation confirmed via `/proc/<pid>/environ` on every launched process — see the a11y-auditor's
+report to the team lead for the full check), scratch `XDG_CONFIG_HOME`/`XDG_DATA_HOME` at
+`/tmp/rt-theme-98` (shortened from the original evidence's path to stay under the Unix-socket
+108-byte path limit — the deep `.pi/evidence`-style scratch path made `remotetermsrv` fail to bind
+its socket and exit).
+
+Traced the colour-token chain first: `.block-frame-default-inner` gets an inline
+`background: rgba(255,255,255,0.5)` (from `term-model.ts`'s `blockBg` atom via
+`termutil.ts:computeTheme`, `term:transparency` defaulting to `0.5`); `getComputedStyle` on every
+other ancestor from `.xterm` up to `<html>` reported `rgba(0, 0, 0, 0)` (fully transparent) except
+`<body>`, which resolved to solid white (`color(srgb 1 1 1)`, i.e. `--main-bg-color: rgb(255,255,255)`
+under `:root[data-theme="light"]`, `--window-opacity: 1`). Blending 50%-alpha white over opaque
+white is white at any alpha — mathematically there is no token-chain path in the current code that
+reaches `127,127,127`.
+
+Sampled the live pixel two ways to rule out a rendering-pipeline artifact (the run's console logged
+`WebGL2 blocklisted`, worth checking before trusting any single capture method in a software-GL
+Xvfb session):
+- CDP `Page.captureScreenshot` (renderer-level, bypasses native window compositing):
+  `srgb(255,255,255)` at the sampled point.
+- Native X11 `import -window <id>` (same tool the original evidence used), three points in the
+  terminal's blank area: `srgb(255,255,255)` at all three.
+- Toggled to `window:appearancemode: dark` and re-captured: `srgb(17,17,17)`, matching the original
+  evidence's dark-mode reading exactly, confirming the capture pipeline and the mode-toggle plumbing
+  are both live, not stale. Toggled back to light: `srgb(255,255,255)` again.
+
+`emain/emain-window.ts` sets the native `BrowserWindow`'s `backgroundColor: "#222222"` unconditionally
+on Linux when `window:transparent` is off (the default here) — that's a plausible-looking dark
+constant, but it only paints before first content paint or behind truly transparent CSS regions
+(`winOpts.transparent` is never set to `true` in this path), and the sampled pixels rule it out as a
+factor here.
+
+**Verdict: not reproducible, no fix applied.** The original `127,127,127` reading in
+`01-global-light-terminal.png` was most likely a measurement artifact (wrong sample coordinate,
+or a transitional/partial frame caught mid-repaint) rather than a real background-colour bug.
+Screenshots: `08-recheck-light-terminal-white.png`, `09-recheck-dark-terminal.png` (X11-level
+captures, this session). `CHECKLIST.md`'s Palette review line can be marked resolved on this point.
