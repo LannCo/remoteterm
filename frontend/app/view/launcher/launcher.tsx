@@ -5,18 +5,12 @@ import logoUrl from "@/app/asset/logo.svg?url";
 import type { BlockNodeModel } from "@/app/block/blocktypes";
 import { atoms, globalStore, replaceBlock } from "@/app/store/global";
 import type { TabModel } from "@/app/store/tab-model";
+import { sortByDisplayOrder } from "@/app/workspace/widgetfilter";
 import { checkKeyPressed, keydownWrapper } from "@/util/keyutil";
 import { isBlank, makeIconClass } from "@/util/util";
 import clsx from "clsx";
 import { atom, useAtom, useAtomValue } from "jotai";
 import React, { useEffect, useLayoutEffect, useRef } from "react";
-
-function sortByDisplayOrder(wmap: { [key: string]: WidgetConfigType } | null | undefined): WidgetConfigType[] {
-    if (!wmap) return [];
-    const wlist = Object.values(wmap);
-    wlist.sort((a, b) => (a["display:order"] ?? 0) - (b["display:order"] ?? 0));
-    return wlist;
-}
 
 type GridLayoutType = { columns: number; tileWidth: number; tileHeight: number; showLabel: boolean };
 

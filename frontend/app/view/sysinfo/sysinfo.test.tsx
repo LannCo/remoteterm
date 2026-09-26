@@ -138,10 +138,37 @@ describe("plotMemoKey", () => {
         decimalPlaces: 0,
     };
 
-    it("stays equal across ticks where this metric's own latest value and dimensions are unchanged", () => {
-        const a = plotMemoKey([{ ts: 1000, cpu: 42 }], "cpu", cpuMeta, "#000", 300, 150, 120);
-        const b = plotMemoKey([{ ts: 1000 }, { ts: 2000, cpu: 42 }], "cpu", cpuMeta, "#000", 300, 150, 120);
+    // 120 s across 300 px = 400 ms of axis travel per pixel.
+    it("stays equal while the value is unchanged and the axis has moved less than a pixel", () => {
+        const a = plotMemoKey([{ ts: 800, cpu: 42 }], "cpu", cpuMeta, "#000", 300, 150, 120);
+        const b = plotMemoKey([{ ts: 800 }, { ts: 1100, cpu: 42 }], "cpu", cpuMeta, "#000", 300, 150, 120);
         expect(b).toEqual(a);
+    });
+
+    it("changes when the axis advances a pixel or more even though the value is constant", () => {
+        const a = plotMemoKey([{ ts: 1000, cpu: 0 }], "cpu", cpuMeta, "#000", 300, 150, 120);
+        const b = plotMemoKey([{ ts: 1000, cpu: 0 }, { ts: 2000, cpu: 0 }], "cpu", cpuMeta, "#000", 300, 150, 120);
+        expect(b).not.toEqual(a);
+    });
+
+    it("scales the skip window with the time span per pixel", () => {
+        const a = plotMemoKey([{ ts: 0, cpu: 5 }], "cpu", cpuMeta, "#000", 300, 150, 3600);
+        const b = plotMemoKey([{ ts: 0 }, { ts: 11000, cpu: 5 }], "cpu", cpuMeta, "#000", 300, 150, 3600);
+        const c = plotMemoKey([{ ts: 0 }, { ts: 12000, cpu: 5 }], "cpu", cpuMeta, "#000", 300, 150, 3600);
+        expect(b).toEqual(a);
+        expect(c).not.toEqual(a);
+    });
+
+    it("changes when the metric's display name changes", () => {
+        const a = plotMemoKey([{ ts: 1000, cpu: 42 }], "cpu", cpuMeta, "#000", 300, 150, 120);
+        const renamed = { ...cpuMeta, name: "CPU (all)" };
+        expect(plotMemoKey([{ ts: 1000, cpu: 42 }], "cpu", renamed, "#000", 300, 150, 120)).not.toEqual(a);
+    });
+
+    it("keys on the raw timestamp when the plot has no width yet", () => {
+        const a = plotMemoKey([{ ts: 1000, cpu: 42 }], "cpu", cpuMeta, "#000", 0, 0, 120);
+        const b = plotMemoKey([{ ts: 1001, cpu: 42 }], "cpu", cpuMeta, "#000", 0, 0, 120);
+        expect(b).not.toEqual(a);
     });
 
     it("changes when this metric's own latest value changes", () => {
@@ -157,8 +184,8 @@ describe("plotMemoKey", () => {
     });
 
     it("treats two NaN latest values (gap markers) as an unchanged key, not a fresh diff each tick", () => {
-        const a = plotMemoKey([{ ts: 1000, cpu: NaN }], "cpu", cpuMeta, "#000", 300, 150, 120);
-        const b = plotMemoKey([{ ts: 2000, cpu: NaN }], "cpu", cpuMeta, "#000", 300, 150, 120);
+        const a = plotMemoKey([{ ts: 800, cpu: NaN }], "cpu", cpuMeta, "#000", 300, 150, 120);
+        const b = plotMemoKey([{ ts: 1100, cpu: NaN }], "cpu", cpuMeta, "#000", 300, 150, 120);
         expect(b).toEqual(a);
     });
 

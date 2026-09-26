@@ -257,6 +257,9 @@ export class TermWrap {
     onLinkHover?: (uri: string | null, mouseX: number, mouseY: number) => void;
 
     _visibilityChangeHandler: (() => void) | null = null;
+    disposed: boolean = false;
+    idleTimeoutId: ReturnType<typeof setTimeout> | null = null;
+    idleCallbackId: number | null = null;
 
     // Paste deduplication
     // xterm.js paste() method triggers onData event, which can cause duplicate sends
@@ -446,9 +449,6 @@ export class TermWrap {
                                         if (ctx) { ctx.imageSmoothingEnabled = true; ctx.drawImage(tmp, 0, 0, tw, th); }
                                     }
 
-                                    const cols = Math.ceil(canvas.width / cw);
-                                    const rows = Math.ceil(canvas.height / ch);
-                                    
                                     storage.addImage(canvas);
                                     rawChunks = [];
                                     rawTotal = 0;
@@ -792,17 +792,26 @@ export class TermWrap {
         } catch (e) {
             console.error("Error loading runtime info:", e);
         }
+        if (this.disposed) {
+            return;
+        }
 
         try {
             await this.loadInitialTerminalData();
         } finally {
-            this.loaded = true;
-            if (this.heldData.length > 0) {
-                for (const data of this.heldData) {
-                    this.doTerminalWrite(data, null);
+            // dispose() can run during the awaits above (initTerminal is fire-and-forget)
+            if (!this.disposed) {
+                this.loaded = true;
+                if (this.heldData.length > 0) {
+                    for (const data of this.heldData) {
+                        this.doTerminalWrite(data, null);
+                    }
+                    this.heldData = [];
                 }
-                this.heldData = [];
             }
+        }
+        if (this.disposed) {
+            return;
         }
         this._visibilityChangeHandler = () => {
             if (document.visibilityState === "visible") {
@@ -842,6 +851,15 @@ export class TermWrap {
     }
 
     dispose() {
+        this.disposed = true;
+        if (this.idleTimeoutId != null) {
+            clearTimeout(this.idleTimeoutId);
+            this.idleTimeoutId = null;
+        }
+        if (this.idleCallbackId != null) {
+            window.cancelIdleCallback(this.idleCallbackId);
+            this.idleCallbackId = null;
+        }
         if (this._visibilityChangeHandler) {
             document.removeEventListener("visibilitychange", this._visibilityChangeHandler);
             this._visibilityChangeHandler = null;
@@ -930,6 +948,9 @@ export class TermWrap {
         const startTs = Date.now();
         const zoneId = this.getZoneId();
         const { data: cacheData, fileInfo: cacheFile } = await fetchWaveFile(zoneId, TermCacheFileName);
+        if (this.disposed) {
+            return;
+        }
         let ptyOffset = 0;
         if (cacheFile != null) {
             ptyOffset = cacheFile.meta["ptyoffset"] ?? 0;
@@ -959,10 +980,16 @@ export class TermWrap {
             // Restore images from sidecar
             await this.restoreImages();
         }
+        if (this.disposed) {
+            return;
+        }
         const { data: mainData, fileInfo: mainFile } = await fetchWaveFile(zoneId, TermFileName, ptyOffset);
         console.log(
             `terminal loaded cachefile:${cacheData?.byteLength ?? 0} main:${mainData?.byteLength ?? 0} bytes, ${Date.now() - startTs}ms`
         );
+        if (this.disposed) {
+            return;
+        }
         if (mainFile != null) {
             await this.doTerminalWrite(mainData, null);
         }
@@ -993,6 +1020,7 @@ export class TermWrap {
 
                     const b64 = new TextDecoder().decode(imgData);
                     const canvas = await decodePngBase64(b64, entry.width, entry.height);
+                    if (this.disposed) return;
                     if (!canvas) continue;
 
                     if (entry.row < 0 || entry.row >= buffer.lines.length) continue;
@@ -1002,7 +1030,6 @@ export class TermWrap {
 
                     if (isInViewport) {
                         // Use addImage for visible images (handles cursor, lineFeed, eviction markers)
-                        const ybaseBefore = buffer.ybase;
                         buffer.x = entry.col;
                         buffer.y = viewportRow;
                         storage.addImage(canvas, {
@@ -1226,8 +1253,16 @@ export class TermWrap {
     }
 
     runProcessIdleTimeout() {
-        setTimeout(() => {
-            window.requestIdleCallback(() => {
+        if (this.disposed) {
+            return;
+        }
+        this.idleTimeoutId = setTimeout(() => {
+            this.idleTimeoutId = null;
+            this.idleCallbackId = window.requestIdleCallback(() => {
+                this.idleCallbackId = null;
+                if (this.disposed) {
+                    return;
+                }
                 this.processAndCacheData();
                 this.runProcessIdleTimeout();
             });

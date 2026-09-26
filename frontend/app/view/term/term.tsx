@@ -345,6 +345,9 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
             }, 10);
         }
         return () => {
+            if ((window as any).term === termWrap) {
+                (window as any).term = null;
+            }
             termWrap.dispose();
             rszObs.disconnect();
             setTermWrapInst(null);
