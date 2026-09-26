@@ -3112,3 +3112,50 @@ func TestAttemptReconnect_WaitsWhenConnecting(t *testing.T) {
 		t.Fatalf("AttemptReconnect while Connecting: %v", err)
 	}
 }
+
+func TestDetachedTimeoutSurvivesParentCancellation(t *testing.T) {
+	t.Parallel()
+
+	parent, parentCancel := context.WithCancel(context.Background())
+	child, childCancel := detachedTimeout(parent, 50*time.Millisecond)
+	defer childCancel()
+
+	// Simulate the connect-phase context being aborted (or its own deadline
+	// firing) after this sub-phase has already started.
+	parentCancel()
+
+	select {
+	case <-child.Done():
+		t.Fatal("expected child context to survive parent cancellation")
+	default:
+	}
+	if err := child.Err(); err != nil {
+		t.Fatalf("expected no error on child immediately after parent cancellation, got %v", err)
+	}
+
+	<-child.Done()
+	if !errors.Is(child.Err(), context.DeadlineExceeded) {
+		t.Fatalf("expected child to expire via its own timeout, got %v", child.Err())
+	}
+}
+
+func TestDetachedTimeoutSurvivesParentDeadlineExpiry(t *testing.T) {
+	t.Parallel()
+
+	// Mirrors the real bug: wshCtx's own wshStartupTimeout budget expires
+	// while a sub-phase (install, post-install verify, or the approval wait)
+	// is still running on its own independent, longer timeout.
+	parent, parentCancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer parentCancel()
+	child, childCancel := detachedTimeout(parent, 200*time.Millisecond)
+	defer childCancel()
+
+	<-parent.Done()
+	time.Sleep(20 * time.Millisecond)
+
+	select {
+	case <-child.Done():
+		t.Fatal("expected child to still be running after parent's shorter deadline expired")
+	default:
+	}
+}
