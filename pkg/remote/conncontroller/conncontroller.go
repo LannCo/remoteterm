@@ -1099,6 +1099,39 @@ const wshStartupMaxRetries = 3
 // deadline expiring mid-backoff.
 const wshStartupTimeout = 30 * time.Second
 
+// wshApprovalTimeout bounds the install-approval wait (conn:askbeforewshinstall
+// == true). A human clicking "Allow" takes far longer than a network
+// round-trip, so this must not share wshStartupTimeout's clock with the
+// binary transfer: a slow approval click and a slow upload would otherwise
+// compete for the same 30s budget.
+const wshApprovalTimeout = 10 * time.Minute
+
+// wshInstallTimeout bounds InstallWsh (platform detection + binary copy)
+// independently of wshStartupTimeout, so a slow upload isn't killed by the
+// same deadline that covers the pre-install connserver check. The binary
+// copy itself is governed by a stall timeout, not a wall clock (see
+// CpWshToRemote/wshCopyStallTimeout in pkg/remote/connutil.go); this is a
+// generous outer bound on the rest of InstallWsh's work.
+const wshInstallTimeout = 5 * time.Minute
+
+// wshPostInstallVerifyTimeout re-runs startConnServerWithRetry after install
+// completes. It gets a fresh budget rather than whatever remains of
+// wshStartupTimeout after install, so a slow install doesn't starve the
+// re-verify step of the time it needs.
+const wshPostInstallVerifyTimeout = wshStartupTimeout
+
+// detachedTimeout derives an independent timeout for a wsh sub-phase
+// (install-approval wait, install, or post-install re-verify), detached via
+// context.WithoutCancel from parent's own deadline so that deadline expiring
+// doesn't kill a sub-phase that needs more room. parent (wshCtx) is never
+// canceled before tryEnableWsh returns -- its cancel is only called as
+// cleanup by the caller afterward -- so there is no live "abort this
+// connection attempt" signal to preserve here; a plain WithTimeout on the
+// detached parent is sufficient.
+func detachedTimeout(parent context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(parent), d)
+}
+
 // startConnServerWithRetry wraps StartConnServer with retry logic to handle
 // transient failures (e.g., context deadline during sleep/wake cycles).
 // Retries up to wshStartupMaxRetries times with linear backoff.
@@ -1907,7 +1940,9 @@ func (conn *SSHConn) tryEnableWsh(ctx context.Context, clientDisplayName string)
 		return WshCheckResult{NoWshReason: "conn:wshenabled set to false", NoWshCode: NoWshCode_Disabled}
 	}
 	if askBeforeInstall {
-		allowInstall, err := conn.getPermissionToInstallWsh(ctx, clientDisplayName)
+		approvalCtx, approvalCancel := detachedTimeout(ctx, wshApprovalTimeout)
+		allowInstall, err := conn.getPermissionToInstallWsh(approvalCtx, clientDisplayName)
+		approvalCancel()
 		if err != nil {
 			log.Printf("error getting permission to install wsh: %v\n", err)
 			return WshCheckResult{NoWshReason: "error getting user permission to install", NoWshCode: NoWshCode_PermissionError, WshError: err}
@@ -1929,12 +1964,16 @@ func (conn *SSHConn) tryEnableWsh(ctx context.Context, clientDisplayName string)
 	}
 	if needsInstall {
 		conn.Infof(ctx, "connserver needs to be (re)installed\n")
-		err = conn.InstallWsh(ctx, osArchStr)
+		installCtx, installCancel := detachedTimeout(ctx, wshInstallTimeout)
+		err = conn.InstallWsh(installCtx, osArchStr)
+		installCancel()
 		if err != nil {
 			conn.Infof(ctx, "ERROR installing wsh: %v\n", err)
 			return WshCheckResult{NoWshReason: "error installing wsh/connserver", NoWshCode: NoWshCode_InstallError, WshError: fmt.Errorf("error installing wsh: %w", err)}
 		}
-		needsInstall, clientVersion, _, err = conn.startConnServerWithRetry(ctx, true, true)
+		verifyCtx, verifyCancel := detachedTimeout(ctx, wshPostInstallVerifyTimeout)
+		needsInstall, clientVersion, _, err = conn.startConnServerWithRetry(verifyCtx, true, true)
+		verifyCancel()
 		if err != nil {
 			conn.Infof(ctx, "ERROR starting conn server (after install): %v\n", err)
 			return WshCheckResult{NoWshReason: "error starting connserver", NoWshCode: NoWshCode_PostInstallStartError, WshError: fmt.Errorf("error starting conn server (after install): %w", err)}
