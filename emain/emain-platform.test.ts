@@ -123,7 +123,30 @@ describe("combined-home fallback", () => {
 });
 
 describe("Electron userData dir (single-instance lock scope)", () => {
-    it("nests under the resolved config dir by default, matching the pre-existing appData/remoteterm/electron layout", async () => {
+    it("isRemoteTermOverrideActive is false with no override vars set, true with any one of them set", async () => {
+        let mod = await loadPlatform(true);
+        expect(mod.isRemoteTermOverrideActive()).toBe(false);
+
+        vi.resetModules();
+        process.env.REMOTETERM_CONFIG_HOME = makeDir(path.join(tmpHome, "cfg-override"));
+        mod = await loadPlatform(true);
+        expect(mod.isRemoteTermOverrideActive()).toBe(true);
+        delete process.env.REMOTETERM_CONFIG_HOME;
+
+        vi.resetModules();
+        process.env.REMOTETERM_DATA_HOME = makeDir(path.join(tmpHome, "data-override"));
+        mod = await loadPlatform(true);
+        expect(mod.isRemoteTermOverrideActive()).toBe(true);
+        delete process.env.REMOTETERM_DATA_HOME;
+
+        vi.resetModules();
+        process.env.REMOTETERM_HOME = makeDir(path.join(tmpHome, "home-override"));
+        mod = await loadPlatform(true);
+        expect(mod.isRemoteTermOverrideActive()).toBe(true);
+        delete process.env.REMOTETERM_HOME;
+    });
+
+    it("getElectronUserDataDir nests under the resolved config dir — only meant to be used when isRemoteTermOverrideActive() is true", async () => {
         const mod = await loadPlatform(true);
         expect(mod.getElectronUserDataDir()).toBe(path.join(mod.getRemoteTermConfigDir(), "electron"));
         expect(mod.getElectronUserDataDir()).toBe(path.join(xdgConfig, "remoteterm", "electron"));
