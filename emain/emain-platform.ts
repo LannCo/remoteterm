@@ -22,10 +22,10 @@ import path from "path";
 import { RemoteTermDevVarName, RemoteTermDevViteVarName } from "../frontend/util/isdev";
 import * as keyutil from "../frontend/util/keyutil";
 
-// This is a little trick to ensure that Electron puts all its runtime data into a subdirectory to avoid conflicts with our own data.
-// On macOS, it will store to ~/Library/Application \Support/remoteterm/electron
-// On Linux, it will store to ~/.config/remoteterm/electron
-// On Windows, it will store to %LOCALAPPDATA%/remoteterm/electron
+// ElectronUserDataPath does NOT determine where Electron's own runtime data (userData) actually
+// lives — see getElectronUserDataDir's doc comment below for why this app.setName() call is
+// superseded by the later app.setName(isDev ? "RemoteTerm (Dev)" : "RemoteTerm") call and has no
+// effect on userData path resolution. This constant is read only by performDataDirMigration().
 const ElectronUserDataPath = ["remoteterm", "electron"];
 app.setName(ElectronUserDataPath.join("/"));
 
@@ -728,13 +728,24 @@ function getRemoteTermDataDir(): string {
 }
 
 /**
- * True only when the launch explicitly opted in via REMOTETERM_ISOLATED_PROFILE=1. Used to decide
- * whether it's safe to relocate Electron's userData dir (see getElectronUserDataDir): a real,
- * non-overridden launch must keep using Electron's own OS-default userData path (keyed off
+ * True only when the launch explicitly opted in via REMOTETERM_ISOLATED_PROFILE=1 (exact match,
+ * not merely truthy — REMOTETERM_ISOLATED_PROFILE=0 or any other non-empty value must NOT
+ * activate it) AND REMOTETERM_CONFIG_HOME (or legacy WAVETERM_CONFIG_HOME) is also set. Used to
+ * decide whether it's safe to relocate Electron's userData dir (see getElectronUserDataDir): a
+ * real, non-overridden launch must keep using Electron's own OS-default userData path (keyed off
  * app.getName(), e.g. ~/.config/RemoteTerm), since that's where an existing install's real
  * Chromium profile (cookies, web-block logins, IndexedDB) already lives — relocating it
  * unconditionally would silently start every upgrading user with an empty profile and orphan the
  * old one with no migration.
+ *
+ * The config-dir-override requirement exists because getElectronUserDataDir() lands inside
+ * getRemoteTermConfigDir(), which falls back to the real default config dir when no override is
+ * set: REMOTETERM_ISOLATED_PROFILE=1 alone would relocate Electron's profile into the REAL config
+ * dir's "electron" subfolder, not a scratch one — still not isolated (two such launches collide
+ * with each other there) and not where the real profile already lives either. Warn and fall back
+ * to Electron's own default (rather than refuse/quit) since this is a launch-script misconfiguration,
+ * not a state a user should be blocked over; falling back keeps the launch usable while making the
+ * gap visible in the log instead of silently landing in the wrong directory.
  *
  * Deliberately does NOT infer "isolated" from REMOTETERM_CONFIG_HOME/REMOTETERM_DATA_HOME/
  * REMOTETERM_HOME (or their legacy WAVETERM_*_HOME equivalents) being set: readOverrideEnvVar's
@@ -746,7 +757,20 @@ function getRemoteTermDataDir(): string {
  * REMOTETERM_ISOLATED_PROFILE=1 + REMOTETERM_CONFIG_HOME + REMOTETERM_DATA_HOME.
  */
 function isRemoteTermIsolatedProfileActive(): boolean {
-    return !!process.env[RemoteTermIsolatedProfileVarName];
+    if (process.env[RemoteTermIsolatedProfileVarName] !== "1") {
+        return false;
+    }
+    const configOverride = readOverrideEnvVar(RemoteTermConfigHomeVarName, LegacyRemoteTermConfigHomeVarName);
+    if (configOverride == null) {
+        console.log(
+            `${RemoteTermIsolatedProfileVarName}=1 was set without ${RemoteTermConfigHomeVarName} (or legacy ` +
+                `${LegacyRemoteTermConfigHomeVarName}) also set; refusing to relocate Electron's userData into the ` +
+                "real config dir and falling back to Electron's default profile path instead. Isolated dev/test " +
+                "launches must set both together."
+        );
+        return false;
+    }
+    return true;
 }
 
 /**
