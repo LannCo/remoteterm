@@ -26,7 +26,7 @@ export const ActionErrorBanner = memo(({ errorAtom, onDismiss, focusAnchorRef }:
             <button
                 type="button"
                 aria-label="Dismiss error"
-                className="shrink-0 min-w-6 min-h-6 -m-1 flex items-center justify-center rounded cursor-pointer text-red-400 hover:text-white"
+                className="shrink-0 min-w-6 min-h-6 -m-1 flex items-center justify-center rounded cursor-pointer text-red-400 hover:text-foreground"
                 onClick={() => {
                     focusAnchorRef.current?.focus();
                     onDismiss();

@@ -54,7 +54,7 @@ const FileRow = memo(({ data, isSelected, onClick, onMiddleClick, stageLabel, on
     return (
         <div
             className={`flex items-center gap-2 px-2 py-1 cursor-pointer text-xs group ${
-                isSelected ? "bg-activebg text-white" : "hover:bg-hoverbg text-secondary"
+                isSelected ? "bg-activebg text-foreground" : "hover:bg-hoverbg text-secondary"
             }`}
             onClick={onClick}
             onMouseDown={handleMouseDown}
@@ -546,7 +546,7 @@ const ReviewDropdown = memo(({ totalCount, stagedCount, unstagedCount, onReviewA
     return (
         <div className="relative">
             <button
-                className="flex items-center gap-1 px-2 py-1 text-[11px] rounded bg-surface hover:bg-hoverbg text-secondary hover:text-white transition-colors"
+                className="flex items-center gap-1 px-2 py-1 text-[11px] rounded bg-surface hover:bg-hoverbg text-secondary hover:text-foreground transition-colors"
                 onClick={() => setOpen(!open)}
             >
                 <i className="fa-solid fa-eye text-[10px]" />
@@ -558,14 +558,14 @@ const ReviewDropdown = memo(({ totalCount, stagedCount, unstagedCount, onReviewA
                     <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
                     <div className="absolute right-0 top-full mt-1 z-50 bg-modalbg border border-border rounded shadow-lg min-w-[160px]">
                         <button
-                            className="w-full text-left px-3 py-1.5 text-xs text-secondary hover:bg-hoverbg hover:text-white"
+                            className="w-full text-left px-3 py-1.5 text-xs text-secondary hover:bg-hoverbg hover:text-foreground"
                             onClick={() => { setOpen(false); onReviewAll(); }}
                         >
                             Review All ({totalCount})
                         </button>
                         {stagedCount > 0 && (
                             <button
-                                className="w-full text-left px-3 py-1.5 text-xs text-secondary hover:bg-hoverbg hover:text-white"
+                                className="w-full text-left px-3 py-1.5 text-xs text-secondary hover:bg-hoverbg hover:text-foreground"
                                 onClick={() => { setOpen(false); onReviewStaged(); }}
                             >
                                 Review Staged ({stagedCount})
@@ -573,7 +573,7 @@ const ReviewDropdown = memo(({ totalCount, stagedCount, unstagedCount, onReviewA
                         )}
                         {unstagedCount > 0 && (
                             <button
-                                className="w-full text-left px-3 py-1.5 text-xs text-secondary hover:bg-hoverbg hover:text-white"
+                                className="w-full text-left px-3 py-1.5 text-xs text-secondary hover:bg-hoverbg hover:text-foreground"
                                 onClick={() => { setOpen(false); onReviewUnstaged(); }}
                             >
                                 Review Unstaged ({unstagedCount})
@@ -762,7 +762,7 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
                             className={`p-1.5 rounded transition-colors ${
                                 selectedFile?.untracked
                                     ? "text-muted cursor-not-allowed"
-                                    : "hover:bg-hoverbg text-secondary hover:text-white"
+                                    : "hover:bg-hoverbg text-secondary hover:text-foreground"
                             }`}
                             onClick={handleViewModeToggle}
                             disabled={!!selectedFile?.untracked}
@@ -772,7 +772,7 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
                     </Tooltip>
                     <Tooltip content={wordWrap ? "Disable word wrap" : "Enable word wrap"} placement="bottom">
                         <button
-                            className={`p-1.5 rounded hover:bg-hoverbg transition-colors ${wordWrap ? "text-white" : "text-secondary hover:text-white"}`}
+                            className={`p-1.5 rounded hover:bg-hoverbg transition-colors ${wordWrap ? "text-foreground" : "text-secondary hover:text-foreground"}`}
                             onClick={handleWordWrapToggle}
                         >
                             <i className="fa-solid fa-text-width text-xs" />
@@ -780,7 +780,7 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
                     </Tooltip>
                     <Tooltip content="Refresh" placement="bottom">
                         <button
-                            className="p-1.5 rounded hover:bg-hoverbg text-secondary hover:text-white transition-colors"
+                            className="p-1.5 rounded hover:bg-hoverbg text-secondary hover:text-foreground transition-colors"
                             onClick={handleRefresh}
                         >
                             <i className="fa-solid fa-arrows-rotate text-xs" />
@@ -834,7 +834,7 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
                     />
                     {filter && (
                         <button
-                            className="text-muted hover:text-white"
+                            className="text-muted hover:text-foreground"
                             onClick={() => setFilter("")}
                         >
                             <i className="fa-solid fa-times text-xs" />

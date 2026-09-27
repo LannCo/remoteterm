@@ -212,7 +212,7 @@ export const FileDiffSection = memo(({ model, file, index, isCollapsed, onToggle
                     </span>
                 )}
                 <button
-                    className="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 text-[10px] rounded bg-surface hover:bg-hoverbg text-secondary hover:text-white transition-opacity"
+                    className="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 text-[10px] rounded bg-surface hover:bg-hoverbg text-secondary hover:text-foreground transition-opacity"
                     title={stageLabel}
                     onClick={(e) => { e.stopPropagation(); onStage(); }}
                 >
@@ -221,7 +221,7 @@ export const FileDiffSection = memo(({ model, file, index, isCollapsed, onToggle
                 </button>
                 {!file.untracked && (
                     <button
-                        className="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 text-[10px] rounded bg-surface hover:bg-hoverbg text-secondary hover:text-white transition-opacity"
+                        className="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 text-[10px] rounded bg-surface hover:bg-hoverbg text-secondary hover:text-foreground transition-opacity"
                         title="Revert"
                         onClick={(e) => { e.stopPropagation(); onRevert(); }}
                     >

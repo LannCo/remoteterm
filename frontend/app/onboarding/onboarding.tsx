@@ -70,7 +70,7 @@ const InitPage = ({
                                 className="text-accent"
                                 onClick={handleStarClick}
                             >
-                                <i className="text-[32px] text-white/50 fa-brands fa-github"></i>
+                                <i className="text-[32px] text-foreground/50 fa-brands fa-github"></i>
                             </a>
                         </div>
                         <div className="flex flex-col items-start gap-1 flex-1">
@@ -98,7 +98,7 @@ const InitPage = ({
                                 rel="noopener"
                                 className="text-accent"
                             >
-                                <i className="text-[25px] text-white/50 fa-solid fa-people-group"></i>
+                                <i className="text-[25px] text-foreground/50 fa-solid fa-people-group"></i>
                             </a>
                         </div>
                         <div className="flex flex-col items-start gap-1 flex-1">
