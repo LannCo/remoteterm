@@ -23,7 +23,7 @@
         "foreground": "#c1c1c1",
         "selectionBackground": "",
         "background": "#000000",
-        "cursor": ""
+        "cursor": "#ffffff"
     },
     "default-light": {
         "display:name": "Default Light",
@@ -49,7 +49,7 @@
         "foreground": "#1a1a1a",
         "selectionBackground": "",
         "background": "#ffffff",
-        "cursor": ""
+        "cursor": "#1a1a1a"
     },
     "onedarkpro": {
         "display:name": "One Dark Pro",
