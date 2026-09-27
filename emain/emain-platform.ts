@@ -720,6 +720,21 @@ function getRemoteTermDataDir(): string {
     return ensurePathExists(retVal);
 }
 
+/**
+ * Where Electron's own runtime profile (cookies, cache, IndexedDB, GPU cache, session storage,
+ * and the SingletonLock the single-instance lock is keyed on) is kept. `app.setName()` alone
+ * (see ElectronUserDataPath above) only nests this under Electron's OS-default appData root, which
+ * ignores REMOTETERM_CONFIG_HOME/REMOTETERM_DATA_HOME/REMOTETERM_HOME: two isolated launches with
+ * different overrides still resolved to the SAME userData dir and so the SAME lock, meaning a
+ * scratch dev/test instance's second-instance event fired against an unrelated already-running
+ * instance instead of its own. Rooting this in the resolved (override-aware) config dir, in its
+ * own "electron" subfolder so Chromium's profile files never collide with our own config files,
+ * fixes that: callers must pass this to `app.setPath("userData", ...)` before requesting the lock.
+ */
+function getElectronUserDataDir(): string {
+    return path.join(getRemoteTermConfigDir(), "electron");
+}
+
 function getElectronAppBasePath(): string {
     // import.meta.dirname in dev points to waveterm/dist/main
     return path.dirname(import.meta.dirname);
@@ -849,6 +864,7 @@ export {
     getElectronAppBasePath,
     getElectronAppResourcesPath,
     getElectronAppUnpackedBasePath,
+    getElectronUserDataDir,
     getRemoteTermConfigDir,
     getRemoteTermDataDir,
     getRemoteTermSrvCwd,
