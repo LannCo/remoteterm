@@ -198,4 +198,9 @@
     --button-grey-outlined-color: rgba(0, 0, 0, 0.65);
 
     --dropdown-shadow-color: rgba(0, 0, 0, 0.18);
+
+    /* dark mode's rgba(230,186,30,0.2) reads fine with white text over a blurred dark backdrop; at the same low
+       opacity over a light backdrop the overlay washes out and the (always-white) overlay text becomes illegible.
+       Reuse the light-mode warning colour at higher opacity so it stays legible regardless of blurred backdrop. */
+    --conn-status-overlay-bg-color: rgba(154, 108, 8, 0.85);
 }
