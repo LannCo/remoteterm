@@ -22,7 +22,7 @@ export const UploadOverlay = React.memo(({ nodeModel }: UploadOverlayProps) => {
     return (
         <BlockOverlay>
             <i className="fa-solid fa-spinner fa-spin text-info text-base shrink-0" title="Uploading"></i>
-            <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-white min-w-0 flex-1 break-words @max-xxs:hidden">
+            <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-primary min-w-0 flex-1 break-words @max-xxs:hidden">
                 Uploading {uploadState.fileName}…
             </div>
             <div className="flex-1 hidden @max-xxs:block"></div>

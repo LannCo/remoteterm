@@ -111,7 +111,14 @@
     --conn-icon-color-6: #ffa24e;
     --conn-icon-color-7: #dbde52;
     --conn-icon-color-8: #58c142;
-    --conn-status-overlay-bg-color: rgba(230, 186, 30, 0.2);
+    /* Near-opaque so the surface is a fixed colour, not a backdrop-dependent blend: at low alpha,
+       whatever's blurred behind it (a light or dark block's content) shifts the effective colour
+       enough to fail WCAG AA for one consumer or another (see the light-mode override below for
+       the numbers). Consumers: connstatusoverlay.tsx's text-primary/text-primary-70/text-warning/
+       text-error/text-secondary, uploadoverlay.tsx and preview-error-overlay.tsx's text-primary
+       (both were fixed white; swapped to the theme-aware token so they don't need their own
+       backdrop-independent case — see those files' history). */
+    --conn-status-overlay-bg-color: rgb(18, 15, 2);
 
     --sysinfo-cpu-color: #58c142;
     --sysinfo-mem-color: #53b4ea;
@@ -199,8 +206,14 @@
 
     --dropdown-shadow-color: rgba(0, 0, 0, 0.18);
 
-    /* dark mode's rgba(230,186,30,0.2) reads fine with white text over a blurred dark backdrop; at the same low
-       opacity over a light backdrop the overlay washes out and the (always-white) overlay text becomes illegible.
-       Reuse the light-mode warning colour at higher opacity so it stays legible regardless of blurred backdrop. */
-    --conn-status-overlay-bg-color: rgba(154, 108, 8, 0.85);
+    /* rgba(154,108,8,0.85) still blended with the backdrop enough to fail AA either way: 2.90:1 for
+       text-primary composited over a dark backdrop, 3.54:1 for the (then fixed-white) upload/preview
+       text composited over a light backdrop — no single low/mid alpha choice passes every consumer
+       against every backdrop. Opaque instead, computed to clear 4.5:1 for every consumer against this
+       exact colour (no backdrop compositing left to vary): text-primary 16.97:1, text-primary/70
+       6.33:1, text-warning 4.52:1, text-error 5.55:1, text-secondary 4.98:1. text-primary/50 (the
+       connstatusoverlay.tsx secondary error line) is a known exception: 50%-opacity near-black text
+       over any near-white surface caps at ~3.3:1 regardless of the surface colour, so that spot uses
+       text-primary/70 instead (see connstatusoverlay.tsx). */
+    --conn-status-overlay-bg-color: rgb(253, 252, 250);
 }
