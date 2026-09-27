@@ -231,10 +231,15 @@ const TabBar = memo(({ workspace, noTabs }: TabBarProps) => {
         [saveTabsPosition]
     );
 
+    // setSizeAndPosition is a plain (non-memoized) closure redefined every render, and reads
+    // resolvedAppearanceMode when it recreates the OverlayScrollbars instance (a resize can make
+    // the tab bar newly scrollable). Without resolvedAppearanceMode here, handleResizeTabs only
+    // refreshed its closure on tabIds/newTabId/isFullScreen changes, so a resize after a mode
+    // switch (but before any of those) could recreate the scrollbar instance with the stale theme.
     const handleResizeTabs = useCallback(() => {
         setSizeAndPosition();
         saveTabsPositionDebounced();
-    }, [tabIds, newTabId, isFullScreen]);
+    }, [tabIds, newTabId, isFullScreen, resolvedAppearanceMode]);
 
     // update layout on reinit version
     const reinitVersion = useAtomValue(env.atoms.reinitVersion);
