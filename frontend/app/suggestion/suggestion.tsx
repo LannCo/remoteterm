@@ -321,7 +321,7 @@ function SuggestionControlInner({
                                 className={clsx(
                                     "flex items-center gap-3 px-4 py-2 cursor-pointer",
                                     index === selectedIndex ? "bg-accentbg" : "hover:bg-hoverbg",
-                                    "text-gray-100"
+                                    "text-foreground"
                                 )}
                                 onClick={() => {
                                     onSelect(suggestion, query);
