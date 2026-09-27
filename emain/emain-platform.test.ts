@@ -122,6 +122,32 @@ describe("combined-home fallback", () => {
     });
 });
 
+describe("Electron userData dir (single-instance lock scope)", () => {
+    it("nests under the resolved config dir by default, matching the pre-existing appData/remoteterm/electron layout", async () => {
+        const mod = await loadPlatform(true);
+        expect(mod.getElectronUserDataDir()).toBe(path.join(mod.getRemoteTermConfigDir(), "electron"));
+        expect(mod.getElectronUserDataDir()).toBe(path.join(xdgConfig, "remoteterm", "electron"));
+    });
+
+    it("resolves to distinct paths for distinct REMOTETERM_CONFIG_HOME overrides, so isolated instances get separately-scoped single-instance locks", async () => {
+        const scratchA = makeDir(path.join(tmpHome, "scratch-a"));
+        const scratchB = makeDir(path.join(tmpHome, "scratch-b"));
+
+        process.env.REMOTETERM_CONFIG_HOME = scratchA;
+        let mod = await loadPlatform(true);
+        const userDataA = mod.getElectronUserDataDir();
+        expect(userDataA).toBe(path.join(scratchA, "electron"));
+
+        vi.resetModules();
+        process.env.REMOTETERM_CONFIG_HOME = scratchB;
+        mod = await loadPlatform(true);
+        const userDataB = mod.getElectronUserDataDir();
+        expect(userDataB).toBe(path.join(scratchB, "electron"));
+
+        expect(userDataA).not.toBe(userDataB);
+    });
+});
+
 // env-paths reads the home dir once per process, so point it at this test's home instead.
 function mockMacEnvPaths() {
     setPlatform("darwin");

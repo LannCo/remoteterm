@@ -29,6 +29,7 @@ import {
     checkIfRunningUnderARM64Translation,
     getElectronAppBasePath,
     getElectronAppUnpackedBasePath,
+    getElectronUserDataDir,
     getMigrationFailures,
     getRemoteTermConfigDir,
     getRemoteTermDataDir,
@@ -277,6 +278,11 @@ async function appMain() {
         electronApp.disableHardwareAcceleration();
     }
     const startTs = Date.now();
+    // Must run before requestSingleInstanceLock(): the lock is keyed on Electron's userData path,
+    // which otherwise defaults to a fixed OS path regardless of REMOTETERM_CONFIG_HOME/
+    // REMOTETERM_DATA_HOME, so an isolated dev/test launch's lock collided with an unrelated
+    // already-running instance and spawned a phantom window in it (see getElectronUserDataDir).
+    electronApp.setPath("userData", getElectronUserDataDir());
     const instanceLock = electronApp.requestSingleInstanceLock();
     if (!instanceLock) {
         console.log("remoteterm-app could not get single-instance-lock, shutting down");
