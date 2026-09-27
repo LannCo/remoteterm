@@ -239,7 +239,7 @@ const DisconnectedOverlay = React.memo(
                                     <div className="text-[10px] text-primary/70 mt-0.5">{permanentHint}</div>
                                 )}
                                 {connStatus.error && (
-                                    <div className="text-[10px] text-primary/50 mt-0.5 truncate">{connStatus.error}</div>
+                                    <div className="text-[10px] text-primary/70 mt-0.5 truncate">{connStatus.error}</div>
                                 )}
                             </>
                         ) : (
@@ -534,7 +534,7 @@ const GaveUpOverlay = React.memo(
                         {/* UX-2.5: after sleep/resume an agent-based connection that
                             failed auth surfaces a specific agent/keychain hint here. */}
                         {stopReason === "auth-failed" && connStatus.error && (
-                            <div className="text-[10px] text-primary/50 mt-0.5">{connStatus.error}</div>
+                            <div className="text-[10px] text-primary/70 mt-0.5">{connStatus.error}</div>
                         )}
                     </div>
                     <div className="flex-1 hidden @max-xxs:block"></div>
