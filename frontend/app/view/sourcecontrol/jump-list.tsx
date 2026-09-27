@@ -22,7 +22,7 @@ const JumpListItem = memo(({ file, isActive, isCollapsed, onClick }: JumpListIte
         <div
             className={`flex items-center gap-1.5 px-2 py-1 cursor-pointer text-[11px] group ${
                 isActive
-                    ? "bg-activebg text-white"
+                    ? "bg-activebg text-foreground"
                     : "hover:bg-hoverbg text-secondary"
             }`}
             onClick={onClick}
