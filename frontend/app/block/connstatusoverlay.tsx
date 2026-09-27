@@ -94,8 +94,11 @@ function permanentErrorHint(errorCode?: string): string | null {
     return null;
 }
 
+// No element-level opacity here: --conn-status-overlay-bg-color is already an opaque, theme-aware
+// solid (see theme.scss). Applying opacity on top of it would re-blend the backdrop behind it back
+// in and reintroduce the WCAG AA contrast failure the opaque token was specifically chosen to avoid.
 const overlayShellClass =
-    "@container absolute top-[calc(var(--header-height)+6px)] left-1.5 right-1.5 z-[var(--zindex-block-mask-inner)] overflow-hidden rounded-md bg-[var(--conn-status-overlay-bg-color)] backdrop-blur-[50px] shadow-lg opacity-90";
+    "@container absolute top-[calc(var(--header-height)+6px)] left-1.5 right-1.5 z-[var(--zindex-block-mask-inner)] overflow-hidden rounded-md bg-[var(--conn-status-overlay-bg-color)] backdrop-blur-[50px] shadow-lg";
 
 const StalledOverlay = React.memo(
     ({
@@ -568,7 +571,7 @@ const FlappingOverlay = React.memo(
     }) => {
         return (
             <div
-                className="@container absolute top-[calc(var(--header-height)+6px)] left-1.5 right-1.5 z-[var(--zindex-block-mask-inner)] overflow-hidden rounded-md bg-[var(--conn-status-overlay-bg-color)] backdrop-blur-[50px] shadow-lg opacity-90"
+                className="@container absolute top-[calc(var(--header-height)+6px)] left-1.5 right-1.5 z-[var(--zindex-block-mask-inner)] overflow-hidden rounded-md bg-[var(--conn-status-overlay-bg-color)] backdrop-blur-[50px] shadow-lg"
                 ref={overlayRefCallback}
                 aria-live="polite"
             >

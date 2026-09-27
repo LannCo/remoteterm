@@ -13,6 +13,9 @@ const MinContrast = 4.5;
 
 const themeScss = fs.readFileSync(path.join(__dirname, "theme.scss"), "utf8");
 const tailwindsetupCss = fs.readFileSync(path.join(__dirname, "..", "tailwindsetup.css"), "utf8");
+const connStatusOverlayTsx = fs.readFileSync(path.join(__dirname, "block", "connstatusoverlay.tsx"), "utf8");
+const blockOverlayTsx = fs.readFileSync(path.join(__dirname, "block", "blockoverlay.tsx"), "utf8");
+const blockScss = fs.readFileSync(path.join(__dirname, "block", "block.scss"), "utf8");
 
 // Both files put the dark/default value first and the `:root[data-theme="light"]` override
 // second, so splitting on that selector and taking the first match on each side keeps this
@@ -54,7 +57,68 @@ function compositeRgb(fg: string, alpha: number, backdrop: string): ReturnType<t
     });
 }
 
-// Each consumer's text colour/opacity pair. All three components share
+function extractSlice(src: string, startMarker: string, endMarker: string): string {
+    const start = src.indexOf(startMarker);
+    if (start === -1) {
+        throw new Error(`marker not found: ${JSON.stringify(startMarker)}`);
+    }
+    const contentStart = start + startMarker.length;
+    const end = src.indexOf(endMarker, contentStart);
+    return end === -1 ? src.slice(contentStart) : src.slice(contentStart, end);
+}
+
+// Reads the element-level opacity actually applied by a consumer, straight from its source, so a
+// reintroduced `opacity-90` (Tailwind) or `opacity: 0.9` (CSS) is picked up automatically instead
+// of this test silently continuing to assume full opacity. This is what round 2's version of this
+// test got wrong: it validated the raw --conn-status-overlay-bg-color token value in isolation,
+// while every real consumer additionally applied opacity-90/opacity:0.9 on the SAME element,
+// re-blending the backdrop behind it back in and reintroducing the contrast failure the opaque
+// token was chosen to eliminate. See connstatusoverlay.tsx, blockoverlay.tsx, block.scss history.
+function extractElementOpacity(snippet: string): number {
+    const twMatch = snippet.match(/\bopacity-(\d{1,3})\b/);
+    if (twMatch) {
+        return Number(twMatch[1]) / 100;
+    }
+    const cssMatch = snippet.match(/opacity:\s*([\d.]+)/);
+    if (cssMatch) {
+        return Number(cssMatch[1]);
+    }
+    return 1;
+}
+
+// The real consumers of --conn-status-overlay-bg-color, and the element-level opacity each one
+// currently renders the shell with (extracted from source rather than assumed).
+const tsxConsumerSites: { name: string; opacity: number }[] = [
+    {
+        // Shared by StalledOverlay, DisconnectedOverlay, RetryingOverlay, CountdownOverlay,
+        // JobSessionOverlay, DrainCatchUpOverlay, and the inline auth-queue-waiting overlay.
+        name: "connstatusoverlay.tsx overlayShellClass",
+        opacity: extractElementOpacity(extractSlice(connStatusOverlayTsx, "const overlayShellClass =", ";")),
+    },
+    {
+        // FlappingOverlay duplicates the shell class as its own literal instead of reusing the
+        // constant, so it must be checked independently.
+        name: "connstatusoverlay.tsx FlappingOverlay",
+        opacity: extractElementOpacity(
+            extractSlice(connStatusOverlayTsx, "const FlappingOverlay = React.memo(", "FlappingOverlay.displayName")
+        ),
+    },
+    {
+        name: "blockoverlay.tsx BlockOverlay",
+        opacity: extractElementOpacity(blockOverlayTsx),
+    },
+];
+
+// The older, pre-Tailwind overlay styling path: block.scss's `.connstatus-overlay` (still used by
+// the tail end of ConnStatusOverlay's render for the default/legacy status view). Its text colour
+// is a flat `--secondary-text-color`, not one of the Tailwind text-*/opacity cases below, so it
+// gets its own explicit case instead of folding into themeCases().
+const legacyConnstatusOverlayOpacity = extractElementOpacity(
+    extractSlice(blockScss, ".connstatus-overlay {", ".connstatus-content {")
+);
+const secondaryTextColor = extractVarValues(themeScss, "secondary-text-color");
+
+// Each Tailwind consumer's text colour/opacity pair. All three tsxConsumerSites share
 // --conn-status-overlay-bg-color: connstatusoverlay.tsx (text-primary, text-primary/70,
 // text-warning, text-error), uploadoverlay.tsx and preview-error-overlay.tsx (text-primary,
 // swapped from a fixed white — see those files' history), and preview-error-overlay.tsx's
@@ -77,25 +141,72 @@ function themeCases(mode: "dark" | "light"): TextCase[] {
     ];
 }
 
-// Backdrop-blur means whatever's visually behind a non-opaque overlay colour can shift the
-// effective composited colour toward either extreme; checking both extremes (not just white)
-// is what caught the original bug (a value that only failed against a dark backdrop). A fully
-// opaque bg collapses both extremes to the same result, which is the point of going near-opaque.
+// Renders a text pixel the way the browser actually composites it: the text is drawn at its own
+// opacity against the shell's own (opaque) background colour first, and only THEN does the whole
+// element get alpha-blended against whatever is actually behind it (elementOpacity). A non-1
+// elementOpacity re-exposes that real backdrop, which is exactly the bug this test exists to catch.
+function renderedTextPixel(
+    textColor: string,
+    textOpacity: number,
+    boxBg: string,
+    elementOpacity: number,
+    realBackdrop: string
+): ReturnType<typeof colord> {
+    const preOpacityPixel = compositeRgb(textColor, textOpacity, boxBg);
+    return compositeRgb(preOpacityPixel.toHex(), elementOpacity, realBackdrop);
+}
+
+function renderedBgPixel(boxBg: string, elementOpacity: number, realBackdrop: string): ReturnType<typeof colord> {
+    return compositeRgb(boxBg, elementOpacity, realBackdrop);
+}
+
+// Backdrop-blur means whatever's visually behind the overlay can shift the effective composited
+// colour toward either extreme; checking both extremes (not just white) is what caught the
+// original bug (a value that only failed against a dark backdrop).
 describe.each([
     ["dark", connStatusOverlayBg.dark],
     ["light", connStatusOverlayBg.light],
 ] as const)("--conn-status-overlay-bg-color (%s)", (mode, bgCssColor) => {
-    const alpha = parseAlpha(bgCssColor);
+    const tokenAlpha = parseAlpha(bgCssColor);
 
-    test.each(["#000000", "#ffffff"] as const)("every consumer clears 4.5:1 composited over %s", (extremeBackdrop) => {
-        const effectiveBg = compositeRgb(bgCssColor, alpha, extremeBackdrop);
-        for (const { name, color, opacity } of themeCases(mode)) {
-            const effectiveText = compositeRgb(color, opacity, effectiveBg.toHex());
+    describe.each(tsxConsumerSites)("$name", ({ opacity: elementOpacity }) => {
+        test.each(["#000000", "#ffffff"] as const)(
+            "every text case clears 4.5:1 composited over %s",
+            (extremeBackdrop) => {
+                const boxBg = compositeRgb(bgCssColor, tokenAlpha, extremeBackdrop).toHex();
+                const effectiveBg = renderedBgPixel(boxBg, elementOpacity, extremeBackdrop);
+                for (const { name, color, opacity } of themeCases(mode)) {
+                    const effectiveText = renderedTextPixel(color, opacity, boxBg, elementOpacity, extremeBackdrop);
+                    const ratio = colord(effectiveText).contrast(effectiveBg.toHex());
+                    expect(
+                        ratio,
+                        `${mode}/${name}: ${color}@${opacity} on element-opacity ${elementOpacity} over ${extremeBackdrop} ` +
+                            `is ${ratio.toFixed(2)}:1 (effective bg ${effectiveBg.toHex()})`
+                    ).toBeGreaterThanOrEqual(MinContrast);
+                }
+            }
+        );
+    });
+
+    test.each(["#000000", "#ffffff"] as const)(
+        "legacy block.scss .connstatus-overlay secondary text clears 4.5:1 composited over %s",
+        (extremeBackdrop) => {
+            const boxBg = compositeRgb(bgCssColor, tokenAlpha, extremeBackdrop).toHex();
+            const effectiveBg = renderedBgPixel(boxBg, legacyConnstatusOverlayOpacity, extremeBackdrop);
+            const secondaryColor = mode === "dark" ? secondaryTextColor.dark : secondaryTextColor.light;
+            const effectiveText = renderedTextPixel(
+                secondaryColor,
+                1,
+                boxBg,
+                legacyConnstatusOverlayOpacity,
+                extremeBackdrop
+            );
             const ratio = colord(effectiveText).contrast(effectiveBg.toHex());
             expect(
                 ratio,
-                `${mode}/${name}: ${color}@${opacity} on ${effectiveBg.toHex()} (bg ${bgCssColor} over ${extremeBackdrop}) is ${ratio.toFixed(2)}:1`
+                `${mode}/secondary-text-color: ${secondaryColor} on element-opacity ${legacyConnstatusOverlayOpacity} ` +
+                    `over ${extremeBackdrop} is ${ratio.toFixed(2)}:1 (effective bg ${effectiveBg.toHex()})`
             ).toBeGreaterThanOrEqual(MinContrast);
         }
-    });
+    );
 });
