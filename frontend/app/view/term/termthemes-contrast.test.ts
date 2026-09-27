@@ -57,3 +57,22 @@ describe("default-light palette", () => {
         expect(new Set(orders).size).toBe(orders.length);
     });
 });
+
+describe("default theme cursors", () => {
+    // xterm.js falls back to its own hardcoded white cursor whenever a theme's
+    // "cursor" is blank. That's invisible-safe for default-dark's black
+    // background but was silently invisible against default-light's white
+    // background, since nothing here overrides the library default per theme.
+    test.each(["default-dark", "default-light"])("%s defines an explicit, non-blank cursor colour", (name) => {
+        const theme = (termthemes as Record<string, Record<string, unknown>>)[name] as Record<string, string>;
+        expect(theme.cursor, `${name}.cursor must not be blank (falls back to xterm's white default)`).toBeTruthy();
+    });
+
+    test.each(["default-dark", "default-light"])("%s cursor reaches WCAG AA contrast on its background", (name) => {
+        const theme = (termthemes as Record<string, Record<string, unknown>>)[name] as Record<string, string>;
+        const ratio = colord(theme.cursor).contrast(theme.background);
+        expect(ratio, `${name}.cursor=${theme.cursor} is ${ratio.toFixed(2)}:1 on ${theme.background}`).toBeGreaterThanOrEqual(
+            MinContrast
+        );
+    });
+});
