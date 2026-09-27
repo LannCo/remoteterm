@@ -194,6 +194,15 @@ describe("Electron userData dir (single-instance lock scope)", () => {
         expect(mod.isRemoteTermIsolatedProfileActive()).toBe(true);
     });
 
+    it("isRemoteTermIsolatedProfileActive falls back to false when a combined-home dir at its default location would cause the config override to be ignored", async () => {
+        makeDir(path.join(tmpHome, ".remoteterm"), { "wave.lock": "" });
+        process.env.REMOTETERM_ISOLATED_PROFILE = "1";
+        process.env.REMOTETERM_CONFIG_HOME = makeDir(path.join(tmpHome, "scratch-cfg-override"));
+        const mod = await loadPlatform(true);
+        expect(mod.isRemoteTermIsolatedProfileActive()).toBe(false);
+        expect(loggedLines().some((s) => s.includes("combined-home directory"))).toBe(true);
+    });
+
     it("getElectronUserDataDir nests under the resolved config dir — only meant to be used when isRemoteTermIsolatedProfileActive() is true", async () => {
         const mod = await loadPlatform(true);
         expect(mod.getElectronUserDataDir()).toBe(path.join(mod.getRemoteTermConfigDir(), "electron"));
