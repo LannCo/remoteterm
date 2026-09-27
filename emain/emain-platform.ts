@@ -770,6 +770,21 @@ function isRemoteTermIsolatedProfileActive(): boolean {
         );
         return false;
     }
+    // getRemoteTermConfigDir() checks getRemoteTermHomeDir() FIRST and ignores REMOTETERM_CONFIG_HOME
+    // entirely if a combined-home dir is found there — whether from an explicit REMOTETERM_HOME
+    // override or one auto-detected at its default location (a real pre-fork Wave Terminal install's
+    // migrated/legacy combined dir). Either way, our config override above would be silently ignored,
+    // so getElectronUserDataDir() would resolve under that combined dir instead of the scratch one —
+    // the same "isolation silently doesn't work" failure this function exists to prevent.
+    if (getRemoteTermHomeDir() != null) {
+        console.log(
+            `${RemoteTermIsolatedProfileVarName}=1 was set, but a combined-home directory was found (explicit ` +
+                `${RemoteTermHomeVarName} override or one auto-detected at its default location) that would cause ` +
+                `${RemoteTermConfigHomeVarName} to be ignored; refusing to relocate Electron's userData and ` +
+                "falling back to Electron's default profile path instead."
+        );
+        return false;
+    }
     return true;
 }
 
