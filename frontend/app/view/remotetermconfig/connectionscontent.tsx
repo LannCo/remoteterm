@@ -42,7 +42,7 @@ const ViewToggle = memo(({ view, onChange }: ViewToggleProps) => {
                 onClick={() => onChange("keychain")}
             >
                 Keychain
-                <span className="text-xxs px-1.5 py-0.5 rounded-full bg-warning/15 text-warning">concept</span>
+                <span className="text-xxs px-1.5 py-0.5 rounded-full bg-warning/15 text-warning-text">concept</span>
             </button>
         </div>
     );

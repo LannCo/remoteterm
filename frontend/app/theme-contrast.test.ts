@@ -433,3 +433,32 @@ describe("Monaco light theme", () => {
         expect(dark).not.toContain("dimmedForeground");
     });
 });
+
+// text-warning is the fill-tuned amber: on its own 10-15% tint it is 3.6:1 in light mode. Badges and
+// banners that put warning text on a warning tint use text-warning-text instead.
+describe("light-mode warning text on a warning tint", () => {
+    const warningText = extractVarValues(tailwindsetupCss, "color-warning-text");
+    const warning = colorWarning.light;
+    const panel = lightCompositeOnWhite(extractVarValues(tailwindsetupCss, "color-panel").light);
+
+    test.each([
+        ["concept badge", "view/remotetermconfig/connectionscontent.tsx", 0.15],
+        ["secrets warning banner", "view/remotetermconfig/secretscontent.tsx", 0.1],
+    ] as const)("%s clears 4.5:1 on its tint over the page and the panel", (_name, file, alpha) => {
+        expect(fs.readFileSync(path.join(__dirname, file), "utf8")).toMatch(
+            new RegExp(`bg-warning/${Math.round(alpha * 100)}[^"]*text-warning-text`)
+        );
+        for (const backdrop of ["#ffffff", panel]) {
+            const tint = compositeRgb(warning, alpha, backdrop).toHex();
+            const ratio = colord(warningText.light).contrast(tint);
+            expect(
+                ratio,
+                `${warningText.light} on ${tint} (warning ${alpha} over ${backdrop}) is ${ratio.toFixed(2)}:1`
+            ).toBeGreaterThanOrEqual(MinContrast);
+        }
+    });
+
+    test("dark mode keeps warning-text equal to warning", () => {
+        expect(warningText.dark).toBe(colorWarning.dark);
+    });
+});
