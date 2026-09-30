@@ -3,7 +3,7 @@
 
 import { resolvedAppearanceModeAtom } from "@/app/store/appearance-atoms";
 import type { TermViewModel } from "@/app/view/term/term-model";
-import { computeTheme, getDefaultTermThemeName } from "@/app/view/term/termutil";
+import { computeReportedColours, computeTheme, getDefaultTermThemeName } from "@/app/view/term/termutil";
 import { TermWrap } from "@/app/view/term/termwrap";
 import { atoms } from "@/store/global";
 import { useAtomValue } from "jotai";
@@ -20,10 +20,11 @@ const TermThemeUpdater = ({ blockId, model, termRef }: TermThemeProps) => {
     const blockTermTheme = useAtomValue(model.termThemeNameAtom);
     const transparency = useAtomValue(model.termTransparencyAtom);
     const appearanceMode = useAtomValue(resolvedAppearanceModeAtom);
-    const [theme, _] = computeTheme(fullConfig, blockTermTheme, transparency, getDefaultTermThemeName(appearanceMode));
+    const [theme, bgcolor] = computeTheme(fullConfig, blockTermTheme, transparency, getDefaultTermThemeName(appearanceMode));
     useEffect(() => {
         if (termRef.current?.terminal) {
             termRef.current.terminal.options.theme = theme;
+            termRef.current.setReportedColours(computeReportedColours(theme, bgcolor));
         }
     }, [theme]);
     return null;
