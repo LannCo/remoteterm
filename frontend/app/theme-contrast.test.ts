@@ -294,6 +294,13 @@ describe("light-mode accent text", () => {
         }
     );
 
+    // app.scss is unlayered, so its `a` rule beats every Tailwind colour utility on an <a>: a link's
+    // colour comes from here, whatever text-* class it carries.
+    test("app.scss colours plain links with the accent-text token, not the raw accent", () => {
+        const appScss = fs.readFileSync(path.join(__dirname, "app.scss"), "utf8");
+        expect(appScss).toMatch(/\na \{\s*color: var\(--color-accent-text\);\s*\}/);
+    });
+
     test("dark mode keeps accent-text equal to the accent", () => {
         expect(accentText.dark).toBe(extractVarValues(tailwindsetupCss, "color-accent").dark);
     });
