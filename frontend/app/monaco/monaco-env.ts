@@ -64,6 +64,8 @@ export function loadMonaco() {
         rules: [],
         colors: {
             "editor.background": "#00000000",
+            "minimap.background": "#ffffff77",
+            "editorLineNumber.dimmedForeground": "#5f686c",
             focusBorder: "#00000000",
         },
     });
