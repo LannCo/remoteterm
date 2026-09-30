@@ -307,3 +307,35 @@ describe("light-mode accent text", () => {
         expect(offenders.map(({ n, line }) => `${file}:${n} ${line.trim()}`)).toEqual([]);
     });
 });
+
+describe("light-mode placeholder text", () => {
+    const resetScss = fs.readFileSync(path.join(__dirname, "..", "app", "reset.scss"), "utf8");
+    const lightRule = resetScss.match(/:root\[data-theme="light"\]\s+::placeholder\s*\{([^}]*)\}/);
+
+    test("reset.scss gives light mode its own placeholder colour from a token", () => {
+        expect(lightRule, "no :root[data-theme=light] ::placeholder rule in reset.scss").not.toBeNull();
+        expect(lightRule[1]).toMatch(/color:\s*var\(--placeholder-color\)/);
+    });
+
+    test("the base placeholder rule (dark mode) is untouched", () => {
+        expect(resetScss).toMatch(
+            /\n {4}::placeholder \{\s*opacity: 1;[^}]*color-mix\(in oklab, currentColor 50%, transparent\)/
+        );
+    });
+
+    const placeholder = {
+        light: themeScss
+            .slice(themeScss.indexOf('[data-theme="light"]'))
+            .match(/--placeholder-color:\s*([^;]+);/)?.[1]
+            .trim(),
+    };
+    test.each(lightTintedFills.filter((f) => !f.name.startsWith("accentbg")))(
+        "--placeholder-color clears 4.5:1 on $name",
+        ({ name, color }) => {
+            const ratio = colord(placeholder.light).contrast(color);
+            expect(ratio, `${placeholder.light} on ${name} ${color} is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
+                MinContrast
+            );
+        }
+    );
+});
