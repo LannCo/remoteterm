@@ -19,10 +19,13 @@ vi.mock("@/app/store/wshrpcutil", () => ({
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import {
+    colourSchemeReport,
+    computeReportedColours,
     computeTheme,
     createRemoteTempFileFromBlob,
     DefaultTermTheme,
     DefaultTermThemeLight,
+    formatOscColourReport,
     getDefaultTermThemeName,
     resolveTermThemeName,
 } from "./termutil";
@@ -176,5 +179,52 @@ describe("computeTheme fallback", () => {
         const [theme, bg] = computeTheme({ termthemes: {} } as unknown as FullConfigType, "x", 0, "y");
         expect(bg).toBeUndefined();
         expect(theme.background).toBe("#00000000");
+    });
+});
+
+describe("reported terminal colours", () => {
+    const fullConfig = {
+        termthemes: {
+            "default-dark": { background: "#000000", foreground: "#c1c1c1" },
+            "default-light": { background: "#ffffff", foreground: "#1a1a1a" },
+        },
+    } as unknown as FullConfigType;
+
+    it("reports the opaque theme colours in light mode, not the transparent canvas colour", () => {
+        const [theme, bg] = computeTheme(fullConfig, "default-light", 0, "default-light");
+        expect(computeReportedColours(theme, bg)).toEqual({ foreground: "#1a1a1a", background: "#ffffff" });
+    });
+
+    it("reports the opaque theme colours in dark mode", () => {
+        const [theme, bg] = computeTheme(fullConfig, "default-dark", 0, "default-dark");
+        expect(computeReportedColours(theme, bg)).toEqual({ foreground: "#c1c1c1", background: "#000000" });
+    });
+
+    it("ignores the transparency alpha applied to the background", () => {
+        const [theme, bg] = computeTheme(fullConfig, "default-light", 0.4, "default-light");
+        expect(bg).not.toBe("#ffffff");
+        expect(computeReportedColours(theme, bg).background).toBe("#ffffff");
+    });
+
+    it("leaves a colour undefined when the theme does not define it", () => {
+        const [theme, bg] = computeTheme({ termthemes: {} } as unknown as FullConfigType, "x", 0, "y");
+        expect(computeReportedColours(theme, bg)).toEqual({ foreground: undefined, background: undefined });
+    });
+
+    it("formats OSC 10 and OSC 11 reports as 16-bit rgb, matching xterm.js", () => {
+        expect(formatOscColourReport(10, "#1a1a1a")).toBe("\x1b]10;rgb:1a1a/1a1a/1a1a\x1b\\");
+        expect(formatOscColourReport(11, "#ffffff")).toBe("\x1b]11;rgb:ffff/ffff/ffff\x1b\\");
+    });
+
+    it("reports the colour scheme as light (2) when the background is lighter than the foreground", () => {
+        expect(colourSchemeReport({ foreground: "#1a1a1a", background: "#ffffff" })).toBe("\x1b[?997;2n");
+    });
+
+    it("reports the colour scheme as dark (1) when the background is darker than the foreground", () => {
+        expect(colourSchemeReport({ foreground: "#c1c1c1", background: "#000000" })).toBe("\x1b[?997;1n");
+    });
+
+    it("returns null for the colour scheme when either colour is missing", () => {
+        expect(colourSchemeReport({ foreground: "#1a1a1a", background: undefined })).toBeNull();
     });
 });
