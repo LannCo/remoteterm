@@ -31,7 +31,12 @@ import {
     DefaultTermThemeLight,
     formatOscColourReport,
     getDefaultTermThemeName,
+    needsLightTextFixes,
+    neutraliseFaintSgr,
     resolveTermThemeName,
+    setGlyphAlphaBlend,
+    setXtermGlyphBlend,
+    type SgrParams,
 } from "./termutil";
 
 extend([a11yPlugin]);
@@ -296,5 +301,135 @@ describe("reported terminal colours", () => {
 
     it("returns null for the colour scheme when either colour is missing", () => {
         expect(colourSchemeReport({ foreground: "#1a1a1a", background: undefined })).toBeNull();
+    });
+});
+
+describe("needsLightTextFixes", () => {
+    const fullConfig = { termthemes } as unknown as FullConfigType;
+
+    it("is on for the light theme, whatever the transparency", () => {
+        for (const transparency of [0, 0.4]) {
+            const [theme, bg] = computeTheme(fullConfig, "default-light", transparency, "default-light");
+            expect(needsLightTextFixes(theme, bg)).toBe(true);
+        }
+    });
+
+    it("is off for the dark theme and for a theme with no colours", () => {
+        const [dark, darkBg] = computeTheme(fullConfig, "default-dark", 0, "default-dark");
+        expect(needsLightTextFixes(dark, darkBg)).toBe(false);
+        const [empty, emptyBg] = computeTheme({ termthemes: {} } as unknown as FullConfigType, "x", 0, "y");
+        expect(needsLightTextFixes(empty, emptyBg)).toBe(false);
+    });
+});
+
+function makeGl() {
+    return {
+        SRC_ALPHA: 0x302,
+        ONE_MINUS_SRC_ALPHA: 0x303,
+        ONE: 1,
+        blendFunc: vi.fn(),
+        blendFuncSeparate: vi.fn(),
+    };
+}
+
+describe("setGlyphAlphaBlend", () => {
+    it("keeps the destination alpha linear when corrected", () => {
+        const gl = makeGl();
+        setGlyphAlphaBlend(gl, true);
+        expect(gl.blendFuncSeparate).toHaveBeenCalledWith(0x302, 0x303, 1, 0x303);
+        expect(gl.blendFunc).not.toHaveBeenCalled();
+    });
+
+    it("restores xterm.js's own blend function when not corrected", () => {
+        const gl = makeGl();
+        setGlyphAlphaBlend(gl, false);
+        expect(gl.blendFunc).toHaveBeenCalledWith(0x302, 0x303);
+        expect(gl.blendFuncSeparate).not.toHaveBeenCalled();
+    });
+});
+
+describe("setXtermGlyphBlend", () => {
+    function rootWith(...contexts: (ReturnType<typeof makeGl> | null)[]) {
+        const canvases = contexts.map((gl) => ({ getContext: vi.fn(() => gl) }));
+        const root = { querySelectorAll: vi.fn(() => canvases) } as unknown as ParentNode;
+        return { root, canvases };
+    }
+
+    it("only reaches canvases inside the xterm screen and skips those without a WebGL context", () => {
+        const gl = makeGl();
+        const { root, canvases } = rootWith(null, gl);
+        expect(setXtermGlyphBlend(root, true)).toBe(1);
+        expect((root.querySelectorAll as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe(".xterm-screen canvas");
+        expect(canvases[1].getContext).toHaveBeenCalledWith("webgl2");
+        expect(gl.blendFuncSeparate).toHaveBeenCalledTimes(1);
+    });
+
+    it("does nothing before the terminal is opened", () => {
+        expect(setXtermGlyphBlend(null, true)).toBe(0);
+        expect(setXtermGlyphBlend(undefined, false)).toBe(0);
+    });
+});
+
+// Mirrors xterm.js's Params: one slot per top-level parameter, sub-parameters kept apart.
+function sgr(...slots: (number | { v: number; sub: number[] })[]): SgrParams & { values: () => number[] } {
+    const params = Int32Array.from(slots.map((s) => (typeof s === "number" ? s : s.v)));
+    return {
+        length: slots.length,
+        params,
+        hasSubParams: (i: number) => typeof slots[i] !== "number",
+        values: () => Array.from(params),
+    };
+}
+
+describe("neutraliseFaintSgr", () => {
+    it("turns a faint parameter into one xterm.js ignores", () => {
+        const p = sgr(2);
+        expect(neutraliseFaintSgr(p)).toBe(true);
+        expect(p.values()).toEqual([26]);
+    });
+
+    it("leaves the rest of the sequence alone", () => {
+        const p = sgr(1, 2, 31);
+        expect(neutraliseFaintSgr(p)).toBe(true);
+        expect(p.values()).toEqual([1, 26, 31]);
+    });
+
+    it("does not read a 2 inside an extended colour as faint", () => {
+        for (const slots of [
+            [38, 2, 2, 2, 2],
+            [48, 2, 9, 2, 9],
+            [38, 5, 2],
+            [58, 5, 2],
+        ]) {
+            const p = sgr(...slots);
+            expect(neutraliseFaintSgr(p), slots.join(";")).toBe(false);
+            expect(p.values()).toEqual(slots);
+        }
+    });
+
+    it("finds a faint parameter on either side of an extended colour", () => {
+        const p = sgr(2, 38, 5, 2, 2);
+        expect(neutraliseFaintSgr(p)).toBe(true);
+        expect(p.values()).toEqual([26, 38, 5, 2, 26]);
+    });
+
+    it("does not read a 2 in a colon sub-parameter list as faint", () => {
+        const p = sgr({ v: 4, sub: [2] }, { v: 38, sub: [2, 0, 1, 2, 3] });
+        expect(neutraliseFaintSgr(p)).toBe(false);
+        expect(p.values()).toEqual([4, 38]);
+    });
+
+    it("ignores resets and sequences without faint", () => {
+        for (const slots of [[0], [22], [1, 4, 31], []]) {
+            const p = sgr(...slots);
+            expect(neutraliseFaintSgr(p), slots.join(";")).toBe(false);
+            expect(p.values()).toEqual(slots);
+        }
+    });
+
+    it("tolerates parameters it cannot read", () => {
+        expect(neutraliseFaintSgr({ length: 1, params: [2] as unknown as Int32Array, hasSubParams: () => false })).toBe(
+            false
+        );
     });
 });
