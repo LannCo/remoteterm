@@ -210,3 +210,59 @@ describe.each([
         }
     );
 });
+
+// Light-mode running text: the owner reads #6b6f6a/#707570 as washed-out grey, so the bar for the
+// secondary tokens is 7:1 (AAA) on the page background and 4.5:1 on every tinted fill they sit on.
+const SecondaryMinOnPage = 7;
+const SecondaryMinDistinctFromPrimary = 1.5;
+
+function lightCompositeOnWhite(cssColor: string): string {
+    const c = colord(cssColor);
+    return compositeRgb(c.toHex(), c.alpha(), "#ffffff").toHex();
+}
+
+const lightTextTokens: { name: string; color: string }[] = [
+    { name: "--color-secondary", color: colorSecondary.light },
+    { name: "--color-muted-foreground", color: extractVarValues(tailwindsetupCss, "color-muted-foreground").light },
+    { name: "--color-muted", color: extractVarValues(tailwindsetupCss, "color-muted").light },
+    { name: "--secondary-text-color", color: secondaryTextColor.light },
+    { name: "--grey-text-color", color: extractVarValues(themeScss, "grey-text-color").light },
+];
+
+const lightTintedFills: { name: string; color: string }[] = [
+    { name: "page", color: extractVarValues(tailwindsetupCss, "color-background").light },
+    { name: "inputbg", color: lightCompositeOnWhite(extractVarValues(tailwindsetupCss, "color-inputbg").light) },
+    { name: "activebg", color: lightCompositeOnWhite(extractVarValues(tailwindsetupCss, "color-activebg").light) },
+    { name: "surface", color: lightCompositeOnWhite(extractVarValues(tailwindsetupCss, "color-surface").light) },
+    { name: "hover", color: lightCompositeOnWhite(extractVarValues(tailwindsetupCss, "color-hover").light) },
+    { name: "panel", color: lightCompositeOnWhite(extractVarValues(tailwindsetupCss, "color-panel").light) },
+    // selected process-viewer row (bg-accentbg) is the darkest fill running text lands on
+    {
+        name: "accentbg (selected row)",
+        color: lightCompositeOnWhite(extractVarValues(tailwindsetupCss, "color-accentbg").light),
+    },
+];
+
+describe("light-mode secondary text tokens", () => {
+    test.each(lightTextTokens)("$name reaches 7:1 on the page background", ({ name, color }) => {
+        const ratio = colord(color).contrast("#ffffff");
+        expect(ratio, `${name} ${color} is ${ratio.toFixed(2)}:1 on white`).toBeGreaterThanOrEqual(SecondaryMinOnPage);
+    });
+
+    describe.each(lightTextTokens)("$name", ({ name, color }) => {
+        test.each(lightTintedFills)("clears 4.5:1 on $name", ({ name: fillName, color: fill }) => {
+            const ratio = colord(color).contrast(fill);
+            expect(ratio, `${name} ${color} on ${fillName} ${fill} is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
+                MinContrast
+            );
+        });
+
+        test("stays visibly lighter than primary text", () => {
+            const primaryRatio = colord(colorPrimary.light).contrast("#ffffff");
+            const ratio = primaryRatio / colord(color).contrast("#ffffff");
+            expect(ratio, `${name} vs primary luminance step ${ratio.toFixed(2)}`).toBeGreaterThanOrEqual(
+                SecondaryMinDistinctFromPrimary
+            );
+        });
+    });
+});

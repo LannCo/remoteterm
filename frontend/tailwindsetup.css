@@ -92,9 +92,9 @@
     --color-background: rgb(255, 255, 255);
     --color-foreground: #1a1a1a;
     --color-primary: #1a1a1a;
-    --color-muted-foreground: rgb(107, 111, 106);
-    --color-secondary: rgb(107, 111, 106);
-    --color-muted: rgb(112, 117, 112);
+    --color-muted-foreground: rgb(69, 74, 68);
+    --color-secondary: rgb(69, 74, 68);
+    --color-muted: rgb(80, 85, 79);
     --color-accent-text: rgb(47, 133, 47);
     --color-inputbg: rgba(0, 0, 0, 0.06);
     --color-panel: rgba(245, 246, 245, 0.9);
