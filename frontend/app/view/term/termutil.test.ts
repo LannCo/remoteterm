@@ -23,6 +23,7 @@ import a11yPlugin from "colord/plugins/a11y";
 import termthemes from "../../../../pkg/rtconfig/defaultconfig/termthemes.json";
 import {
     colourSchemeReport,
+    computeMinimumContrastRatio,
     computeReportedColours,
     computeTheme,
     createRemoteTempFileFromBlob,
@@ -221,6 +222,33 @@ describe("computeTheme reverse video and block cursor text", () => {
         const [theme] = computeTheme(fullConfig, "default-dark", 0, "default-dark");
         expect(theme.background).toBe("#00000000");
         expect((theme as { cursorAccent?: string }).cursorAccent).toBe("#000000");
+    });
+});
+
+describe("computeMinimumContrastRatio", () => {
+    const fullConfig = { termthemes } as unknown as FullConfigType;
+
+    it("asks xterm.js for 4.5:1 on the light theme, whatever the transparency", () => {
+        for (const transparency of [0, 0.4]) {
+            const [theme, bg] = computeTheme(fullConfig, "default-light", transparency, "default-light");
+            expect(computeMinimumContrastRatio(theme, bg)).toBe(4.5);
+        }
+    });
+
+    it("leaves every dark built-in theme at xterm.js's default of 1", () => {
+        const dark = Object.keys(termthemes).filter(
+            (name) => colord(termthemes[name].background).luminance() < colord(termthemes[name].foreground).luminance()
+        );
+        expect(dark).toContain("default-dark");
+        for (const name of dark) {
+            const [theme, bg] = computeTheme(fullConfig, name, 0, name);
+            expect(computeMinimumContrastRatio(theme, bg), name).toBe(1);
+        }
+    });
+
+    it("stays at 1 when the theme has no colours", () => {
+        const [theme, bg] = computeTheme({ termthemes: {} } as unknown as FullConfigType, "x", 0, "y");
+        expect(computeMinimumContrastRatio(theme, bg)).toBe(1);
     });
 });
 
