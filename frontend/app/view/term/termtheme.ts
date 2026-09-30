@@ -8,6 +8,7 @@ import {
     computeReportedColours,
     computeTheme,
     getDefaultTermThemeName,
+    needsLightTextFixes,
 } from "@/app/view/term/termutil";
 import { TermWrap } from "@/app/view/term/termwrap";
 import { atoms } from "@/store/global";
@@ -36,6 +37,7 @@ const TermThemeUpdater = ({ blockId, model, termRef }: TermThemeProps) => {
             termRef.current.terminal.options.theme = theme;
             termRef.current.terminal.options.minimumContrastRatio = computeMinimumContrastRatio(theme, bgcolor);
             termRef.current.setReportedColours(computeReportedColours(theme, bgcolor));
+            termRef.current.setLightTextFixes(needsLightTextFixes(theme, bgcolor));
         }
     }, [theme]);
     return null;
