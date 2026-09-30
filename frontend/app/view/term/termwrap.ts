@@ -47,10 +47,13 @@ import {
     createTempFileFromBlob,
     extractAllClipboardData,
     formatOscColourReport,
+    neutraliseFaintSgr,
     normalizeCursorStyle,
     quoteForPosixShell,
+    setXtermGlyphBlend,
     trimTerminalSelection,
     type ReportedColours,
+    type SgrParams,
 } from "./termutil";
 
 const dlog = debug("wave:termwrap");
@@ -217,6 +220,7 @@ type TermWrapOptions = {
     sendDataHandler?: (data: string) => void;
     nodeModel?: BlockNodeModel;
     reportedColours?: ReportedColours;
+    lightTextFixes?: boolean;
 };
 
 // DEC private modes that are safe to replay on durable reconnect.
@@ -288,6 +292,10 @@ export class TermWrap {
     // OSC 10/11 or the colour scheme query correctly on its own.
     reportedColours: ReportedColours = {};
 
+    // Light themes need two xterm.js rendering behaviours turned off (see needsLightTextFixes).
+    lightTextFixes = false;
+    glyphBlendCorrected = false;
+
     // Track written image asset hashes to avoid redundant writes
     _writtenImageHashes: Set<string> = new Set();
 
@@ -316,6 +324,7 @@ export class TermWrap {
         this.claudeCodeActiveAtom = jotai.atom(false);
         this.webglEnabledAtom = jotai.atom(false) as jotai.PrimitiveAtom<boolean>;
         this.reportedColours = waveOptions.reportedColours ?? {};
+        this.lightTextFixes = waveOptions.lightTextFixes ?? false;
         // xterm.js derives its colour scheme answer and DEC 2031 updates from the transparent canvas
         // colour; RemoteTerm answers both from reportedColours instead.
         this.terminal = new Terminal({ ...options, vtExtensions: { ...options.vtExtensions, colorSchemeQuery: false } });
@@ -523,6 +532,17 @@ export class TermWrap {
                 return this.reportColourScheme();
             })
         );
+        // The public parser API hands handlers a copy of the parameters, so the faint fix registers on the
+        // core parser, where the list is the one xterm.js goes on to read.
+        const faintHandler = (this.terminal as any)._core?.registerCsiHandler?.({ final: "m" }, (params: SgrParams) => {
+            if (this.lightTextFixes) {
+                neutraliseFaintSgr(params);
+            }
+            return false;
+        });
+        if (faintHandler != null) {
+            this.toDispose.push(faintHandler);
+        }
         this.toDispose.push(
             this.terminal.parser.registerCsiHandler({ final: "J" }, (params) => {
                 if (params == null || params.length < 1) {
@@ -622,6 +642,7 @@ export class TermWrap {
         this.heldData = [];
         this.handleResize_debounced = debounce(50, this.handleResize.bind(this));
         this.terminal.open(this.connectElem);
+        this.applyGlyphBlend();
 
         const dragoverHandler = (e: DragEvent) => {
             e.preventDefault();
@@ -745,6 +766,7 @@ export class TermWrap {
             });
             this.terminal.loadAddon(addon);
             this.webglAddon = addon;
+            this.applyGlyphBlend();
             globalStore.set(this.webglEnabledAtom, true);
             if (!loggedWebGL) {
                 loggedWebGL = true;
@@ -906,6 +928,21 @@ export class TermWrap {
         });
         this.mainFileSubjectSubscription?.unsubscribe();
         this.mainFileSubject?.release();
+    }
+
+    setLightTextFixes(on: boolean) {
+        this.lightTextFixes = on;
+        this.applyGlyphBlend();
+    }
+
+    // The blend function lives in the WebGL context xterm.js made, so it is set again whenever the
+    // canvas is new. A dark theme never gets the correction, which keeps its rendering as it was.
+    applyGlyphBlend() {
+        if (!this.lightTextFixes && !this.glyphBlendCorrected) {
+            return;
+        }
+        setXtermGlyphBlend(this.terminal.element, this.lightTextFixes);
+        this.glyphBlendCorrected = this.lightTextFixes;
     }
 
     setReportedColours(colours: ReportedColours) {

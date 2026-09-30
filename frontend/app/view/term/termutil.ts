@@ -97,6 +97,83 @@ export function computeMinimumContrastRatio(theme: TermThemeType, bgcolor: strin
     return isLightTheme(theme.foreground, bgcolor) ? LightThemeMinimumContrastRatio : 1;
 }
 
+// Two xterm.js renderer behaviours that only hurt dark text on a light background (see
+// setGlyphAlphaBlend and neutraliseFaintSgr), so they are switched on for light themes and left
+// as xterm.js ships them elsewhere.
+export function needsLightTextFixes(theme: TermThemeType, bgcolor: string): boolean {
+    return isLightTheme(theme.foreground, bgcolor);
+}
+
+export type GlyphBlendContext = {
+    SRC_ALPHA: number;
+    ONE_MINUS_SRC_ALPHA: number;
+    ONE: number;
+    blendFunc(src: number, dst: number): void;
+    blendFuncSeparate(srcRgb: number, dstRgb: number, srcAlpha: number, dstAlpha: number): void;
+};
+
+// The WebGL renderer composites glyphs with blendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA), which applies
+// the same factors to the alpha channel. Into the transparent, premultiplied canvas allowTransparency
+// gives us, the canvas alpha of a pixel with glyph alpha a becomes a*a instead of a, so (a - a*a) of the
+// page behind shows through every partly covered pixel. On white that washes out glyph edges (default
+// text drew 27% less ink than the DOM renderer) and SGR 2 faint text (alpha 0.5) lands at 25%.
+// Keeping the destination alpha linear restores the DOM renderer's coverage.
+export function setGlyphAlphaBlend(gl: GlyphBlendContext, corrected: boolean): void {
+    if (corrected) {
+        gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    } else {
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    }
+}
+
+// getContext returns the context xterm.js already made for its canvas, and null for the 2D link layers.
+export function setXtermGlyphBlend(root: ParentNode | null | undefined, corrected: boolean): number {
+    if (root == null) {
+        return 0;
+    }
+    let updated = 0;
+    for (const canvas of Array.from(root.querySelectorAll<HTMLCanvasElement>(".xterm-screen canvas"))) {
+        const gl = canvas.getContext("webgl2");
+        if (gl != null) {
+            setGlyphAlphaBlend(gl, corrected);
+            updated++;
+        }
+    }
+    return updated;
+}
+
+// The slice of xterm.js's internal SGR parameter list that neutraliseFaintSgr reads and writes.
+export type SgrParams = { length: number; params: Int32Array; hasSubParams(index: number): boolean };
+
+const SgrIgnored = 26; // proportional spacing: xterm.js does not act on it
+
+// xterm.js draws SGR 2 (faint) text at half opacity, after lifting its colour to only half of
+// minimumContrastRatio. Half opacity over white cannot exceed 3.95:1 even for black, so faint text in a
+// light theme can never reach 4.5:1 and lands at 2.0-3.4:1 in practice. Faint is turned into a no-op, so
+// the cell keeps its ordinary colour, which minimumContrastRatio has already lifted to 4.5:1.
+// Returns whether a faint parameter was replaced.
+export function neutraliseFaintSgr(sgr: SgrParams): boolean {
+    if (!(sgr.params instanceof Int32Array)) {
+        return false;
+    }
+    let changed = false;
+    for (let i = 0; i < sgr.length; i++) {
+        const p = sgr.params[i];
+        if (sgr.hasSubParams(i)) {
+            continue;
+        }
+        if (p === 38 || p === 48 || p === 58) {
+            // 38;5;n and 38;2;r;g;b carry colour values that must not be read as parameters
+            const mode = sgr.params[i + 1];
+            i += mode === 5 ? 2 : mode === 2 ? 4 : 0;
+        } else if (p === 2) {
+            sgr.params[i] = SgrIgnored;
+            changed = true;
+        }
+    }
+    return changed;
+}
+
 // The xterm canvas is kept transparent (see computeTheme) so xterm.js would answer OSC 10/11 and the
 // colour scheme query from a black background. These helpers describe the colours the block really
 // shows, opaque, so programs can pick a matching palette.
