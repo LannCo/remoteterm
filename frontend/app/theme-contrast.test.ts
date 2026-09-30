@@ -266,3 +266,44 @@ describe("light-mode secondary text tokens", () => {
         });
     });
 });
+
+// text-accent is the raw brand green (2.30:1 on white); text-accent-text is the theme-aware token for
+// running text. The consumers below carry real text (headings, links, prompt glyphs), so they must
+// use the token. Icon-only uses keep text-accent.
+const AccentTextConsumers = [
+    "onboarding/onboarding.tsx",
+    "onboarding/onboarding-command.tsx",
+    "onboarding/onboarding-layout-term.tsx",
+    "element/quicktips.tsx",
+    "element/markdown.tsx",
+    "element/streamdown.tsx",
+    "view/remotetermconfig/connectionscontent.tsx",
+];
+const RawAccentTextClass = /(?<![\w:-])text-accent(?:-400)?(?![\w-])/;
+
+describe("light-mode accent text", () => {
+    const accentText = extractVarValues(tailwindsetupCss, "color-accent-text");
+
+    test.each(lightTintedFills.filter((f) => !f.name.startsWith("accentbg")))(
+        "--color-accent-text clears 4.5:1 on $name",
+        ({ name, color }) => {
+            const ratio = colord(accentText.light).contrast(color);
+            expect(ratio, `${accentText.light} on ${name} ${color} is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
+                MinContrast
+            );
+        }
+    );
+
+    test("dark mode keeps accent-text equal to the accent", () => {
+        expect(accentText.dark).toBe(extractVarValues(tailwindsetupCss, "color-accent").dark);
+    });
+
+    test.each(AccentTextConsumers)("%s uses text-accent-text, not the raw accent, for text", (file) => {
+        const src = fs.readFileSync(path.join(__dirname, file), "utf8");
+        const offenders = src
+            .split("\n")
+            .map((line, i) => ({ line, n: i + 1 }))
+            .filter(({ line }) => RawAccentTextClass.test(line) && !/\bfa-(solid|brands|sharp)/.test(line));
+        expect(offenders.map(({ n, line }) => `${file}:${n} ${line.trim()}`)).toEqual([]);
+    });
+});

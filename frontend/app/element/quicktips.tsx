@@ -17,7 +17,7 @@ const IconBox = ({ children, variant = "accent" }: { children: React.ReactNode; 
     const colorClasses =
         variant === "secondary"
             ? "text-secondary bg-white/5 border-white/10 [&_svg]:fill-secondary [&_svg_#arrow1]:fill-primary [&_svg_#arrow2]:fill-primary"
-            : "text-accent-400 bg-accent-400/10 border-accent-400/20 [&_svg]:fill-accent-400 [&_svg_#arrow1]:fill-accent-400 [&_svg_#arrow2]:fill-accent-400";
+            : "text-accent-text bg-accent-400/10 border-accent-400/20 [&_svg]:fill-accent-text [&_svg_#arrow1]:fill-accent-text [&_svg_#arrow2]:fill-accent-text";
 
     return (
         <div
@@ -145,7 +145,7 @@ const QuickTips = () => {
 
                 <div className="grid grid-cols-1 @lg:grid-cols-2 gap-x-5 gap-y-6">
                     <div className="flex flex-col gap-1.5">
-                        <div className="text-sm text-accent-400 font-semibold uppercase tracking-wide mb-1">
+                        <div className="text-sm text-accent-text font-semibold uppercase tracking-wide mb-1">
                             Main Keybindings
                         </div>
                         <div className="flex flex-col gap-0.5 p-2 rounded-md hover:bg-white/5 transition-colors">
@@ -163,7 +163,7 @@ const QuickTips = () => {
                     </div>
 
                     <div className="flex flex-col gap-1.5">
-                        <div className="text-sm text-accent-400 font-semibold uppercase tracking-wide mb-1">
+                        <div className="text-sm text-accent-text font-semibold uppercase tracking-wide mb-1">
                             Tab Switching ({PLATFORM === PlatformMacOS ? "Cmd" : "Alt"})
                         </div>
                         <div className="flex flex-col gap-0.5 p-2 rounded-md hover:bg-white/5 transition-colors">
@@ -181,7 +181,7 @@ const QuickTips = () => {
                     </div>
 
                     <div className="flex flex-col gap-1.5">
-                        <div className="text-sm text-accent-400 font-semibold uppercase tracking-wide mb-1">
+                        <div className="text-sm text-accent-text font-semibold uppercase tracking-wide mb-1">
                             Block Navigation (Ctrl-Shift)
                         </div>
                         <div className="flex flex-col gap-0.5 p-2 rounded-md hover:bg-white/5 transition-colors">
@@ -199,7 +199,7 @@ const QuickTips = () => {
                     </div>
 
                     <div className="flex flex-col gap-1.5">
-                        <div className="text-sm text-accent-400 font-semibold uppercase tracking-wide mb-1">
+                        <div className="text-sm text-accent-text font-semibold uppercase tracking-wide mb-1">
                             Split Blocks
                         </div>
                         <div className="flex flex-col gap-0.5 p-2 rounded-md hover:bg-white/5 transition-colors">
@@ -224,18 +224,18 @@ const QuickTips = () => {
                     <span className="text-foreground">wsh commands</span>
                 </div>
                 <div className="grid grid-cols-1 @md:grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-2 p-4 bg-black/20 rounded-lg border border-accent-400/30 hover:border-accent-400/50 transition-colors">
+                    <div className="flex flex-col gap-2 p-4 bg-inputbg rounded-lg border border-accent-400/30 hover:border-accent-400/50 transition-colors">
                         <code className="font-mono text-sm">
                             <span className="text-secondary">&gt; </span>
-                            <span className="text-accent-400 font-semibold">wsh view</span>
+                            <span className="text-accent-text font-semibold">wsh view</span>
                             <span className="text-muted"> [filename|url]</span>
                         </code>
                         <div className="text-secondary text-sm mt-1">Preview files, directories, or web URLs</div>
                     </div>
-                    <div className="flex flex-col gap-2 p-4 bg-black/20 rounded-lg border border-accent-400/30 hover:border-accent-400/50 transition-colors">
+                    <div className="flex flex-col gap-2 p-4 bg-inputbg rounded-lg border border-accent-400/30 hover:border-accent-400/50 transition-colors">
                         <code className="font-mono text-sm">
                             <span className="text-secondary">&gt; </span>
-                            <span className="text-accent-400 font-semibold">wsh edit</span>
+                            <span className="text-accent-text font-semibold">wsh edit</span>
                             <span className="text-muted"> [filename]</span>
                         </code>
                         <div className="text-secondary text-sm mt-1">Edit config and code files</div>

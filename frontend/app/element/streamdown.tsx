@@ -291,7 +291,7 @@ export const WaveStreamdown = ({
             },
             summary: () => null, // Don't render summary separately
             a: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
-                <a {...props} className="text-accent hover:underline" />
+                <a {...props} className="text-accent-text hover:underline" />
             ),
             strong: (props: React.HTMLAttributes<HTMLElement>) => (
                 <strong {...props} className="font-semibold text-secondary" />
