@@ -339,3 +339,61 @@ describe("light-mode placeholder text", () => {
         }
     );
 });
+
+describe("light-mode markdown code and links", () => {
+    const markdownScss = fs.readFileSync(path.join(__dirname, "element", "markdown.scss"), "utf8");
+    const githubScss = fs.readFileSync(
+        path.join(__dirname, "..", "..", "node_modules", "highlight.js", "scss", "github.scss"),
+        "utf8"
+    );
+    const lightStart = markdownScss.indexOf(':root[data-theme="light"] {');
+    const lightBlock = lightStart === -1 ? "" : markdownScss.slice(lightStart, markdownScss.indexOf("\n}", lightStart));
+
+    function selectorColours(css: string): Map<string, string> {
+        const out = new Map<string, string>();
+        for (const m of css
+            .replace(/\/\*[\s\S]*?\*\/|@import[^;]*;|\/\/[^\n]*/g, "")
+            .matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+            const colour = m[2].match(/(?<![-\w])color:\s*(#[0-9a-fA-F]{3,8})/)?.[1];
+            if (!colour) {
+                continue;
+            }
+            for (const sel of m[1].split(",")) {
+                out.set(sel.trim(), colour);
+            }
+        }
+        return out;
+    }
+
+    test("markdown.scss loads a light highlight.js theme scoped to light mode and keeps the dark one", () => {
+        expect(markdownScss).toMatch(/@import url\("[^"]*highlight\.js\/scss\/github-dark-dimmed\.scss"\);/);
+        expect(lightBlock).toMatch(/@import "[^"]*highlight\.js\/scss\/github\.scss";/);
+    });
+
+    const panel = lightCompositeOnWhite(extractVarValues(themeScss, "panel-bg-color").light);
+    const effective = new Map([
+        ...selectorColours(githubScss),
+        ...selectorColours(lightBlock.replace(':root[data-theme="light"] {', "")),
+    ]);
+
+    test("every highlight.js token colour reaches 4.5:1 on the code box (--panel-bg-color)", () => {
+        expect(effective.size).toBeGreaterThan(30);
+        const failures = [...effective]
+            .map(([sel, colour]) => ({ sel, colour, ratio: colord(colour).contrast(panel) }))
+            .filter(({ ratio }) => ratio < MinContrast)
+            .map(({ sel, colour, ratio }) => `${sel} ${colour} is ${ratio.toFixed(2)}:1 on ${panel}`);
+        expect(failures).toEqual([]);
+    });
+
+    const link = extractVarValues(themeScss, "term-bright-blue");
+    test("markdown links (--term-bright-blue) reach 4.5:1 on the page and on the code box", () => {
+        for (const bg of [extractVarValues(tailwindsetupCss, "color-background").light, panel]) {
+            const ratio = colord(link.light).contrast(bg);
+            expect(ratio, `${link.light} on ${bg} is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(MinContrast);
+        }
+    });
+
+    test("dark mode keeps the original link colour", () => {
+        expect(link.dark).toBe("#32afff");
+    });
+});
