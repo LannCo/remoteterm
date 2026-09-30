@@ -15,24 +15,29 @@ import { DiffGutter } from "./DiffGutter";
 import { ReviewMode } from "./review-mode";
 import type { SourceControlViewModel } from "./sourcecontrol-model";
 import type { FileTreeNode, ReviewFile, SelectedFile } from "./types";
+import { useStatusColour } from "./use-status-colour";
 
 type SourceControlViewProps = ViewComponentProps<SourceControlViewModel>;
 
 // File status badge component
-const StatusBadge = memo(({ status, color }: { status: string; color: string }) => (
-    <span
-        className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold rounded"
-        style={{ color, backgroundColor: `${color}20` }}
-    >
-        {status}
-    </span>
-));
+const StatusBadge = memo(({ status, color }: { status: string; color: string }) => {
+    const shown = useStatusColour(color);
+    return (
+        <span
+            className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold rounded"
+            style={{ color: shown, backgroundColor: `${shown}20` }}
+        >
+            {status}
+        </span>
+    );
+});
 StatusBadge.displayName = "StatusBadge";
 
 // File icon component
-const FileIcon = memo(({ icon, color }: { icon: string; color: string }) => (
-    <i className={makeIconClass(icon, false)} style={{ color, fontSize: "11px" }} />
-));
+const FileIcon = memo(({ icon, color }: { icon: string; color: string }) => {
+    const shown = useStatusColour(color);
+    return <i className={makeIconClass(icon, false)} style={{ color: shown, fontSize: "11px" }} />;
+});
 FileIcon.displayName = "FileIcon";
 
 // Single file row component
