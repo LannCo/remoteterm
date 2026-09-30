@@ -3,6 +3,41 @@
 
 @import url("../../../node_modules/highlight.js/scss/github-dark-dimmed.scss");
 
+// The dark theme's pale token colours are 2.0-3.6:1 on the light code box, so light mode gets GitHub's
+// light theme. A few of its colours are 3.2-4.5:1 on --panel-bg-color, so those are darkened below.
+:root[data-theme="light"] {
+    @import "../../../node_modules/highlight.js/scss/github.scss";
+
+    .hljs-doctag,
+    .hljs-keyword,
+    .hljs-meta .hljs-keyword,
+    .hljs-template-tag,
+    .hljs-template-variable,
+    .hljs-type,
+    .hljs-variable.language_ {
+        color: #c22a3b;
+    }
+
+    .hljs-built_in,
+    .hljs-symbol {
+        color: #a84403;
+    }
+
+    .hljs-name,
+    .hljs-quote,
+    .hljs-selector-tag,
+    .hljs-selector-pseudo,
+    .hljs-addition {
+        color: #1c7431;
+    }
+
+    .hljs-comment,
+    .hljs-code,
+    .hljs-formula {
+        color: #5d6670;
+    }
+}
+
 .markdown {
     display: flex;
     flex-direction: row;
