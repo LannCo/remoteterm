@@ -66,8 +66,22 @@ export function computeTheme(
         }
     }
     const bgcolor = themeCopy.background;
-    themeCopy.background = "#00000000";
+    const reversedTextColour = getReversedTextColour(themeCopy.foreground, bgcolor);
+    // The canvas is transparent, but xterm.js still reads the RGB of theme.background as the text colour
+    // of reversed default-colour cells, and theme.cursorAccent as the text colour under a block cursor.
+    themeCopy.background = `${reversedTextColour}00`;
+    (themeCopy as { cursorAccent?: string }).cursorAccent ??= reversedTextColour;
     return [themeCopy, bgcolor];
+}
+
+// Black suits a dark theme (light foreground); on a light theme it lands on the dark foreground colour
+// (1.2:1), so the real background is used instead.
+function getReversedTextColour(foreground: string, background: string): string {
+    if (!foreground || !background) {
+        return "#000000";
+    }
+    const bg = colord(background).alpha(1);
+    return bg.luminance() > colord(foreground).luminance() ? bg.toHex() : "#000000";
 }
 
 // The xterm canvas is kept transparent (see computeTheme) so xterm.js would answer OSC 10/11 and the
