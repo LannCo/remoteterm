@@ -4,6 +4,7 @@
 import { memo, useCallback, useMemo } from "react";
 import { Tooltip } from "@/app/element/tooltip";
 import type { ReviewFile } from "./types";
+import { useStatusColour } from "./use-status-colour";
 
 type JumpListItemProps = {
     file: ReviewFile;
@@ -13,6 +14,7 @@ type JumpListItemProps = {
 };
 
 const JumpListItem = memo(({ file, isActive, isCollapsed, onClick }: JumpListItemProps) => {
+    const statusColour = useStatusColour(file.color);
     const displayName = useMemo(() => {
         const parts = file.path.split("/");
         return parts[parts.length - 1] || file.path;
@@ -29,7 +31,7 @@ const JumpListItem = memo(({ file, isActive, isCollapsed, onClick }: JumpListIte
         >
             <span
                 className="inline-flex items-center justify-center w-3.5 h-3.5 text-[9px] font-bold rounded flex-shrink-0"
-                style={{ color: file.color, backgroundColor: `${file.color}20` }}
+                style={{ color: statusColour, backgroundColor: `${statusColour}20` }}
             >
                 {file.status}
             </span>

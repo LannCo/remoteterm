@@ -67,7 +67,7 @@ const InitPage = ({
                                 target="_blank"
                                 href="https://github.com/LannCo/remoteterm?ref=install"
                                 rel="noopener"
-                                className="text-accent"
+                                className="text-accent-text"
                                 onClick={handleStarClick}
                             >
                                 <i className="text-[32px] text-foreground/50 fa-brands fa-github"></i>
@@ -82,7 +82,7 @@ const InitPage = ({
                                     target="_blank"
                                     href="https://github.com/LannCo/remoteterm?ref=install"
                                     rel="noopener"
-                                    className="text-accent"
+                                    className="text-accent-text"
                                     onClick={handleStarClick}
                                 >
                                     Github&nbsp;(LannCo/remoteterm)
@@ -96,7 +96,7 @@ const InitPage = ({
                                 target="_blank"
                                 href="https://discord.gg/XfvZ334gwU"
                                 rel="noopener"
-                                className="text-accent"
+                                className="text-accent-text"
                             >
                                 <i className="text-[25px] text-foreground/50 fa-solid fa-people-group"></i>
                             </a>
@@ -111,7 +111,7 @@ const InitPage = ({
                                     target="_blank"
                                     href="https://discord.gg/XfvZ334gwU"
                                     rel="noopener"
-                                    className="text-accent"
+                                    className="text-accent-text"
                                 >
                                     Join the Wave&nbsp;Discord&nbsp;Channel
                                 </a>

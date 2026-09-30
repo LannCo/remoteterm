@@ -25,7 +25,13 @@ import * as React from "react";
 import { TermLinkTooltip } from "./term-tooltip";
 import { TermStickers } from "./termsticker";
 import { TermThemeUpdater } from "./termtheme";
-import { computeReportedColours, computeTheme, getDefaultTermThemeName, normalizeCursorStyle } from "./termutil";
+import {
+    computeMinimumContrastRatio,
+    computeReportedColours,
+    computeTheme,
+    getDefaultTermThemeName,
+    normalizeCursorStyle,
+} from "./termutil";
 import { TermWrap } from "./termwrap";
 import "./xterm.css";
 
@@ -306,6 +312,7 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
             connectElemRef.current,
             {
                 theme: termTheme,
+                minimumContrastRatio: computeMinimumContrastRatio(termTheme, termBgColor),
                 fontSize: termFontSize,
                 fontFamily: termSettings?.["term:fontfamily"] ?? connFontFamily ?? "Hack",
                 drawBoldTextInBrightColors: false,

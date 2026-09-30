@@ -42,7 +42,7 @@ const ViewToggle = memo(({ view, onChange }: ViewToggleProps) => {
                 onClick={() => onChange("keychain")}
             >
                 Keychain
-                <span className="text-xxs px-1.5 py-0.5 rounded-full bg-warning/15 text-warning">concept</span>
+                <span className="text-xxs px-1.5 py-0.5 rounded-full bg-warning/15 text-warning-text">concept</span>
             </button>
         </div>
     );
@@ -80,7 +80,7 @@ const QuickAddRow = memo(({ model }: QuickAddRowProps) => {
                     type="text"
                     autoFocus
                     aria-label="New connection, user@host:port"
-                    className="flex-1 max-w-[260px] bg-inputbg border border-dashed border-accent/40 rounded-md px-2.5 py-1.5 text-xs font-mono text-accent focus:outline-none focus:border-accent"
+                    className="flex-1 max-w-[260px] bg-inputbg border border-dashed border-accent/40 rounded-md px-2.5 py-1.5 text-xs font-mono text-accent-text focus:outline-none focus:border-accent"
                     value={value}
                     onChange={(e) => {
                         setValue(e.target.value);

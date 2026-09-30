@@ -66,8 +66,35 @@ export function computeTheme(
         }
     }
     const bgcolor = themeCopy.background;
-    themeCopy.background = "#00000000";
+    const reversedTextColour = getReversedTextColour(themeCopy.foreground, bgcolor);
+    // The canvas is transparent, but xterm.js still reads the RGB of theme.background as the text colour
+    // of reversed default-colour cells, and theme.cursorAccent as the text colour under a block cursor.
+    themeCopy.background = `${reversedTextColour}00`;
+    (themeCopy as { cursorAccent?: string }).cursorAccent ??= reversedTextColour;
     return [themeCopy, bgcolor];
+}
+
+function isLightTheme(foreground: string, background: string): boolean {
+    if (!foreground || !background) {
+        return false;
+    }
+    return colord(background).alpha(1).luminance() > colord(foreground).luminance();
+}
+
+// Black suits a dark theme (light foreground); on a light theme it lands on the dark foreground colour
+// (1.2:1), so the real background is used instead.
+function getReversedTextColour(foreground: string, background: string): string {
+    return isLightTheme(foreground, background) ? colord(background).alpha(1).toHex() : "#000000";
+}
+
+// Programs colour text for a dark canvas and pair palette entries as foreground and background (ls
+// `ow` is blue on green), so a light palette that suits text on white
+// cannot also suit those pairs. xterm.js lifts the foreground of any cell below this ratio against
+// that cell's own background. 1 leaves dark themes untouched.
+export const LightThemeMinimumContrastRatio = 4.5;
+
+export function computeMinimumContrastRatio(theme: TermThemeType, bgcolor: string): number {
+    return isLightTheme(theme.foreground, bgcolor) ? LightThemeMinimumContrastRatio : 1;
 }
 
 // The xterm canvas is kept transparent (see computeTheme) so xterm.js would answer OSC 10/11 and the
