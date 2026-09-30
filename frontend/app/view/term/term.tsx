@@ -30,6 +30,7 @@ import {
     computeReportedColours,
     computeTheme,
     getDefaultTermThemeName,
+    needsLightTextFixes,
     normalizeCursorStyle,
 } from "./termutil";
 import { TermWrap } from "./termwrap";
@@ -333,6 +334,7 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
                 sendDataHandler: model.sendDataToController.bind(model),
                 nodeModel: model.nodeModel,
                 reportedColours: computeReportedColours(termTheme, termBgColor),
+                lightTextFixes: needsLightTextFixes(termTheme, termBgColor),
             }
         );
         (window as any).term = termWrap;
