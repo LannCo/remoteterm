@@ -14,7 +14,9 @@ interface ErrorDisplayProps {
 const ErrorDisplay = memo(({ message, variant = "error" }: ErrorDisplayProps) => {
     const icon = variant === "error" ? "fa-circle-exclamation" : "fa-triangle-exclamation";
     const variantClasses =
-        variant === "error" ? "bg-error/10 border-error/20 text-error" : "bg-warning/10 border-warning/20 text-warning";
+        variant === "error"
+            ? "bg-error/10 border-error/20 text-error"
+            : "bg-warning/10 border-warning/20 text-warning-text";
 
     return (
         <div className={cn("flex items-center gap-2 px-3 py-2.5 border rounded-md text-xs", variantClasses)}>
