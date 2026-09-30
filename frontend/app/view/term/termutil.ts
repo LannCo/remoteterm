@@ -19,7 +19,10 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { makeConnRoute } from "@/util/util";
 import * as TermTypes from "@xterm/xterm";
 import base64 from "base64-js";
-import { colord } from "colord";
+import { colord, extend } from "colord";
+import a11yPlugin from "colord/plugins/a11y";
+
+extend([a11yPlugin]);
 
 export type GenClipboardItem = { text?: string; image?: Blob };
 
@@ -65,6 +68,33 @@ export function computeTheme(
     const bgcolor = themeCopy.background;
     themeCopy.background = "#00000000";
     return [themeCopy, bgcolor];
+}
+
+// The xterm canvas is kept transparent (see computeTheme) so xterm.js would answer OSC 10/11 and the
+// colour scheme query from a black background. These helpers describe the colours the block really
+// shows, opaque, so programs can pick a matching palette.
+export type ReportedColours = { foreground?: string; background?: string };
+
+export function computeReportedColours(theme: TermThemeType, bgcolor: string): ReportedColours {
+    const opaque = (color: string) => (color ? colord(color).alpha(1).toHex() : undefined);
+    return { foreground: opaque(theme.foreground), background: opaque(bgcolor) };
+}
+
+// OSC 10 (foreground) / OSC 11 (background) reply, 16-bit channels like xterm.js
+export function formatOscColourReport(ident: 10 | 11, color: string): string {
+    const { r, g, b } = colord(color).toRgb();
+    const channel = (v: number) => v.toString(16).padStart(2, "0").repeat(2);
+    return `\x1b]${ident};rgb:${channel(r)}/${channel(g)}/${channel(b)}\x1b\\`;
+}
+
+// CSI ? 997 ; 1 n (dark) / CSI ? 997 ; 2 n (light), decided the way xterm.js does: dark when the
+// background is darker than the foreground.
+export function colourSchemeReport(colours: ReportedColours): string | null {
+    if (!colours.foreground || !colours.background) {
+        return null;
+    }
+    const dark = colord(colours.background).luminance() < colord(colours.foreground).luminance();
+    return `\x1b[?997;${dark ? 1 : 2}n`;
 }
 
 export const MIME_TO_EXT: Record<string, string> = {

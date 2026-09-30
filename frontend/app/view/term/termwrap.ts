@@ -42,12 +42,15 @@ import {
 } from "./osc-handlers";
 import {
     bufferLinesToText,
+    colourSchemeReport,
     createRemoteTempFileFromBlob,
     createTempFileFromBlob,
     extractAllClipboardData,
+    formatOscColourReport,
     normalizeCursorStyle,
     quoteForPosixShell,
     trimTerminalSelection,
+    type ReportedColours,
 } from "./termutil";
 
 const dlog = debug("wave:termwrap");
@@ -213,6 +216,7 @@ type TermWrapOptions = {
     useWebGl?: boolean;
     sendDataHandler?: (data: string) => void;
     nodeModel?: BlockNodeModel;
+    reportedColours?: ReportedColours;
 };
 
 // DEC private modes that are safe to replay on durable reconnect.
@@ -280,6 +284,10 @@ export class TermWrap {
     // Track active DEC private modes for durable reconnect state restoration
     activeDecModes: Set<number> = new Set();
 
+    // Colours the block visibly shows. The xterm canvas is transparent, so xterm.js cannot answer
+    // OSC 10/11 or the colour scheme query correctly on its own.
+    reportedColours: ReportedColours = {};
+
     // Track written image asset hashes to avoid redundant writes
     _writtenImageHashes: Set<string> = new Set();
 
@@ -307,7 +315,10 @@ export class TermWrap {
         this.lastCommandAtom = jotai.atom(null) as jotai.PrimitiveAtom<string | null>;
         this.claudeCodeActiveAtom = jotai.atom(false);
         this.webglEnabledAtom = jotai.atom(false) as jotai.PrimitiveAtom<boolean>;
-        this.terminal = new Terminal(options);
+        this.reportedColours = waveOptions.reportedColours ?? {};
+        // xterm.js derives its colour scheme answer and DEC 2031 updates from the transparent canvas
+        // colour; RemoteTerm answers both from reportedColours instead.
+        this.terminal = new Terminal({ ...options, vtExtensions: { ...options.vtExtensions, colorSchemeQuery: false } });
         this.fitAddon = new FitAddon();
         this.serializeAddon = new SerializeAddon();
         this.searchAddon = new SearchAddon();
@@ -502,6 +513,16 @@ export class TermWrap {
                 return false;
             }
         });
+        this.toDispose.push(
+            this.terminal.parser.registerOscHandler(10, (data: string) => this.handleOscColourQuery(10, data)),
+            this.terminal.parser.registerOscHandler(11, (data: string) => this.handleOscColourQuery(11, data)),
+            this.terminal.parser.registerCsiHandler({ prefix: "?", final: "n" }, (params) => {
+                if (params?.[0] !== 996) {
+                    return false;
+                }
+                return this.reportColourScheme();
+            })
+        );
         this.toDispose.push(
             this.terminal.parser.registerCsiHandler({ final: "J" }, (params) => {
                 if (params == null || params.length < 1) {
@@ -885,6 +906,33 @@ export class TermWrap {
         });
         this.mainFileSubjectSubscription?.unsubscribe();
         this.mainFileSubject?.release();
+    }
+
+    setReportedColours(colours: ReportedColours) {
+        const before = colourSchemeReport(this.reportedColours);
+        this.reportedColours = colours;
+        const after = colourSchemeReport(colours);
+        if (after != null && after !== before && this.activeDecModes.has(2031)) {
+            this.handleTermData(after);
+        }
+    }
+
+    handleOscColourQuery(ident: 10 | 11, data: string): boolean {
+        const color = ident === 10 ? this.reportedColours.foreground : this.reportedColours.background;
+        if (data !== "?" || !color) {
+            return false;
+        }
+        this.handleTermData(formatOscColourReport(ident, color));
+        return true;
+    }
+
+    reportColourScheme(): boolean {
+        const report = colourSchemeReport(this.reportedColours);
+        if (report == null) {
+            return false;
+        }
+        this.handleTermData(report);
+        return true;
     }
 
     handleTermData(data: string) {
