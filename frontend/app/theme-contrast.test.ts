@@ -397,3 +397,39 @@ describe("light-mode markdown code and links", () => {
         expect(link.dark).toBe("#32afff");
     });
 });
+
+describe("Monaco light theme", () => {
+    const monacoEnvTs = fs.readFileSync(path.join(__dirname, "monaco", "monaco-env.ts"), "utf8");
+    const themeBlock = (name: string) => {
+        const start = monacoEnvTs.indexOf(`defineTheme("${name}"`);
+        return monacoEnvTs.slice(start, monacoEnvTs.indexOf("});", start));
+    };
+    const colourOf = (block: string, key: string) => block.match(new RegExp(`"${key}":\\s*"(#[0-9a-fA-F]{6,8})"`))?.[1];
+    const light = themeBlock("wave-theme-light");
+    const dark = themeBlock("wave-theme-dark");
+
+    test("defines a minimap.background, as the dark theme does, and it is a light colour", () => {
+        expect(colourOf(dark, "minimap.background")).toBeDefined();
+        const minimap = colourOf(light, "minimap.background");
+        expect(
+            minimap,
+            "wave-theme-light has no minimap.background: Monaco assumes a dark canvas and paints a grey slab"
+        ).toBeDefined();
+        expect(colord(minimap).luminance()).toBeGreaterThan(0.8);
+    });
+
+    test("dimmed line numbers reach 4.5:1 on the page and on the panel", () => {
+        const dimmed = colourOf(light, "editorLineNumber.dimmedForeground");
+        expect(dimmed, "Monaco derives the dimmed colour at 0.4 alpha (1.76:1) unless the theme sets it").toBeDefined();
+        const panel = lightCompositeOnWhite(extractVarValues(themeScss, "panel-bg-color").light);
+        for (const bg of ["#ffffff", panel]) {
+            const ratio = colord(dimmed).contrast(bg);
+            expect(ratio, `${dimmed} on ${bg} is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(MinContrast);
+        }
+    });
+
+    test("dark theme colours are unchanged", () => {
+        expect(dark).toContain('"minimap.background": "#00000077"');
+        expect(dark).not.toContain("dimmedForeground");
+    });
+});
