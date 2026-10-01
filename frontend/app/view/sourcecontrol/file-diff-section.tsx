@@ -8,6 +8,7 @@ import * as jotai from "jotai";
 import { DiffGutter } from "./DiffGutter";
 import type { SourceControlViewModel } from "./sourcecontrol-model";
 import type { ReviewFile } from "./types";
+import { useStatusColour } from "./use-status-colour";
 
 type FileDiffSectionProps = {
     model: SourceControlViewModel;
@@ -32,6 +33,7 @@ export const FileDiffSection = memo(({ model, file, index, isCollapsed, onToggle
     const [contentHeight, setContentHeight] = useState<number | undefined>(undefined);
     const stagedRef = useRef(file.staged);
     const viewMode = jotai.useAtomValue(model.viewModeAtom);
+    const statusColour = useStatusColour(file.color);
 
     const isStaged = file.staged;
 
@@ -200,7 +202,7 @@ export const FileDiffSection = memo(({ model, file, index, isCollapsed, onToggle
                 <i className={`fa-solid fa-chevron-${isCollapsed ? "right" : "down"} text-[10px] text-muted`} />
                 <span
                     className="inline-flex items-center justify-center w-3.5 h-3.5 text-[9px] font-bold rounded"
-                    style={{ color: file.color, backgroundColor: `${file.color}20` }}
+                    style={{ color: statusColour, backgroundColor: `${statusColour}20` }}
                 >
                     {file.status}
                 </span>
@@ -212,7 +214,7 @@ export const FileDiffSection = memo(({ model, file, index, isCollapsed, onToggle
                     </span>
                 )}
                 <button
-                    className="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 text-[10px] rounded bg-surface hover:bg-hoverbg text-secondary hover:text-white transition-opacity"
+                    className="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 text-[10px] rounded bg-surface hover:bg-hoverbg text-secondary hover:text-foreground transition-opacity"
                     title={stageLabel}
                     onClick={(e) => { e.stopPropagation(); onStage(); }}
                 >
@@ -221,7 +223,7 @@ export const FileDiffSection = memo(({ model, file, index, isCollapsed, onToggle
                 </button>
                 {!file.untracked && (
                     <button
-                        className="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 text-[10px] rounded bg-surface hover:bg-hoverbg text-secondary hover:text-white transition-opacity"
+                        className="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 text-[10px] rounded bg-surface hover:bg-hoverbg text-secondary hover:text-foreground transition-opacity"
                         title="Revert"
                         onClick={(e) => { e.stopPropagation(); onRevert(); }}
                     >

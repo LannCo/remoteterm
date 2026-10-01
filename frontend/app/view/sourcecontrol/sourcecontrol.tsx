@@ -15,24 +15,29 @@ import { DiffGutter } from "./DiffGutter";
 import { ReviewMode } from "./review-mode";
 import type { SourceControlViewModel } from "./sourcecontrol-model";
 import type { FileTreeNode, ReviewFile, SelectedFile } from "./types";
+import { useStatusColour } from "./use-status-colour";
 
 type SourceControlViewProps = ViewComponentProps<SourceControlViewModel>;
 
 // File status badge component
-const StatusBadge = memo(({ status, color }: { status: string; color: string }) => (
-    <span
-        className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold rounded"
-        style={{ color, backgroundColor: `${color}20` }}
-    >
-        {status}
-    </span>
-));
+const StatusBadge = memo(({ status, color }: { status: string; color: string }) => {
+    const shown = useStatusColour(color);
+    return (
+        <span
+            className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold rounded"
+            style={{ color: shown, backgroundColor: `${shown}20` }}
+        >
+            {status}
+        </span>
+    );
+});
 StatusBadge.displayName = "StatusBadge";
 
 // File icon component
-const FileIcon = memo(({ icon, color }: { icon: string; color: string }) => (
-    <i className={makeIconClass(icon, false)} style={{ color, fontSize: "11px" }} />
-));
+const FileIcon = memo(({ icon, color }: { icon: string; color: string }) => {
+    const shown = useStatusColour(color);
+    return <i className={makeIconClass(icon, false)} style={{ color: shown, fontSize: "11px" }} />;
+});
 FileIcon.displayName = "FileIcon";
 
 // Single file row component
@@ -54,7 +59,7 @@ const FileRow = memo(({ data, isSelected, onClick, onMiddleClick, stageLabel, on
     return (
         <div
             className={`flex items-center gap-2 px-2 py-1 cursor-pointer text-xs group ${
-                isSelected ? "bg-activebg text-white" : "hover:bg-hoverbg text-secondary"
+                isSelected ? "bg-activebg text-foreground" : "hover:bg-hoverbg text-secondary"
             }`}
             onClick={onClick}
             onMouseDown={handleMouseDown}
@@ -258,7 +263,7 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
                         <label className="text-xs text-muted w-20 text-right">Username</label>
                         <input
                             type="text"
-                            className="flex-1 px-3 py-2 text-xs bg-black/20 border border-border rounded outline-none focus:border-accent text-primary"
+                            className="flex-1 px-3 py-2 text-xs bg-inputbg border border-border rounded outline-none focus:border-accent-text text-primary"
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}
                             onKeyDown={handleKeyDown}
@@ -271,7 +276,7 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
                         <label className="text-xs text-muted w-20 text-right">Password</label>
                         <input
                             type="password"
-                            className="flex-1 px-3 py-2 text-xs bg-black/20 border border-border rounded outline-none focus:border-accent text-primary"
+                            className="flex-1 px-3 py-2 text-xs bg-inputbg border border-border rounded outline-none focus:border-accent-text text-primary"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             onKeyDown={handleKeyDown}
@@ -344,7 +349,7 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
                     <button
                         className={`px-3 py-1.5 text-xs rounded font-medium transition-colors cursor-pointer ${
                             username && password && !isSubmitting
-                                ? "bg-accent/80 hover:bg-accent text-background"
+                                ? "bg-accent/80 hover:bg-accent text-onaccent"
                                 : "bg-panel text-muted"
                         }`}
                         onClick={handleSubmit}
@@ -481,7 +486,7 @@ const CommitInput = memo(({ model, hasStagedChanges, hasUnpushedCommits }: {
     return (
         <div className="flex flex-col gap-2">
             <textarea
-                className="w-full px-2 py-1.5 text-xs bg-surface border border-border rounded resize-none outline-none focus:border-accent placeholder:text-muted overflow-hidden text-ellipsis [&::placeholder]:whitespace-nowrap [&::placeholder]:overflow-hidden [&::placeholder]:text-ellipsis"
+                className="w-full px-2 py-1.5 text-xs bg-surface border border-border rounded resize-none outline-none focus:border-accent-text placeholder:text-muted overflow-hidden text-ellipsis [&::placeholder]:whitespace-nowrap [&::placeholder]:overflow-hidden [&::placeholder]:text-ellipsis"
                 placeholder="Commit message (Ctrl+Enter to commit)"
                 rows={1}
                 value={commitMessage}
@@ -546,7 +551,7 @@ const ReviewDropdown = memo(({ totalCount, stagedCount, unstagedCount, onReviewA
     return (
         <div className="relative">
             <button
-                className="flex items-center gap-1 px-2 py-1 text-[11px] rounded bg-surface hover:bg-hoverbg text-secondary hover:text-white transition-colors"
+                className="flex items-center gap-1 px-2 py-1 text-[11px] rounded bg-surface hover:bg-hoverbg text-secondary hover:text-foreground transition-colors"
                 onClick={() => setOpen(!open)}
             >
                 <i className="fa-solid fa-eye text-[10px]" />
@@ -558,14 +563,14 @@ const ReviewDropdown = memo(({ totalCount, stagedCount, unstagedCount, onReviewA
                     <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
                     <div className="absolute right-0 top-full mt-1 z-50 bg-modalbg border border-border rounded shadow-lg min-w-[160px]">
                         <button
-                            className="w-full text-left px-3 py-1.5 text-xs text-secondary hover:bg-hoverbg hover:text-white"
+                            className="w-full text-left px-3 py-1.5 text-xs text-secondary hover:bg-hoverbg hover:text-foreground"
                             onClick={() => { setOpen(false); onReviewAll(); }}
                         >
                             Review All ({totalCount})
                         </button>
                         {stagedCount > 0 && (
                             <button
-                                className="w-full text-left px-3 py-1.5 text-xs text-secondary hover:bg-hoverbg hover:text-white"
+                                className="w-full text-left px-3 py-1.5 text-xs text-secondary hover:bg-hoverbg hover:text-foreground"
                                 onClick={() => { setOpen(false); onReviewStaged(); }}
                             >
                                 Review Staged ({stagedCount})
@@ -573,7 +578,7 @@ const ReviewDropdown = memo(({ totalCount, stagedCount, unstagedCount, onReviewA
                         )}
                         {unstagedCount > 0 && (
                             <button
-                                className="w-full text-left px-3 py-1.5 text-xs text-secondary hover:bg-hoverbg hover:text-white"
+                                className="w-full text-left px-3 py-1.5 text-xs text-secondary hover:bg-hoverbg hover:text-foreground"
                                 onClick={() => { setOpen(false); onReviewUnstaged(); }}
                             >
                                 Review Unstaged ({unstagedCount})
@@ -750,7 +755,7 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
                     ref={panelFocusAnchorRef}
                     tabIndex={-1}
                     aria-label={`Source Control: ${status?.branch || "detached"}`}
-                    className="flex items-center gap-2 text-xs rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+                    className="flex items-center gap-2 text-xs rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-text focus-visible:outline-offset-2"
                 >
                     <i className="fa-solid fa-code-branch text-muted" />
                     <span className="font-medium">{status?.branch || "detached"}</span>
@@ -762,7 +767,7 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
                             className={`p-1.5 rounded transition-colors ${
                                 selectedFile?.untracked
                                     ? "text-muted cursor-not-allowed"
-                                    : "hover:bg-hoverbg text-secondary hover:text-white"
+                                    : "hover:bg-hoverbg text-secondary hover:text-foreground"
                             }`}
                             onClick={handleViewModeToggle}
                             disabled={!!selectedFile?.untracked}
@@ -772,7 +777,7 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
                     </Tooltip>
                     <Tooltip content={wordWrap ? "Disable word wrap" : "Enable word wrap"} placement="bottom">
                         <button
-                            className={`p-1.5 rounded hover:bg-hoverbg transition-colors ${wordWrap ? "text-white" : "text-secondary hover:text-white"}`}
+                            className={`p-1.5 rounded hover:bg-hoverbg transition-colors ${wordWrap ? "text-foreground" : "text-secondary hover:text-foreground"}`}
                             onClick={handleWordWrapToggle}
                         >
                             <i className="fa-solid fa-text-width text-xs" />
@@ -780,7 +785,7 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
                     </Tooltip>
                     <Tooltip content="Refresh" placement="bottom">
                         <button
-                            className="p-1.5 rounded hover:bg-hoverbg text-secondary hover:text-white transition-colors"
+                            className="p-1.5 rounded hover:bg-hoverbg text-secondary hover:text-foreground transition-colors"
                             onClick={handleRefresh}
                         >
                             <i className="fa-solid fa-arrows-rotate text-xs" />
@@ -834,7 +839,7 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
                     />
                     {filter && (
                         <button
-                            className="text-muted hover:text-white"
+                            className="text-muted hover:text-foreground"
                             onClick={() => setFilter("")}
                         >
                             <i className="fa-solid fa-times text-xs" />

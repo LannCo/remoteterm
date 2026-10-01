@@ -178,7 +178,7 @@ const UserInputPrompt = (userInputRequest: UserInputPromptProps) => {
                     <div className="font-bold text-primary">{userInputRequest.title}</div>
                     {/* UX-1.6: Queue position indicator for multi-connection password prompts */}
                     {(userInputRequest.queuetotal ?? 1) > 1 && (
-                        <span className="text-[10px] text-white/50 ml-2">
+                        <span className="text-[10px] text-secondary ml-2">
                             ({userInputRequest.queueposition ?? 1} of {userInputRequest.queuetotal})
                         </span>
                     )}

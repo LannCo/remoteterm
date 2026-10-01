@@ -94,8 +94,11 @@ function permanentErrorHint(errorCode?: string): string | null {
     return null;
 }
 
+// No element-level opacity here: --conn-status-overlay-bg-color is already an opaque, theme-aware
+// solid (see theme.scss). Applying opacity on top of it would re-blend the backdrop behind it back
+// in and reintroduce the WCAG AA contrast failure the opaque token was specifically chosen to avoid.
 const overlayShellClass =
-    "@container absolute top-[calc(var(--header-height)+6px)] left-1.5 right-1.5 z-[var(--zindex-block-mask-inner)] overflow-hidden rounded-md bg-[var(--conn-status-overlay-bg-color)] backdrop-blur-[50px] shadow-lg opacity-90";
+    "@container absolute top-[calc(var(--header-height)+6px)] left-1.5 right-1.5 z-[var(--zindex-block-mask-inner)] overflow-hidden rounded-md bg-[var(--conn-status-overlay-bg-color)] backdrop-blur-[50px] shadow-lg";
 
 const StalledOverlay = React.memo(
     ({
@@ -239,7 +242,7 @@ const DisconnectedOverlay = React.memo(
                                     <div className="text-[10px] text-primary/70 mt-0.5">{permanentHint}</div>
                                 )}
                                 {connStatus.error && (
-                                    <div className="text-[10px] text-primary/50 mt-0.5 truncate">{connStatus.error}</div>
+                                    <div className="text-[10px] text-primary/70 mt-0.5 truncate">{connStatus.error}</div>
                                 )}
                             </>
                         ) : (
@@ -534,7 +537,7 @@ const GaveUpOverlay = React.memo(
                         {/* UX-2.5: after sleep/resume an agent-based connection that
                             failed auth surfaces a specific agent/keychain hint here. */}
                         {stopReason === "auth-failed" && connStatus.error && (
-                            <div className="text-[10px] text-primary/50 mt-0.5">{connStatus.error}</div>
+                            <div className="text-[10px] text-primary/70 mt-0.5">{connStatus.error}</div>
                         )}
                     </div>
                     <div className="flex-1 hidden @max-xxs:block"></div>
@@ -568,7 +571,7 @@ const FlappingOverlay = React.memo(
     }) => {
         return (
             <div
-                className="@container absolute top-[calc(var(--header-height)+6px)] left-1.5 right-1.5 z-[var(--zindex-block-mask-inner)] overflow-hidden rounded-md bg-[var(--conn-status-overlay-bg-color)] backdrop-blur-[50px] shadow-lg opacity-90"
+                className="@container absolute top-[calc(var(--header-height)+6px)] left-1.5 right-1.5 z-[var(--zindex-block-mask-inner)] overflow-hidden rounded-md bg-[var(--conn-status-overlay-bg-color)] backdrop-blur-[50px] shadow-lg"
                 ref={overlayRefCallback}
                 aria-live="polite"
             >

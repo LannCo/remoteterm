@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { resolvedAppearanceModeAtom } from "@/app/store/appearance-atoms";
 import { globalStore } from "@/app/store/jotaiStore";
 import { Tooltip } from "@/app/element/tooltip";
 import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
@@ -30,7 +31,6 @@ const OSOptions = {
         y: "hidden",
     },
     scrollbars: {
-        theme: "os-theme-dark",
         visibility: "auto",
         autoHide: "leave",
         autoHideDelay: 1300,
@@ -40,6 +40,10 @@ const OSOptions = {
         pointers: ["mouse", "touch", "pen"],
     },
 };
+
+function osScrollbarTheme(mode: "light" | "dark"): "os-theme-light" | "os-theme-dark" {
+    return mode === "light" ? "os-theme-light" : "os-theme-dark";
+}
 
 interface TabBarProps {
     workspace: Workspace;
@@ -103,6 +107,7 @@ const TabBar = memo(({ workspace, noTabs }: TabBarProps) => {
     const zoomFactor = useAtomValue(env.atoms.zoomFactorAtom);
     const showMenuBar = useAtomValue(env.getSettingsKeyAtom("window:showmenubar"));
     const confirmClose = useAtomValue(env.getSettingsKeyAtom("tab:confirmclose")) ?? false;
+    const resolvedAppearanceMode = useAtomValue(resolvedAppearanceModeAtom);
 
     let prevDelta: number;
     let prevDragDirection: string;
@@ -204,7 +209,10 @@ const TabBar = memo(({ workspace, noTabs }: TabBarProps) => {
 
         // Initialize/destroy overlay scrollbars
         if (newScrollable) {
-            osInstanceRef.current = OverlayScrollbars(tabBarRef.current, { ...(OSOptions as any) });
+            osInstanceRef.current = OverlayScrollbars(tabBarRef.current, {
+                ...(OSOptions as any),
+                scrollbars: { ...OSOptions.scrollbars, theme: osScrollbarTheme(resolvedAppearanceMode) },
+            });
         } else {
             if (osInstanceRef.current) {
                 osInstanceRef.current.destroy();
@@ -212,15 +220,26 @@ const TabBar = memo(({ workspace, noTabs }: TabBarProps) => {
         }
     };
 
+    // setSizeAndPosition only re-creates the OverlayScrollbars instance on resize/tab-count changes; update the
+    // existing instance's theme directly so toggling appearance mode doesn't require a resize to pick it up.
+    useEffect(() => {
+        osInstanceRef.current?.options({ scrollbars: { theme: osScrollbarTheme(resolvedAppearanceMode) } });
+    }, [resolvedAppearanceMode]);
+
     const saveTabsPositionDebounced = useCallback(
         debounce(100, () => saveTabsPosition()),
         [saveTabsPosition]
     );
 
+    // setSizeAndPosition is a plain (non-memoized) closure redefined every render, and reads
+    // resolvedAppearanceMode when it recreates the OverlayScrollbars instance (a resize can make
+    // the tab bar newly scrollable). Without resolvedAppearanceMode here, handleResizeTabs only
+    // refreshed its closure on tabIds/newTabId/isFullScreen changes, so a resize after a mode
+    // switch (but before any of those) could recreate the scrollbar instance with the stale theme.
     const handleResizeTabs = useCallback(() => {
         setSizeAndPosition();
         saveTabsPositionDebounced();
-    }, [tabIds, newTabId, isFullScreen]);
+    }, [tabIds, newTabId, isFullScreen, resolvedAppearanceMode]);
 
     // update layout on reinit version
     const reinitVersion = useAtomValue(env.atoms.reinitVersion);

@@ -121,6 +121,10 @@
         color: color-mix(in oklab, currentColor 50%, transparent); /* 2 */
     }
 
+    :root[data-theme="light"] ::placeholder {
+        color: var(--placeholder-color);
+    }
+
     textarea {
         resize: vertical;
     }
