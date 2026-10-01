@@ -256,6 +256,14 @@
         "window:zoom": {
           "type": "number"
         },
+        "window:appearancemode": {
+          "type": "string",
+          "enum": [
+            "system",
+            "light",
+            "dark"
+          ]
+        },
         "conn:*": {
           "type": "boolean"
         },

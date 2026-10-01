@@ -7,6 +7,7 @@ import {
     getBadgeAtom,
     getBlockBadgeAtom,
 } from "@/app/store/badge";
+import { AppThemeUpdater } from "@/app/appearance-theme-updater";
 import { ClientModel } from "@/app/store/client-model";
 import { FocusManager } from "@/app/store/focusManager";
 import { GlobalModel } from "@/app/store/global-model";
@@ -368,6 +369,7 @@ const AppInner = () => {
             <AppKeyHandlers />
             <AppFocusHandler />
             <AppSettingsUpdater />
+            <AppThemeUpdater />
             <BadgeAutoClearing />
             <DndProvider backend={HTML5Backend}>
                 <Workspace />

@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld("api", {
         ipcRenderer.on("fullscreen-change", (_event, isFullScreen) => callback(isFullScreen)),
     onZoomFactorChange: (callback) =>
         ipcRenderer.on("zoom-factor-change", (_event, zoomFactor) => callback(zoomFactor)),
+    getNativeTheme: () => ipcRenderer.sendSync("get-native-theme"),
+    onNativeThemeChange: (callback) =>
+        ipcRenderer.on("native-theme-change", (_event, shouldUseDarkColors) => callback(shouldUseDarkColors)),
     onMenuItemAbout: (callback) => ipcRenderer.on("menu-item-about", callback),
     updateWindowControlsOverlay: (rect) => ipcRenderer.send("update-window-controls-overlay", rect),
     onReinjectKey: (callback) => ipcRenderer.on("reinject-key", (_event, waveEvent) => callback(waveEvent)),

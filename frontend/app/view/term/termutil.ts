@@ -2,6 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 export const DefaultTermTheme = "default-dark";
+export const DefaultTermThemeLight = "default-light";
+
+export function getDefaultTermThemeName(mode: "light" | "dark"): string {
+    return mode === "light" ? DefaultTermThemeLight : DefaultTermTheme;
+}
+
+export function resolveTermThemeName(override: string | null | undefined, mode: "light" | "dark"): string {
+    if (override != null) {
+        return override;
+    }
+    return getDefaultTermThemeName(mode);
+}
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { makeConnRoute } from "@/util/util";
@@ -34,11 +46,12 @@ function applyTransparencyToColor(hexColor: string, transparency: number): strin
 export function computeTheme(
     fullConfig: FullConfigType,
     themeName: string,
-    termTransparency: number
+    termTransparency: number,
+    fallbackThemeName: string
 ): [TermThemeType, string] {
     let theme: TermThemeType = fullConfig?.termthemes?.[themeName];
     if (theme == null) {
-        theme = fullConfig?.termthemes?.[DefaultTermTheme] || ({} as any);
+        theme = fullConfig?.termthemes?.[fallbackThemeName] || ({} as any);
     }
     const themeCopy = { ...theme };
     if (termTransparency != null && termTransparency > 0) {

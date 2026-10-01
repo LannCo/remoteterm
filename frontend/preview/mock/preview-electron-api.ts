@@ -56,6 +56,8 @@ const previewElectronApi: ElectronApi = {
     saveTextFile: (_fileName: string, _content: string) => Promise.resolve(false),
     setIsActive: async () => {},
     onRemoteTermResize: (_callback: () => void) => {},
+    getNativeTheme: () => false,
+    onNativeThemeChange: () => {},
 };
 
 function installPreviewElectronApi() {

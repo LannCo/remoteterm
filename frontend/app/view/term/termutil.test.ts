@@ -18,7 +18,14 @@ vi.mock("@/app/store/wshrpcutil", () => ({
 }));
 
 import { RpcApi } from "@/app/store/wshclientapi";
-import { createRemoteTempFileFromBlob } from "./termutil";
+import {
+    computeTheme,
+    createRemoteTempFileFromBlob,
+    DefaultTermTheme,
+    DefaultTermThemeLight,
+    getDefaultTermThemeName,
+    resolveTermThemeName,
+} from "./termutil";
 
 const mockRemoteWrite = RpcApi.RemoteWriteTempFileCommand as unknown as ReturnType<typeof vi.fn>;
 
@@ -121,5 +128,53 @@ describe("createRemoteTempFileFromBlob", () => {
             "File too large (>50MB)"
         );
         expect(mockRemoteWrite).not.toHaveBeenCalled();
+    });
+});
+
+describe("getDefaultTermThemeName", () => {
+    it("maps dark to default-dark and light to default-light", () => {
+        expect(getDefaultTermThemeName("dark")).toBe(DefaultTermTheme);
+        expect(getDefaultTermThemeName("light")).toBe(DefaultTermThemeLight);
+    });
+});
+
+describe("resolveTermThemeName", () => {
+    it("honours an explicit override in both modes", () => {
+        expect(resolveTermThemeName("dracula", "light")).toBe("dracula");
+        expect(resolveTermThemeName("default-dark", "light")).toBe("default-dark");
+        expect(resolveTermThemeName("default-light", "dark")).toBe("default-light");
+    });
+
+    it("follows the appearance mode when no override is set", () => {
+        expect(resolveTermThemeName(null, "light")).toBe("default-light");
+        expect(resolveTermThemeName(undefined, "dark")).toBe("default-dark");
+    });
+});
+
+describe("computeTheme fallback", () => {
+    const fullConfig = {
+        termthemes: {
+            "default-dark": { background: "#000000", foreground: "#c1c1c1" },
+            "default-light": { background: "#ffffff", foreground: "#1a1a1a" },
+        },
+    } as unknown as FullConfigType;
+
+    it("uses the named theme when present", () => {
+        const [theme, bg] = computeTheme(fullConfig, "default-dark", 0, "default-light");
+        expect(bg).toBe("#000000");
+        expect(theme.foreground).toBe("#c1c1c1");
+        expect(theme.background).toBe("#00000000");
+    });
+
+    it("falls back to the supplied fallback when the named theme is missing", () => {
+        const [theme, bg] = computeTheme(fullConfig, "not-a-theme", 0, "default-light");
+        expect(bg).toBe("#ffffff");
+        expect(theme.foreground).toBe("#1a1a1a");
+    });
+
+    it("returns an empty theme with transparent background when both are missing", () => {
+        const [theme, bg] = computeTheme({ termthemes: {} } as unknown as FullConfigType, "x", 0, "y");
+        expect(bg).toBeUndefined();
+        expect(theme.background).toBe("#00000000");
     });
 });
