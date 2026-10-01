@@ -720,6 +720,43 @@ function getRemoteTermDataDir(): string {
     return ensurePathExists(retVal);
 }
 
+/**
+ * True when the user actually set one of the REMOTETERM_*_HOME override vars (or their legacy
+ * WAVETERM_*_HOME equivalents). Used to decide whether it's safe to relocate Electron's userData
+ * dir (see getElectronUserDataDir): a real, non-overridden launch must keep using Electron's own
+ * OS-default userData path (keyed off app.getName(), e.g. ~/.config/RemoteTerm), since that's
+ * where an existing install's real Chromium profile (cookies, web-block logins, IndexedDB) already
+ * lives — relocating it unconditionally would silently start every upgrading user with an empty
+ * profile and orphan the old one with no migration.
+ */
+function isRemoteTermOverrideActive(): boolean {
+    return (
+        readOverrideEnvVar(RemoteTermConfigHomeVarName, LegacyRemoteTermConfigHomeVarName) != null ||
+        readOverrideEnvVar(RemoteTermDataHomeVarName, LegacyRemoteTermDataHomeVarName) != null ||
+        readOverrideEnvVar(RemoteTermHomeVarName, LegacyRemoteTermHomeVarName) != null
+    );
+}
+
+/**
+ * Where Electron's own runtime profile (cookies, cache, IndexedDB, GPU cache, session storage,
+ * and the SingletonLock the single-instance lock is keyed on) goes for an OVERRIDDEN launch only.
+ * Electron's own default userData path (keyed off app.getName(), not app.setName("remoteterm/
+ * electron") — that call nests under a name nothing else reads) ignores REMOTETERM_CONFIG_HOME/
+ * REMOTETERM_DATA_HOME/REMOTETERM_HOME entirely: two isolated launches with different overrides
+ * still resolved to the SAME userData dir and so the SAME lock, meaning a scratch dev/test
+ * instance's second-instance event fired against an unrelated already-running instance instead of
+ * its own. Callers must only use this path — via `app.setPath("userData", ...)` before requesting
+ * the lock — when isRemoteTermOverrideActive() is true; otherwise leave Electron's default alone.
+ *
+ * Known gap: this is keyed on the config dir only, so two launches with the SAME config dir but
+ * DIFFERENT REMOTETERM_DATA_HOME still collide. Our own standing guidance already tells callers to
+ * set REMOTETERM_CONFIG_HOME and REMOTETERM_DATA_HOME together for isolated launches, so this
+ * covers the documented case; a data-dir-only override is not fully isolated by this alone.
+ */
+function getElectronUserDataDir(): string {
+    return path.join(getRemoteTermConfigDir(), "electron");
+}
+
 function getElectronAppBasePath(): string {
     // import.meta.dirname in dev points to waveterm/dist/main
     return path.dirname(import.meta.dirname);
@@ -849,6 +886,8 @@ export {
     getElectronAppBasePath,
     getElectronAppResourcesPath,
     getElectronAppUnpackedBasePath,
+    getElectronUserDataDir,
+    isRemoteTermOverrideActive,
     getRemoteTermConfigDir,
     getRemoteTermDataDir,
     getRemoteTermSrvCwd,

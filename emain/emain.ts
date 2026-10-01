@@ -29,11 +29,13 @@ import {
     checkIfRunningUnderARM64Translation,
     getElectronAppBasePath,
     getElectronAppUnpackedBasePath,
+    getElectronUserDataDir,
     getMigrationFailures,
     getRemoteTermConfigDir,
     getRemoteTermDataDir,
     getWebviewPreloadPath,
     isDev,
+    isRemoteTermOverrideActive,
     resolveIncompleteMigrationBlock,
     resolveLegacyInstanceBlock,
     unameArch,
@@ -277,6 +279,17 @@ async function appMain() {
         electronApp.disableHardwareAcceleration();
     }
     const startTs = Date.now();
+    // Only relocate userData for an actually-overridden launch: the lock is keyed on Electron's
+    // userData path, which otherwise defaults to a fixed OS path regardless of
+    // REMOTETERM_CONFIG_HOME/REMOTETERM_DATA_HOME, so an isolated dev/test launch's lock collided
+    // with an unrelated already-running instance and spawned a phantom window in it (see
+    // getElectronUserDataDir). A real, non-overridden launch must NOT relocate: that path is where
+    // an existing install's actual Chromium profile (cookies, web-block logins) already lives, and
+    // there's no migration for it — moving it unconditionally would silently reset every upgrading
+    // user's session with no warning.
+    if (isRemoteTermOverrideActive()) {
+        electronApp.setPath("userData", getElectronUserDataDir());
+    }
     const instanceLock = electronApp.requestSingleInstanceLock();
     if (!instanceLock) {
         console.log("remoteterm-app could not get single-instance-lock, shutting down");
