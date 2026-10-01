@@ -19,7 +19,10 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { makeConnRoute } from "@/util/util";
 import * as TermTypes from "@xterm/xterm";
 import base64 from "base64-js";
-import { colord } from "colord";
+import { colord, extend } from "colord";
+import a11yPlugin from "colord/plugins/a11y";
+
+extend([a11yPlugin]);
 
 export type GenClipboardItem = { text?: string; image?: Blob };
 
@@ -63,8 +66,139 @@ export function computeTheme(
         }
     }
     const bgcolor = themeCopy.background;
-    themeCopy.background = "#00000000";
+    const reversedTextColour = getReversedTextColour(themeCopy.foreground, bgcolor);
+    // The canvas is transparent, but xterm.js still reads the RGB of theme.background as the text colour
+    // of reversed default-colour cells, and theme.cursorAccent as the text colour under a block cursor.
+    themeCopy.background = `${reversedTextColour}00`;
+    (themeCopy as { cursorAccent?: string }).cursorAccent ??= reversedTextColour;
     return [themeCopy, bgcolor];
+}
+
+function isLightTheme(foreground: string, background: string): boolean {
+    if (!foreground || !background) {
+        return false;
+    }
+    return colord(background).alpha(1).luminance() > colord(foreground).luminance();
+}
+
+// Black suits a dark theme (light foreground); on a light theme it lands on the dark foreground colour
+// (1.2:1), so the real background is used instead.
+function getReversedTextColour(foreground: string, background: string): string {
+    return isLightTheme(foreground, background) ? colord(background).alpha(1).toHex() : "#000000";
+}
+
+// Programs colour text for a dark canvas and pair palette entries as foreground and background (ls
+// `ow` is blue on green), so a light palette that suits text on white
+// cannot also suit those pairs. xterm.js lifts the foreground of any cell below this ratio against
+// that cell's own background. 1 leaves dark themes untouched.
+export const LightThemeMinimumContrastRatio = 4.5;
+
+export function computeMinimumContrastRatio(theme: TermThemeType, bgcolor: string): number {
+    return isLightTheme(theme.foreground, bgcolor) ? LightThemeMinimumContrastRatio : 1;
+}
+
+// Two xterm.js renderer behaviours that only hurt dark text on a light background (see
+// setGlyphAlphaBlend and neutraliseFaintSgr), so they are switched on for light themes and left
+// as xterm.js ships them elsewhere.
+export function needsLightTextFixes(theme: TermThemeType, bgcolor: string): boolean {
+    return isLightTheme(theme.foreground, bgcolor);
+}
+
+export type GlyphBlendContext = {
+    SRC_ALPHA: number;
+    ONE_MINUS_SRC_ALPHA: number;
+    ONE: number;
+    blendFunc(src: number, dst: number): void;
+    blendFuncSeparate(srcRgb: number, dstRgb: number, srcAlpha: number, dstAlpha: number): void;
+};
+
+// The WebGL renderer composites glyphs with blendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA), which applies
+// the same factors to the alpha channel. Into the transparent, premultiplied canvas allowTransparency
+// gives us, the canvas alpha of a pixel with glyph alpha a becomes a*a instead of a, so (a - a*a) of the
+// page behind shows through every partly covered pixel. On white that washes out glyph edges (default
+// text drew 27% less ink than the DOM renderer) and SGR 2 faint text (alpha 0.5) lands at 25%.
+// Keeping the destination alpha linear restores the DOM renderer's coverage.
+export function setGlyphAlphaBlend(gl: GlyphBlendContext, corrected: boolean): void {
+    if (corrected) {
+        gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    } else {
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    }
+}
+
+// getContext returns the context xterm.js already made for its canvas, and null for the 2D link layers.
+export function setXtermGlyphBlend(root: ParentNode | null | undefined, corrected: boolean): number {
+    if (root == null) {
+        return 0;
+    }
+    let updated = 0;
+    for (const canvas of Array.from(root.querySelectorAll<HTMLCanvasElement>(".xterm-screen canvas"))) {
+        const gl = canvas.getContext("webgl2");
+        if (gl != null) {
+            setGlyphAlphaBlend(gl, corrected);
+            updated++;
+        }
+    }
+    return updated;
+}
+
+// The slice of xterm.js's internal SGR parameter list that neutraliseFaintSgr reads and writes.
+export type SgrParams = { length: number; params: Int32Array; hasSubParams(index: number): boolean };
+
+const SgrIgnored = 26; // proportional spacing: xterm.js does not act on it
+
+// xterm.js draws SGR 2 (faint) text at half opacity, after lifting its colour to only half of
+// minimumContrastRatio. Half opacity over white cannot exceed 3.95:1 even for black, so faint text in a
+// light theme can never reach 4.5:1 and lands at 2.0-3.4:1 in practice. Faint is turned into a no-op, so
+// the cell keeps its ordinary colour, which minimumContrastRatio has already lifted to 4.5:1.
+// Returns whether a faint parameter was replaced.
+export function neutraliseFaintSgr(sgr: SgrParams): boolean {
+    if (!(sgr.params instanceof Int32Array)) {
+        return false;
+    }
+    let changed = false;
+    for (let i = 0; i < sgr.length; i++) {
+        const p = sgr.params[i];
+        if (sgr.hasSubParams(i)) {
+            continue;
+        }
+        if (p === 38 || p === 48 || p === 58) {
+            // 38;5;n and 38;2;r;g;b carry colour values that must not be read as parameters
+            const mode = sgr.params[i + 1];
+            i += mode === 5 ? 2 : mode === 2 ? 4 : 0;
+        } else if (p === 2) {
+            sgr.params[i] = SgrIgnored;
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+// The xterm canvas is kept transparent (see computeTheme) so xterm.js would answer OSC 10/11 and the
+// colour scheme query from a black background. These helpers describe the colours the block really
+// shows, opaque, so programs can pick a matching palette.
+export type ReportedColours = { foreground?: string; background?: string };
+
+export function computeReportedColours(theme: TermThemeType, bgcolor: string): ReportedColours {
+    const opaque = (color: string) => (color ? colord(color).alpha(1).toHex() : undefined);
+    return { foreground: opaque(theme.foreground), background: opaque(bgcolor) };
+}
+
+// OSC 10 (foreground) / OSC 11 (background) reply, 16-bit channels like xterm.js
+export function formatOscColourReport(ident: 10 | 11, color: string): string {
+    const { r, g, b } = colord(color).toRgb();
+    const channel = (v: number) => v.toString(16).padStart(2, "0").repeat(2);
+    return `\x1b]${ident};rgb:${channel(r)}/${channel(g)}/${channel(b)}\x1b\\`;
+}
+
+// CSI ? 997 ; 1 n (dark) / CSI ? 997 ; 2 n (light), decided the way xterm.js does: dark when the
+// background is darker than the foreground.
+export function colourSchemeReport(colours: ReportedColours): string | null {
+    if (!colours.foreground || !colours.background) {
+        return null;
+    }
+    const dark = colord(colours.background).luminance() < colord(colours.foreground).luminance();
+    return `\x1b[?997;${dark ? 1 : 2}n`;
 }
 
 export const MIME_TO_EXT: Record<string, string> = {

@@ -25,7 +25,14 @@ import * as React from "react";
 import { TermLinkTooltip } from "./term-tooltip";
 import { TermStickers } from "./termsticker";
 import { TermThemeUpdater } from "./termtheme";
-import { computeTheme, getDefaultTermThemeName, normalizeCursorStyle } from "./termutil";
+import {
+    computeMinimumContrastRatio,
+    computeReportedColours,
+    computeTheme,
+    getDefaultTermThemeName,
+    needsLightTextFixes,
+    normalizeCursorStyle,
+} from "./termutil";
 import { TermWrap } from "./termwrap";
 import "./xterm.css";
 
@@ -276,7 +283,7 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
         const termTransparency = globalStore.get(model.termTransparencyAtom);
         const termMacOptionIsMetaAtom = getOverrideConfigAtom(blockId, "term:macoptionismeta");
         const appearanceMode = globalStore.get(resolvedAppearanceModeAtom);
-        const [termTheme, _] = computeTheme(
+        const [termTheme, termBgColor] = computeTheme(
             fullConfig,
             termThemeName,
             termTransparency,
@@ -306,6 +313,7 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
             connectElemRef.current,
             {
                 theme: termTheme,
+                minimumContrastRatio: computeMinimumContrastRatio(termTheme, termBgColor),
                 fontSize: termFontSize,
                 fontFamily: termSettings?.["term:fontfamily"] ?? connFontFamily ?? "Hack",
                 drawBoldTextInBrightColors: false,
@@ -325,6 +333,8 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
                 useWebGl: !termSettings?.["term:disablewebgl"],
                 sendDataHandler: model.sendDataToController.bind(model),
                 nodeModel: model.nodeModel,
+                reportedColours: computeReportedColours(termTheme, termBgColor),
+                lightTextFixes: needsLightTextFixes(termTheme, termBgColor),
             }
         );
         (window as any).term = termWrap;
