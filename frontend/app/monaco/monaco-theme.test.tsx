@@ -7,18 +7,18 @@ import { act, renderHook } from "@testing-library/react";
 import { createStore, PrimitiveAtom, Provider } from "jotai";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-const { modeAtom, setTheme } = vi.hoisted(() => {
-    const jotai = require("jotai");
-    return {
-        modeAtom: jotai.atom("dark") as PrimitiveAtom<"light" | "dark">,
-        setTheme: vi.fn(),
-    };
-});
+const { setTheme } = vi.hoisted(() => ({ setTheme: vi.fn() }));
 
 vi.mock("monaco-editor", () => ({ editor: { setTheme } }));
-vi.mock("@/app/store/appearance-atoms", () => ({ resolvedAppearanceModeAtom: modeAtom }));
+vi.mock("@/app/store/appearance-atoms", async () => {
+    const { atom } = await import("jotai");
+    return { resolvedAppearanceModeAtom: atom("dark") };
+});
 
+import { resolvedAppearanceModeAtom } from "@/app/store/appearance-atoms";
 import { monacoThemeForMode, useMonacoAppearanceTheme } from "./monaco-theme";
+
+const modeAtom = resolvedAppearanceModeAtom as PrimitiveAtom<"light" | "dark">;
 
 describe("monacoThemeForMode", () => {
     test("maps modes to the two defined Monaco themes", () => {
