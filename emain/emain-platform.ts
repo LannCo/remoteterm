@@ -22,10 +22,10 @@ import path from "path";
 import { RemoteTermDevVarName, RemoteTermDevViteVarName } from "../frontend/util/isdev";
 import * as keyutil from "../frontend/util/keyutil";
 
-// This is a little trick to ensure that Electron puts all its runtime data into a subdirectory to avoid conflicts with our own data.
-// On macOS, it will store to ~/Library/Application \Support/remoteterm/electron
-// On Linux, it will store to ~/.config/remoteterm/electron
-// On Windows, it will store to %LOCALAPPDATA%/remoteterm/electron
+// ElectronUserDataPath does NOT determine where Electron's own runtime data (userData) actually
+// lives — see getElectronUserDataDir's doc comment below for why this app.setName() call is
+// superseded by the later app.setName(isDev ? "RemoteTerm (Dev)" : "RemoteTerm") call and has no
+// effect on userData path resolution. This constant is read only by performDataDirMigration().
 const ElectronUserDataPath = ["remoteterm", "electron"];
 app.setName(ElectronUserDataPath.join("/"));
 
@@ -66,6 +66,13 @@ const RemoteTermDataHomeVarName = "REMOTETERM_DATA_HOME";
 const LegacyRemoteTermDataHomeVarName = "WAVETERM_DATA_HOME";
 const RemoteTermHomeVarName = "REMOTETERM_HOME";
 const LegacyRemoteTermHomeVarName = "WAVETERM_HOME";
+// Explicit opt-in only isolated dev/test launch scripts should set. Unlike the three overrides
+// above, this one has no legacy fallback and no persistent-shell-profile use case: it exists
+// solely so an isolated launch can be told apart from a real user who has had e.g.
+// WAVETERM_CONFIG_HOME set in their shell profile since before the rebrand (readOverrideEnvVar's
+// vars are legitimately user-settable that way, so inferring "isolated" from their presence alone
+// silently relocated a real user's Chromium profile on upgrade — see isRemoteTermIsolatedProfileActive).
+const RemoteTermIsolatedProfileVarName = "REMOTETERM_ISOLATED_PROFILE";
 
 const alreadyWarnedLegacyVars = new Set<string>();
 
@@ -721,37 +728,82 @@ function getRemoteTermDataDir(): string {
 }
 
 /**
- * True when the user actually set one of the REMOTETERM_*_HOME override vars (or their legacy
- * WAVETERM_*_HOME equivalents). Used to decide whether it's safe to relocate Electron's userData
- * dir (see getElectronUserDataDir): a real, non-overridden launch must keep using Electron's own
- * OS-default userData path (keyed off app.getName(), e.g. ~/.config/RemoteTerm), since that's
- * where an existing install's real Chromium profile (cookies, web-block logins, IndexedDB) already
- * lives — relocating it unconditionally would silently start every upgrading user with an empty
- * profile and orphan the old one with no migration.
+ * True only when the launch explicitly opted in via REMOTETERM_ISOLATED_PROFILE=1 (exact match,
+ * not merely truthy — REMOTETERM_ISOLATED_PROFILE=0 or any other non-empty value must NOT
+ * activate it) AND REMOTETERM_CONFIG_HOME (or legacy WAVETERM_CONFIG_HOME) is also set. Used to
+ * decide whether it's safe to relocate Electron's userData dir (see getElectronUserDataDir): a
+ * real, non-overridden launch must keep using Electron's own OS-default userData path (keyed off
+ * app.getName(), e.g. ~/.config/RemoteTerm), since that's where an existing install's real
+ * Chromium profile (cookies, web-block logins, IndexedDB) already lives — relocating it
+ * unconditionally would silently start every upgrading user with an empty profile and orphan the
+ * old one with no migration.
+ *
+ * The config-dir-override requirement exists because getElectronUserDataDir() lands inside
+ * getRemoteTermConfigDir(), which falls back to the real default config dir when no override is
+ * set: REMOTETERM_ISOLATED_PROFILE=1 alone would relocate Electron's profile into the REAL config
+ * dir's "electron" subfolder, not a scratch one — still not isolated (two such launches collide
+ * with each other there) and not where the real profile already lives either. Warn and fall back
+ * to Electron's own default (rather than refuse/quit) since this is a launch-script misconfiguration,
+ * not a state a user should be blocked over; falling back keeps the launch usable while making the
+ * gap visible in the log instead of silently landing in the wrong directory.
+ *
+ * Deliberately does NOT infer "isolated" from REMOTETERM_CONFIG_HOME/REMOTETERM_DATA_HOME/
+ * REMOTETERM_HOME (or their legacy WAVETERM_*_HOME equivalents) being set: readOverrideEnvVar's
+ * own contract is that those three are legitimately user-settable in a persistent shell profile
+ * too, kept for backward compat with old shell-profile overrides. A real user who's had e.g.
+ * WAVETERM_CONFIG_HOME set since before the rebrand would, under that inference, get their real
+ * Chromium profile silently relocated with no migration on upgrade — the same failure class this
+ * function exists to avoid. An isolated dev/test launch must set all three together:
+ * REMOTETERM_ISOLATED_PROFILE=1 + REMOTETERM_CONFIG_HOME + REMOTETERM_DATA_HOME.
  */
-function isRemoteTermOverrideActive(): boolean {
-    return (
-        readOverrideEnvVar(RemoteTermConfigHomeVarName, LegacyRemoteTermConfigHomeVarName) != null ||
-        readOverrideEnvVar(RemoteTermDataHomeVarName, LegacyRemoteTermDataHomeVarName) != null ||
-        readOverrideEnvVar(RemoteTermHomeVarName, LegacyRemoteTermHomeVarName) != null
-    );
+function isRemoteTermIsolatedProfileActive(): boolean {
+    if (process.env[RemoteTermIsolatedProfileVarName] !== "1") {
+        return false;
+    }
+    const configOverride = readOverrideEnvVar(RemoteTermConfigHomeVarName, LegacyRemoteTermConfigHomeVarName);
+    if (configOverride == null) {
+        console.log(
+            `${RemoteTermIsolatedProfileVarName}=1 was set without ${RemoteTermConfigHomeVarName} (or legacy ` +
+                `${LegacyRemoteTermConfigHomeVarName}) also set; refusing to relocate Electron's userData into the ` +
+                "real config dir and falling back to Electron's default profile path instead. Isolated dev/test " +
+                "launches must set both together."
+        );
+        return false;
+    }
+    // getRemoteTermConfigDir() checks getRemoteTermHomeDir() FIRST and ignores REMOTETERM_CONFIG_HOME
+    // entirely if a combined-home dir is found there — whether from an explicit REMOTETERM_HOME
+    // override or one auto-detected at its default location (a real pre-fork Wave Terminal install's
+    // migrated/legacy combined dir). Either way, our config override above would be silently ignored,
+    // so getElectronUserDataDir() would resolve under that combined dir instead of the scratch one —
+    // the same "isolation silently doesn't work" failure this function exists to prevent.
+    if (getRemoteTermHomeDir() != null) {
+        console.log(
+            `${RemoteTermIsolatedProfileVarName}=1 was set, but a combined-home directory was found (explicit ` +
+                `${RemoteTermHomeVarName} override or one auto-detected at its default location) that would cause ` +
+                `${RemoteTermConfigHomeVarName} to be ignored; refusing to relocate Electron's userData and ` +
+                "falling back to Electron's default profile path instead."
+        );
+        return false;
+    }
+    return true;
 }
 
 /**
  * Where Electron's own runtime profile (cookies, cache, IndexedDB, GPU cache, session storage,
- * and the SingletonLock the single-instance lock is keyed on) goes for an OVERRIDDEN launch only.
+ * and the SingletonLock the single-instance lock is keyed on) goes for an ISOLATED launch only.
  * Electron's own default userData path (keyed off app.getName(), not app.setName("remoteterm/
  * electron") — that call nests under a name nothing else reads) ignores REMOTETERM_CONFIG_HOME/
  * REMOTETERM_DATA_HOME/REMOTETERM_HOME entirely: two isolated launches with different overrides
  * still resolved to the SAME userData dir and so the SAME lock, meaning a scratch dev/test
  * instance's second-instance event fired against an unrelated already-running instance instead of
  * its own. Callers must only use this path — via `app.setPath("userData", ...)` before requesting
- * the lock — when isRemoteTermOverrideActive() is true; otherwise leave Electron's default alone.
+ * the lock — when isRemoteTermIsolatedProfileActive() is true; otherwise leave Electron's default
+ * alone.
  *
  * Known gap: this is keyed on the config dir only, so two launches with the SAME config dir but
- * DIFFERENT REMOTETERM_DATA_HOME still collide. Our own standing guidance already tells callers to
- * set REMOTETERM_CONFIG_HOME and REMOTETERM_DATA_HOME together for isolated launches, so this
- * covers the documented case; a data-dir-only override is not fully isolated by this alone.
+ * DIFFERENT REMOTETERM_DATA_HOME still collide. Isolated launches must set REMOTETERM_ISOLATED_
+ * PROFILE=1, REMOTETERM_CONFIG_HOME, and REMOTETERM_DATA_HOME together, so this covers the
+ * documented case; a data-dir-only override is not fully isolated by this alone.
  */
 function getElectronUserDataDir(): string {
     return path.join(getRemoteTermConfigDir(), "electron");
@@ -887,7 +939,7 @@ export {
     getElectronAppResourcesPath,
     getElectronAppUnpackedBasePath,
     getElectronUserDataDir,
-    isRemoteTermOverrideActive,
+    isRemoteTermIsolatedProfileActive,
     getRemoteTermConfigDir,
     getRemoteTermDataDir,
     getRemoteTermSrvCwd,
