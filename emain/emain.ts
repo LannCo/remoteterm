@@ -339,11 +339,17 @@ async function appMain() {
     try {
         initElectronWshClient();
         initElectronWshrpc(ElectronWshClient, { authKey: AuthKey });
-        initMenuEventSubscriptions();
     } catch (e) {
         console.log("error initializing wshrpc", e);
     }
     const fullConfig = await RpcApi.GetFullConfigCommand(ElectronWshClient);
+    // After GetFullConfig, not before: a subscription made before the socket opens queues ahead of
+    // it and the WS queue drains one message per 100 ms. The menu is first built below, after this.
+    try {
+        initMenuEventSubscriptions();
+    } catch (e) {
+        console.log("error initializing menu event subscriptions", e);
+    }
     checkIfRunningUnderARM64Translation(fullConfig);
     if (fullConfig?.settings?.["app:confirmquit"] != null) {
         confirmQuit = fullConfig.settings["app:confirmquit"];
