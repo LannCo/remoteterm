@@ -126,6 +126,7 @@ export default defineConfig({
         build: {
             target: CHROME,
             sourcemap: true,
+            minify: "esbuild",
             outDir: "dist/frontend",
             rollupOptions: {
                 input: {
