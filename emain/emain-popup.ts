@@ -10,6 +10,7 @@ import type {
     HandlerDetails,
     Rectangle,
     WebContents,
+    WebPreferences,
     WindowOpenHandlerResponse,
 } from "electron";
 import { applyGuestWebPreferences, isAllowedPopupUrl, isAppWebContentsId } from "./emain-websecurity";
@@ -183,6 +184,11 @@ function liveParent(ctx: PopupHostContext): BaseWindow | null {
     return parent;
 }
 
+// Electron ignores these webPreferences for window.open("about:blank"): Chromium skips
+// browser-side navigation, so the child runs in the opener's renderer process with the
+// opener's effective settings. They only bite for http(s) popups; about:blank relies on
+// the opener already being hardened (hardenWebviewAttach for root guests, this function
+// for nested popup openers), which hardenCreatedPopup enforces via hasHardenedPreferences.
 export function buildPopupWindowOptions(
     details: HandlerDetails,
     opener: WebContents,
@@ -251,6 +257,70 @@ export function handleGuestWindowOpen(
     return { action: "allow", overrideBrowserWindowOptions: buildPopupWindowOptions(details, opener, ctx) };
 }
 
+export function isLivePopup(win: BaseWindow): boolean {
+    for (const set of livePopups.values()) {
+        if (set.has(win as BrowserWindow)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+export function popupWindowTitle(url: string, pageTitle: string): string {
+    let host = "";
+    try {
+        host = new URL(url).host;
+    } catch {
+        host = "";
+    }
+    if (host === "") {
+        host = url;
+    }
+    const title = pageTitle?.trim();
+    return title ? `${host} - ${title}` : host;
+}
+
+// The popup has no URL bar and sits above the main window, so a page-chosen title alone
+// would let any web block open a convincing fake "Sign in - Google" window.
+function installOriginTitle(child: BrowserWindow, initialUrl: string): void {
+    let currentUrl = initialUrl;
+    let pageTitle = "";
+    const apply = () => {
+        if (!child.isDestroyed()) {
+            child.setTitle(popupWindowTitle(currentUrl, pageTitle));
+        }
+    };
+    child.on("page-title-updated", (event, title) => {
+        event.preventDefault();
+        pageTitle = title;
+        apply();
+    });
+    child.webContents.on("did-navigate", (_event, url) => {
+        currentUrl = url;
+        pageTitle = "";
+        apply();
+    });
+    apply();
+}
+
+type WebContentsWithLastPreferences = WebContents & { getLastWebPreferences?: () => WebPreferences | null };
+
+// getLastWebPreferences is a real Electron 41 WebContents method (Electron's own
+// guest-window-manager reads it to inherit security prefs) but is missing from
+// electron.d.ts. A missing accessor or prefs object fails closed.
+function hasHardenedPreferences(wc: WebContents): boolean {
+    const prefs = (wc as WebContentsWithLastPreferences).getLastWebPreferences?.();
+    if (prefs == null) {
+        return false;
+    }
+    return (
+        prefs.sandbox === true &&
+        prefs.contextIsolation === true &&
+        prefs.nodeIntegration !== true &&
+        prefs.nodeIntegrationInSubFrames !== true
+    );
+}
+
 function destroyPopup(child: BrowserWindow, reason: string): false {
     console.log(`[popup] destroying child window: ${reason}`);
     if (!child.isDestroyed()) {
@@ -278,13 +348,27 @@ export function hardenCreatedPopup(
     if (isAppWebContentsId(wc.id)) {
         return destroyPopup(child, "popup webContents is app-owned");
     }
-    child.setMenuBarVisibility(false);
-    wc.on("will-navigate", (event, url) => {
-        if (!isAllowedPopupUrl(url)) {
-            console.log("[popup] blocked navigation to", url);
+    // The child's own prefs report the hardened override even for about:blank, where it
+    // actually runs in the opener's process; the opener check is what covers that case.
+    if (!hasHardenedPreferences(wc)) {
+        return destroyPopup(child, "popup webPreferences are not hardened");
+    }
+    if (!hasHardenedPreferences(opener)) {
+        return destroyPopup(child, "opener webPreferences are not hardened");
+    }
+    // setMenuBarVisibility only hides the inherited app menu; its accelerators would still
+    // fire against this window, and those handlers assume a RemoteTerm window.
+    child.removeMenu();
+    const blockDisallowedNavigation = (event: Electron.Event<{ url: string }>) => {
+        if (!isAllowedPopupUrl(event.url)) {
+            console.log("[popup] blocked navigation to", event.url);
             event.preventDefault();
         }
-    });
+    };
+    wc.on("will-navigate", blockDisallowedNavigation);
+    // Server-side 3xx redirects fire only will-redirect, never will-navigate.
+    wc.on("will-redirect", blockDisallowedNavigation);
+    installOriginTitle(child, details.url);
     installGuestWindowOpenHandler(wc, ctx);
     trackPopup(ctx.rootGuestId, child);
     return true;

@@ -135,9 +135,11 @@ import {
     hardenCreatedPopup,
     installGuestWindowOpenHandler,
     livePopupCount,
+    isLivePopup,
     MaxLivePopupsPerOpener,
+    popupWindowTitle,
 } from "./emain-popup";
-import { registerAppWebContents, WebBlockPartition } from "./emain-websecurity";
+import { registerAppWebContents } from "./emain-websecurity";
 
 const PreloadPath = "/app/preload/preload-webview.cjs";
 const GuestSession = { id: "persist:webblock" };
@@ -151,6 +153,8 @@ function fakeWebContents(sessionObj: any = GuestSession): any {
     wc.isDestroyed = () => wc.destroyed;
     wc.windowOpenHandler = null;
     wc.setWindowOpenHandler = (h: any) => (wc.windowOpenHandler = h);
+    wc.prefs = { sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: false };
+    wc.getLastWebPreferences = () => wc.prefs;
     return wc;
 }
 
@@ -163,7 +167,10 @@ function fakeWindow(sessionObj: any = GuestSession): any {
         win.destroyed = true;
         win.emit("closed");
     };
-    win.setMenuBarVisibility = vi.fn();
+    win.menu = { items: [] };
+    win.removeMenu = vi.fn(() => (win.menu = null));
+    win.title = "";
+    win.setTitle = (t: string) => (win.title = t);
     win.getBounds = () => ({ x: 100, y: 100, width: 1200, height: 800 });
     return win;
 }
@@ -285,22 +292,62 @@ describe("handleGuestWindowOpen", () => {
 describe("hardenCreatedPopup", () => {
     const createdDetails: any = { url: PopupDetails.url, frameName: "auth", options: { webPreferences: { preload: PreloadPath } }, disposition: "new-window" };
 
-    it("accepts a same-session popup, hides the menu bar, guards navigation, and tracks it", () => {
+    // Electron passes the URL both on the event object and as the deprecated positional arg.
+    function emitNav(child: any, name: string, url: string) {
+        const ev = { url, preventDefault: vi.fn() };
+        child.webContents.emit(name, ev, url);
+        return ev;
+    }
+
+    it("accepts a same-session popup, guards navigation, and tracks it", () => {
         const root = fakeWebContents();
         const { ctx } = ctxFor(root);
         const child = fakeWindow();
         expect(hardenCreatedPopup(child, root, createdDetails, ctx)).toBe(true);
         expect(child.destroyed).toBe(false);
-        expect(child.setMenuBarVisibility).toHaveBeenCalledWith(false);
         expect(livePopupCount(root.id)).toBe(1);
-        const ev = { preventDefault: vi.fn() };
-        child.webContents.emit("will-navigate", ev, "file:///etc/passwd");
-        expect(ev.preventDefault).toHaveBeenCalled();
-        const ev2 = { preventDefault: vi.fn() };
-        child.webContents.emit("will-navigate", ev2, "https://ok.test/");
-        expect(ev2.preventDefault).not.toHaveBeenCalled();
+        expect(isLivePopup(child)).toBe(true);
+        expect(emitNav(child, "will-navigate", "file:///etc/passwd").preventDefault).toHaveBeenCalled();
+        expect(emitNav(child, "will-navigate", "https://ok.test/").preventDefault).not.toHaveBeenCalled();
         child.destroy();
         expect(livePopupCount(root.id)).toBe(0);
+        expect(isLivePopup(child)).toBe(false);
+    });
+
+    it("blocks a server-side redirect to a disallowed scheme", () => {
+        const root = fakeWebContents();
+        const { ctx } = ctxFor(root);
+        const child = fakeWindow();
+        hardenCreatedPopup(child, root, createdDetails, ctx);
+        for (const url of ["file:///etc/passwd", "chrome://gpu", "javascript:alert(1)", "data:text/html,x"]) {
+            expect(emitNav(child, "will-redirect", url).preventDefault).toHaveBeenCalled();
+        }
+        expect(emitNav(child, "will-redirect", "https://accounts.example.test/cb").preventDefault).not.toHaveBeenCalled();
+    });
+
+    it("removes the inherited app menu so its accelerators cannot fire against the popup", () => {
+        const root = fakeWebContents();
+        const { ctx } = ctxFor(root);
+        const child = fakeWindow();
+        hardenCreatedPopup(child, root, createdDetails, ctx);
+        expect(child.removeMenu).toHaveBeenCalled();
+        expect(child.menu).toBeNull();
+    });
+
+    it("prefixes the window title with the popup's current host, whatever title the page sets", () => {
+        const root = fakeWebContents();
+        const { ctx } = ctxFor(root);
+        const child = fakeWindow();
+        hardenCreatedPopup(child, root, createdDetails, ctx);
+        expect(child.title).toBe("accounts.example.test");
+        const titleEv = { preventDefault: vi.fn() };
+        child.emit("page-title-updated", titleEv, "Sign in - Google Accounts", true);
+        expect(titleEv.preventDefault).toHaveBeenCalled();
+        expect(child.title).toBe("accounts.example.test - Sign in - Google Accounts");
+        child.webContents.emit("did-navigate", {}, "https://evil.test:8443/login", 200, "OK");
+        expect(child.title).toBe("evil.test:8443");
+        child.emit("page-title-updated", { preventDefault: vi.fn() }, "accounts.google.com", true);
+        expect(child.title).toBe("evil.test:8443 - accounts.google.com");
     });
 
     it("destroys a popup that landed on a different session or the default session", () => {
@@ -324,6 +371,40 @@ describe("hardenCreatedPopup", () => {
         registerAppWebContents(appOwned.webContents);
         expect(hardenCreatedPopup(appOwned, root, createdDetails, ctx)).toBe(false);
         expect(appOwned.destroyed).toBe(true);
+    });
+
+    it("destroys an about:blank popup whose opener is not sandboxed, even though the child reports hardened prefs", () => {
+        // Real Electron 41 (see .pi/evidence/2026-09-26-pr67-followup): the about:blank child
+        // runs in the opener's process yet getLastWebPreferences reports the hardened override.
+        const root = fakeWebContents();
+        root.prefs = { ...root.prefs, sandbox: false };
+        const { ctx } = ctxFor(root);
+        const child = fakeWindow();
+        const aboutBlank = { ...createdDetails, url: "about:blank" };
+        expect(hardenCreatedPopup(child, root, aboutBlank, ctx)).toBe(false);
+        expect(child.destroyed).toBe(true);
+        expect(livePopupCount(root.id)).toBe(0);
+    });
+
+    it("destroys a popup whose own webPreferences are weakened or unreadable", () => {
+        const weakenings = [{ contextIsolation: false }, { nodeIntegration: true }, { nodeIntegrationInSubFrames: true }, { sandbox: undefined }];
+        for (const weaken of weakenings) {
+            const root = fakeWebContents();
+            const { ctx } = ctxFor(root);
+            const child = fakeWindow();
+            child.webContents.prefs = { ...child.webContents.prefs, ...weaken };
+            expect(hardenCreatedPopup(child, root, createdDetails, ctx)).toBe(false);
+            expect(child.destroyed).toBe(true);
+        }
+        const root = fakeWebContents();
+        const { ctx } = ctxFor(root);
+        const noAccessor = fakeWindow();
+        delete noAccessor.webContents.getLastWebPreferences;
+        expect(hardenCreatedPopup(noAccessor, root, createdDetails, ctx)).toBe(false);
+        const nullPrefs = fakeWindow();
+        nullPrefs.webContents.prefs = null;
+        expect(hardenCreatedPopup(nullPrefs, root, createdDetails, ctx)).toBe(false);
+        expect(livePopupCount(root.id)).toBe(0);
     });
 
     it("installs the router on the popup so nested opens route through the root", () => {
@@ -353,6 +434,15 @@ describe("hardenCreatedPopup", () => {
         expect(handleGuestWindowOpen(root, PopupDetails, ctx)).toEqual({ action: "deny" });
         wins[0].destroy();
         expect(handleGuestWindowOpen(root, PopupDetails, ctx).action).toBe("allow");
+    });
+});
+
+describe("popupWindowTitle", () => {
+    it("falls back to the bare host, or the whole URL when there is no host", () => {
+        expect(popupWindowTitle("https://a.test/x", "")).toBe("a.test");
+        expect(popupWindowTitle("https://a.test/x", "   ")).toBe("a.test");
+        expect(popupWindowTitle("about:blank", "Loading")).toBe("about:blank - Loading");
+        expect(popupWindowTitle("not a url", "t")).toBe("not a url - t");
     });
 });
 

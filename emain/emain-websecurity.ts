@@ -8,6 +8,8 @@ export const WebBlockPartition = "persist:webblock";
 
 const AllowedWebviewSrcProtocols = new Set(["http:", "https:", "file:", "about:"]);
 // Popups never need file:; an OAuth or share popup that navigates to file: is hostile.
+// about: popups inherit the opener's webPreferences, not buildPopupWindowOptions' override;
+// hardenCreatedPopup destroys any popup whose opener is not hardened.
 const AllowedPopupUrlProtocols = new Set(["http:", "https:", "about:"]);
 const GuestAllowedPermissions = new Set(["fullscreen", "clipboard-sanitized-write"]);
 

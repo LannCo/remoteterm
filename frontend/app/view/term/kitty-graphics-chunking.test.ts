@@ -181,8 +181,7 @@ describe("Kitty graphics protocol chunked transmission (real addon-image handler
     it("keeps a final chunk's own payload after an earlier padded m=1 chunk finalized the shared decoder", async () => {
         // Regression for the "final chunk drops payload" bug: a metadata-
         // only opener registers a pending entry with decoder=null, a padded
-        // m=1 chunk finalizes+releases its own decoder (leaving
-        // pending.decoder null again), and then the *final* m=0 chunk
+        // m=1 chunk finalizes its decoder, and then the *final* m=0 chunk
         // carries real bytes of its own. Before the fix, _processChunk
         // unconditionally took `decoder = pending.decoder` (null) and threw
         // away the fresh decoder _streamPayload had just created for the
@@ -274,5 +273,94 @@ describe("Kitty graphics protocol chunked transmission (real addon-image handler
         expect(stored).toBeDefined();
         const storedBytes = new Uint8Array(await stored.data.arrayBuffer());
         expect(storedBytes).toEqual(rgba);
+    });
+
+    // Each Base64Decoder owns a multi-MB WebAssembly.Memory created on its
+    // first init(), so counting Memory constructions counts real decoder
+    // allocations. The decoder class itself is bundled privately inside the
+    // addon's ESM build and can't be spied on directly.
+    async function countWasmMemoryAllocations(run: () => Promise<void>): Promise<number> {
+        const OriginalMemory = WebAssembly.Memory;
+        let count = 0;
+        WebAssembly.Memory = class extends OriginalMemory {
+            constructor(descriptor: WebAssembly.MemoryDescriptor) {
+                super(descriptor);
+                count++;
+            }
+        };
+        try {
+            await run();
+        } finally {
+            WebAssembly.Memory = OriginalMemory;
+        }
+        return count;
+    }
+
+    it("reuses one decoder across ~2000 independently padded chunks of a single transmission", async () => {
+        // chafa pads every 512-byte block, so a large image arrives as
+        // thousands of padded m=1 chunks. Releasing the decoder and creating
+        // a new one per chunk allocated a fresh ~4MB wasm memory each time
+        // (one per chunk, ~2000 here), risking stalls or OOM.
+        const width = 511;
+        const height = 500;
+        const blockSize = 511; // 511 % 3 === 1 -> every block ends in "=="
+        const rgba = solidColorRgba(width, height, 12, 34, 56);
+        const id = 77;
+        const chunks = independentlyPaddedChunks(rgba, blockSize);
+        expect(chunks.length).toBe(2000);
+        expect(chunks.every((c) => c.endsWith("=="))).toBe(true);
+
+        const decodersSeen = new Set<unknown>();
+        const allocations = await countWasmMemoryAllocations(async () => {
+            await writeAsync(term, `\x1b_Ga=t,f=32,s=${width},v=${height},i=${id},m=1\x1b\\`);
+            for (const chunkB64 of chunks) {
+                await writeAsync(term, `\x1b_Gm=1;${chunkB64}\x1b\\`);
+                decodersSeen.add(kittyHandler.pendingTransmissions.get(id).decoder);
+            }
+            await writeAsync(term, "\x1b_Gm=0\x1b\\");
+        });
+
+        expect(allocations).toBe(1);
+        expect(decodersSeen.size).toBe(1);
+        expect(kittyHandler.pendingTransmissions.size).toBe(0);
+        const stored = kittyHandler.images.get(id);
+        expect(stored).toBeDefined();
+        const storedBytes = new Uint8Array(await stored.data.arrayBuffer());
+        expect(storedBytes.length).toBe(rgba.length);
+        expect(storedBytes).toEqual(rgba);
+        expect(responses).toContain(`\x1b_Gi=${id};OK\x1b\\`);
+    }, 30000);
+
+    it("gives a new, unrelated transmission its own fresh decoder", async () => {
+        const width = 3;
+        const height = 3;
+        const rgbaA = solidColorRgba(width, height, 1, 1, 1);
+        const rgbaB = solidColorRgba(width, height, 2, 2, 2);
+        const chunksA = independentlyPaddedChunks(rgbaA, 13);
+        const chunksB = independentlyPaddedChunks(rgbaB, 13);
+
+        let decoderA: unknown;
+        let decoderB: unknown;
+        const allocations = await countWasmMemoryAllocations(async () => {
+            await writeAsync(term, `\x1b_Ga=t,f=32,s=${width},v=${height},i=61,m=1;${chunksA[0]}\x1b\\`);
+            decoderA = kittyHandler.pendingTransmissions.get(61).decoder;
+            await writeAsync(term, `\x1b_Gm=1;${chunksA[1]}\x1b\\`);
+            await writeAsync(term, `\x1b_Gm=0;${chunksA[2]}\x1b\\`);
+
+            await writeAsync(term, `\x1b_Ga=t,f=32,s=${width},v=${height},i=62,m=1;${chunksB[0]}\x1b\\`);
+            decoderB = kittyHandler.pendingTransmissions.get(62).decoder;
+            await writeAsync(term, `\x1b_Gm=1;${chunksB[1]}\x1b\\`);
+            await writeAsync(term, `\x1b_Gm=0;${chunksB[2]}\x1b\\`);
+        });
+
+        expect(decoderA).toBeTruthy();
+        expect(decoderB).toBeTruthy();
+        expect(decoderB).not.toBe(decoderA);
+        expect(allocations).toBe(2);
+        expect(kittyHandler.pendingTransmissions.size).toBe(0);
+        const storedA = new Uint8Array(await kittyHandler.images.get(61).data.arrayBuffer());
+        const storedB = new Uint8Array(await kittyHandler.images.get(62).data.arrayBuffer());
+        expect(storedA).toEqual(rgbaA);
+        expect(storedB).toEqual(rgbaB);
     });
 });
