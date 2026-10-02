@@ -98,6 +98,23 @@ describe("emain.ts startup order", () => {
         expect(guardIdx).toBeLessThan(srvIdx);
     });
 
+    // A subscription issued before the WS opens queues ahead of GetFullConfig, and the WS queue
+    // drains one message per 100 ms. The first menu build must still follow the subscription, so
+    // the initial workspace state is never missed.
+    it("subscribes to menu events after GetFullConfig and before the first menu build", () => {
+        const stmts = appMainStatements();
+        const isRpcCall = (n: ts.Node, method: string) =>
+            ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === method;
+        const configIdx = stmts.findIndex((s) => containsNode(s, (n) => isRpcCall(n, "GetFullConfigCommand")));
+        const subIdx = stmts.findIndex((s) => containsNode(s, (n) => isCallTo(n, "initMenuEventSubscriptions")));
+        const menuIdx = stmts.findIndex((s) => containsNode(s, (n) => isCallTo(n, "makeAndSetAppMenu")));
+        expect(configIdx, "no GetFullConfigCommand call in appMain").toBeGreaterThanOrEqual(0);
+        expect(subIdx, "no initMenuEventSubscriptions() call in appMain").toBeGreaterThanOrEqual(0);
+        expect(menuIdx, "no makeAndSetAppMenu() call in appMain").toBeGreaterThanOrEqual(0);
+        expect(subIdx).toBeGreaterThan(configIdx);
+        expect(subIdx).toBeLessThan(menuIdx);
+    });
+
     it.each([["resolveLegacyInstanceBlock"], ["resolveIncompleteMigrationBlock"]])(
         "imports %s from emain-platform",
         (name) => {
