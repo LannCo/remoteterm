@@ -9,7 +9,7 @@ import { globalEvents } from "emain/emain-events";
 import { sprintf } from "sprintf-js";
 import * as services from "../frontend/app/store/services";
 import { initElectronWshrpc, shutdownWshrpc } from "../frontend/app/store/wshrpcutil-base";
-import { fireAndForget, sleep } from "../frontend/util/util";
+import { fireAndForget } from "../frontend/util/util";
 import { AuthKey, configureAuthKeyRequestInjection } from "./authkey";
 import {
     getActivityState,
@@ -339,7 +339,6 @@ async function appMain() {
     configureAuthKeyRequestInjection(electron.session.defaultSession);
     initIpcHandlers();
 
-    await sleep(10); // wait a bit for remotetermsrv to be ready
     try {
         initElectronWshClient();
         initElectronWshrpc(ElectronWshClient, { authKey: AuthKey });
@@ -359,7 +358,7 @@ async function appMain() {
         confirmQuit = fullConfig.settings["app:confirmquit"];
     }
     ensureHotSpareTab(fullConfig);
-    await relaunchBrowserWindows();
+    await relaunchBrowserWindows(fullConfig);
     setTimeout(runActiveTimer, 5000); // start active timer, wait 5s just to be safe
     makeAndSetAppMenu();
     makeDockTaskbar();
