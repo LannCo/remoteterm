@@ -320,38 +320,12 @@ func EnsureWavePresetsDir() error {
 	return CacheEnsureDir(filepath.Join(GetWaveConfigDir(), "presets"), "wavepresets", 0700, "wave presets directory")
 }
 
+// Nested under GetWaveDataDir() rather than an OS-native cache-convention path (XDG_CACHE_HOME,
+// Library/Caches, LOCALAPPDATA) so it inherits REMOTETERM_DATA_HOME overrides like every other
+// app-owned storage location in this file. Nothing in this codebase treats the OS cache
+// convention as load-bearing for this directory (no "clear app cache" integration relies on it).
 func resolveWaveCachesDir() string {
-	var cacheDir string
-	appBundle := "waveterm"
-	if IsDevMode() {
-		appBundle = "waveterm-dev"
-	}
-
-	switch runtime.GOOS {
-	case "darwin":
-		homeDir := GetHomeDir()
-		cacheDir = filepath.Join(homeDir, "Library", "Caches", appBundle)
-	case "linux":
-		xdgCache := os.Getenv("XDG_CACHE_HOME")
-		if xdgCache != "" {
-			cacheDir = filepath.Join(xdgCache, appBundle)
-		} else {
-			homeDir := GetHomeDir()
-			cacheDir = filepath.Join(homeDir, ".cache", appBundle)
-		}
-	case "windows":
-		localAppData := os.Getenv("LOCALAPPDATA")
-		if localAppData != "" {
-			cacheDir = filepath.Join(localAppData, appBundle, "Cache")
-		}
-	}
-
-	if cacheDir == "" {
-		tmpDir := os.TempDir()
-		cacheDir = filepath.Join(tmpDir, appBundle)
-	}
-
-	return cacheDir
+	return filepath.Join(GetWaveDataDir(), "caches")
 }
 
 func GetWaveCachesDir() string {
