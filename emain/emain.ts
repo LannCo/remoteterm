@@ -8,7 +8,7 @@ import { globalEvents } from "emain/emain-events";
 import { sprintf } from "sprintf-js";
 import * as services from "../frontend/app/store/services";
 import { initElectronWshrpc, shutdownWshrpc } from "../frontend/app/store/wshrpcutil-base";
-import { fireAndForget, sleep } from "../frontend/util/util";
+import { fireAndForget } from "../frontend/util/util";
 import { AuthKey, configureAuthKeyRequestInjection } from "./authkey";
 import {
     getActivityState,
@@ -353,21 +353,26 @@ async function appMain() {
     configureAuthKeyRequestInjection(electron.session.defaultSession);
     initIpcHandlers();
 
-    await sleep(10); // wait a bit for remotetermsrv to be ready
     try {
         initElectronWshClient();
         initElectronWshrpc(ElectronWshClient, { authKey: AuthKey });
-        initMenuEventSubscriptions();
     } catch (e) {
         console.log("error initializing wshrpc", e);
     }
     const fullConfig = await RpcApi.GetFullConfigCommand(ElectronWshClient);
+    // After GetFullConfig, not before: a subscription made before the socket opens queues ahead of
+    // it and the WS queue drains one message per 100 ms. The menu is first built below, after this.
+    try {
+        initMenuEventSubscriptions();
+    } catch (e) {
+        console.log("error initializing menu event subscriptions", e);
+    }
     checkIfRunningUnderARM64Translation(fullConfig);
     if (fullConfig?.settings?.["app:confirmquit"] != null) {
         confirmQuit = fullConfig.settings["app:confirmquit"];
     }
     ensureHotSpareTab(fullConfig);
-    await relaunchBrowserWindows();
+    await relaunchBrowserWindows(fullConfig);
     setTimeout(runActiveTimer, 5000); // start active timer, wait 5s just to be safe
     startRssMonitor();
     makeAndSetAppMenu();
