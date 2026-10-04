@@ -21,7 +21,12 @@ import {
     getAllBuilderWindows,
     getBuilderWindowByWebContentsId,
 } from "./emain-builder";
-import { bringWindowToFront, findBuilderWindowForApp, pickTerminalWindow } from "./emain-builder-select";
+import {
+    bringWindowToFront,
+    findBuilderWindowForApp,
+    openPathDetached,
+    pickTerminalWindow,
+} from "./emain-builder-select";
 import { callWithOriginalXdgCurrentDesktopAsync, unamePlatform } from "./emain-platform";
 import { handleTabLoadSucceeded } from "./emain-tab-lifecycle";
 import { getRemoteTermTabViewByWebContentsId } from "./emain-tabview";
@@ -583,8 +588,7 @@ export function initIpcHandlers() {
         } catch {
             return "The app folder does not exist.";
         }
-        const err = await electron.shell.openPath(appDir);
-        return err ?? "";
+        return openPathDetached((target) => electron.shell.openPath(target), appDir, (msg) => console.error(msg));
     });
 
     electron.ipcMain.on("do-refresh", (event) => {
