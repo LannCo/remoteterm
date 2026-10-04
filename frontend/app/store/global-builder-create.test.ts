@@ -26,17 +26,33 @@ vi.mock("./services", () => ({
     ObjectService: { CreateBlock: h.createBlock, DeleteBlock: h.deleteBlock },
     ClientService: {},
 }));
+vi.mock("./wos", async (importOriginal) => {
+    const { atom } = await import("jotai");
+    const actual = await importOriginal<typeof import("./wos")>();
+    return {
+        ...actual,
+        getWaveObjectAtom: vi.fn(() => atom({ meta: { view: "preview" } })),
+    };
+});
 vi.mock("./wps", () => ({ waveEventSubscribeSingle: vi.fn(), peekFileSubject: vi.fn() }));
 vi.mock("./badge", () => ({ setupBadgesSubscription: vi.fn() }));
 vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: {} }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 
 import { BuilderNoticeAtom } from "./builder-terminal";
-import { createBlock, createBlockSplitHorizontally, createBlockSplitVertically, hideBlockKeepAlive, replaceBlock } from "./global";
+import {
+    createBlock,
+    createBlockSplitHorizontally,
+    createBlockSplitVertically,
+    hideBlockKeepAlive,
+    replaceBlock,
+} from "./global";
 import { globalStore } from "./jotaiStore";
 import { setWaveWindowType } from "./windowtype";
 
-const termDef: BlockDef = { meta: { view: "term", controller: "shell", "cmd:cwd": "/elsewhere", connection: "user@host" } };
+const termDef: BlockDef = {
+    meta: { view: "term", controller: "shell", "cmd:cwd": "/elsewhere", connection: "user@host" },
+};
 const webDef: BlockDef = { meta: { view: "web", url: "https://example.com" } };
 
 function makeLayoutModel() {
@@ -44,6 +60,7 @@ function makeLayoutModel() {
         treeReducer: vi.fn(),
         getNodeByBlockId: vi.fn(() => ({ id: "node-1" })),
         newEphemeralNode: vi.fn(),
+        hideNode: vi.fn(),
     };
 }
 
@@ -102,11 +119,17 @@ describe("block creation in a builder window", () => {
 
     it("closes keep-alive blocks instead of hiding them", () => {
         expect(hideBlockKeepAlive("b1")).toBe(false);
+        expect(h.layoutModel.hideNode).not.toHaveBeenCalled();
     });
 });
 
 describe("block creation in a main window", () => {
     beforeEach(() => setWaveWindowType("tab"));
+
+    it("hides keep-alive blocks", () => {
+        expect(hideBlockKeepAlive("b1")).toBe(true);
+        expect(h.layoutModel.hideNode).toHaveBeenCalledWith("node-1");
+    });
 
     it("keeps creating terminals through the object service", async () => {
         expect(await createBlock(termDef)).toBe("new-block");

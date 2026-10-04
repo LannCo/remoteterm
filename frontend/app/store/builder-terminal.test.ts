@@ -4,7 +4,13 @@
 // @vitest-environment happy-dom
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BuilderNoticeAtom, isTermBlockDef, openBuilderTerminal, showConnectionUi, splitActionFor } from "./builder-terminal";
+import {
+    BuilderNoticeAtom,
+    isTermBlockDef,
+    openBuilderTerminal,
+    showConnectionUi,
+    splitActionFor,
+} from "./builder-terminal";
 import { globalStore } from "./jotaiStore";
 import { setWaveWindowType } from "./windowtype";
 
