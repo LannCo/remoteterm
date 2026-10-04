@@ -353,6 +353,9 @@ export class BuilderAppPanelModel {
     }
 
     async loadAppFile(appId: string) {
+        // A reconcile read that started before this load holds older disk content; bumping
+        // the sequence makes it drop its result instead of overwriting the loaded file.
+        ++this.reconcileSeq;
         try {
             globalStore.set(this.isLoadingAtom, true);
             globalStore.set(this.errorAtom, "");

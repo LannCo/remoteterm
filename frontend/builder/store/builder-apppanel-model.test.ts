@@ -113,6 +113,20 @@ describe("BuilderAppPanelModel reload glue", () => {
         expect(globalStore.get(model.diskChangedAtom)).toBeNull();
     });
 
+    it("drops a disk read that started before a load", async () => {
+        setEditor("mine", "orig");
+        let releaseOld: (v: unknown) => void;
+        rpc.ReadAppFileCommand.mockReturnValueOnce(new Promise((resolve) => (releaseOld = resolve)));
+        const older = model.handleAppGoUpdated("draft/app");
+        rpc.ReadAppFileCommand.mockResolvedValueOnce(diskFile("loaded"));
+        await model.loadAppFile("draft/app");
+        releaseOld(diskFile("older"));
+        await older;
+        expect(globalStore.get(model.codeContentAtom)).toBe("loaded");
+        expect(globalStore.get(model.originalContentAtom)).toBe("loaded");
+        expect(globalStore.get(model.diskChangedAtom)).toBeNull();
+    });
+
     it("loadDiskVersion replaces the editor with the disk content", () => {
         setEditor("mine", "orig");
         globalStore.set(model.diskChangedAtom, "outside");
