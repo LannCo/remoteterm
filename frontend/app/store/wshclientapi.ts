@@ -1032,6 +1032,12 @@ export class RpcApiType {
         return client.wshRpcCall("waitforroute", data, opts);
     }
 
+    // command "watchbuilderapp" [call]
+    WatchBuilderAppCommand(client: WshClient, data: CommandWatchBuilderAppData, opts?: RpcOpts): Promise<BuilderWatchStatusData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "watchbuilderapp", data, opts);
+        return client.wshRpcCall("watchbuilderapp", data, opts);
+    }
+
     // command "wavefilereadstream" [call]
     WaveFileReadStreamCommand(client: WshClient, data: CommandWaveFileReadStreamData, opts?: RpcOpts): Promise<WaveFileInfo> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "wavefilereadstream", data, opts);

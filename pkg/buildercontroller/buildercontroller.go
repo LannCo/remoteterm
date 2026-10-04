@@ -22,6 +22,7 @@ import (
 	"github.com/LannCo/remoteterm/pkg/remotetermbase"
 	"github.com/LannCo/remoteterm/pkg/remotetermobj"
 	"github.com/LannCo/remoteterm/pkg/rtconfig"
+	"github.com/LannCo/remoteterm/pkg/rtstore"
 	"github.com/LannCo/remoteterm/pkg/tsunamiutil"
 	"github.com/LannCo/remoteterm/pkg/utilds"
 	"github.com/LannCo/remoteterm/pkg/wps"
@@ -74,6 +75,7 @@ type BuilderController struct {
 	pendingAppId       string
 	pendingEnv         map[string]string
 	lastBuildInputHash string
+	watcher            *AppWatcher
 	runBuildFn         func(ctx context.Context, appId string, builderEnv map[string]string)
 }
 
@@ -122,6 +124,7 @@ func DeleteController(builderId string) {
 
 	if bc != nil {
 		bc.markClosed()
+		bc.StopWatching()
 		bc.Stop()
 	}
 }
@@ -153,6 +156,7 @@ func Shutdown() {
 
 	for _, bc := range controllers {
 		bc.markClosed()
+		bc.StopWatching()
 		bc.Stop()
 	}
 }
@@ -365,6 +369,19 @@ func RequestRebuildAfterSave(builderId string, appId string, builderEnv map[stri
 		return
 	}
 	bc.RequestRebuild(appId, builderEnv)
+}
+
+// The app id and env come from the builder's rtinfo, never from a request: a watcher or
+// a save can only ever act on the app the builder window was opened for.
+func GetBuilderRebuildInputs(builderId string) (string, map[string]string, error) {
+	rtInfo := rtstore.GetRTInfo(remotetermobj.MakeORef(remotetermobj.OType_Builder, builderId))
+	if rtInfo == nil {
+		return "", nil, fmt.Errorf("builder rtinfo not found for builderid: %s", builderId)
+	}
+	if rtInfo.BuilderAppId == "" {
+		return "", nil, fmt.Errorf("builder appid not set for builderid: %s", builderId)
+	}
+	return rtInfo.BuilderAppId, rtInfo.BuilderEnv, nil
 }
 
 func (bc *BuilderController) setLastBuildInputHash(hash string) {

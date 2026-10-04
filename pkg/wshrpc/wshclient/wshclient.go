@@ -1022,6 +1022,12 @@ func WaitForRouteCommand(w *wshutil.WshRpc, data wshrpc.CommandWaitForRouteData,
 	return resp, err
 }
 
+// command "watchbuilderapp", wshserver.WatchBuilderAppCommand
+func WatchBuilderAppCommand(w *wshutil.WshRpc, data wshrpc.CommandWatchBuilderAppData, opts *wshrpc.RpcOpts) (*wshrpc.BuilderWatchStatusData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.BuilderWatchStatusData](w, "watchbuilderapp", data, opts)
+	return resp, err
+}
+
 // command "wavefilereadstream", wshserver.WaveFileReadStreamCommand
 func WaveFileReadStreamCommand(w *wshutil.WshRpc, data wshrpc.CommandWaveFileReadStreamData, opts *wshrpc.RpcOpts) (*wshrpc.WaveFileInfo, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.WaveFileInfo](w, "wavefilereadstream", data, opts)
