@@ -23,6 +23,7 @@ import {
 } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { uxCloseBlock } from "@/app/store/keymodel";
+import { isBuilderWindow } from "@/app/store/windowtype";
 import { useWaveEnv } from "@/app/remotetermenv/remotetermenv";
 import { IconButton } from "@/element/iconbutton";
 import { NodeModel } from "@/layout/index";
@@ -201,7 +202,7 @@ const HeaderEndIcons = React.memo(({ viewModel, nodeModel, blockId }: HeaderEndI
     const closeDecl: IconButtonDecl = {
         elemtype: "iconbutton",
         icon: "xmark-large",
-        title: isKeepAlive ? "Hide" : "Close",
+        title: isKeepAlive && !isBuilderWindow() ? "Hide" : "Close",
         click: () => {
             // For keep-alive widget views (preview/sourcecontrol/sysinfo/processviewer),
             // the close ("x") button hides the block without deleting it so it can be
