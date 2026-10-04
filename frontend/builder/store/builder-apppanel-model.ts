@@ -243,6 +243,20 @@ export class BuilderAppPanelModel {
         }
     }
 
+    async seedStarterApp() {
+        const appId = globalStore.get(atoms.builderAppId);
+        if (!appId) {
+            return;
+        }
+        try {
+            await RpcApi.SeedBuilderAppCommand(TabRpcClient, { appid: appId });
+            await this.loadAppFile(appId);
+        } catch (err) {
+            console.error("Failed to create starter app:", err);
+            globalStore.set(this.errorAtom, `Failed to create starter app: ${err.message || "Unknown error"}`);
+        }
+    }
+
     async loadAppFile(appId: string) {
         try {
             globalStore.set(this.isLoadingAtom, true);

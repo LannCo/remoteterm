@@ -864,6 +864,12 @@ func RouteUnannounceCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) error {
 	return err
 }
 
+// command "seedbuilderapp", wshserver.SeedBuilderAppCommand
+func SeedBuilderAppCommand(w *wshutil.WshRpc, data wshrpc.CommandSeedBuilderAppData, opts *wshrpc.RpcOpts) (*wshrpc.CommandSeedBuilderAppRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandSeedBuilderAppRtnData](w, "seedbuilderapp", data, opts)
+	return resp, err
+}
+
 // command "setblockfocus", wshserver.SetBlockFocusCommand
 func SetBlockFocusCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "setblockfocus", data, opts)

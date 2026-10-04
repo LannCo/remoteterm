@@ -148,6 +148,13 @@ export function AppSelectionModal() {
 
     const handleCreateNew = async (appName: string) => {
         const draftAppId = `draft/${appName}`;
+        try {
+            await RpcApi.SeedBuilderAppCommand(TabRpcClient, { appid: draftAppId });
+        } catch (err) {
+            console.error("Failed to create starter files:", err);
+            setError(`Failed to create ${appName}: ${err.message || String(err)}`);
+            return;
+        }
         const builderId = globalStore.get(atoms.builderId);
         const oref = WOS.makeORef("builder", builderId);
         await RpcApi.SetRTInfoCommand(TabRpcClient, {

@@ -6,7 +6,8 @@ import { atoms } from "@/store/global";
 import { useAtomValue } from "jotai";
 import { memo, useState } from "react";
 
-const EmptyStateView = memo(() => {
+const EmptyStateView = memo(({ showCreate }: { showCreate: boolean }) => {
+    const model = BuilderAppPanelModel.getInstance();
     return (
         <div className="w-full h-full flex items-center justify-center bg-background">
             <div className="flex flex-col items-center gap-6 max-w-[500px] text-center px-8">
@@ -17,9 +18,18 @@ const EmptyStateView = memo(() => {
                         Create an <span className="font-mono">app.go</span> file to get started.
                     </p>
                 </div>
-                <div className="text-base text-secondary mt-2">
-                    Your app will appear here once <span className="font-mono">app.go</span> is created
-                </div>
+                {showCreate ? (
+                    <button
+                        onClick={() => model.seedStarterApp()}
+                        className="px-6 py-2 font-semibold bg-accent/80 text-onaccent rounded hover:bg-accent transition-colors cursor-pointer"
+                    >
+                        Create starter app
+                    </button>
+                ) : (
+                    <div className="text-base text-secondary mt-2">
+                        Your app will appear here once <span className="font-mono">app.go</span> is created
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -155,7 +165,7 @@ const BuilderPreviewTab = memo(() => {
         if (builderStatus?.status === "error") {
             overlay = <ErrorStateView errorMsg={builderStatus?.errormsg || ""} />;
         } else if (!fileExists || status === "init") {
-            overlay = <EmptyStateView />;
+            overlay = <EmptyStateView showCreate={!fileExists} />;
         } else if (status === "building") {
             overlay = <BuildingStateView />;
         } else if (status === "stopped") {
