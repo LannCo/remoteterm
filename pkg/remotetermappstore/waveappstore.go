@@ -5,6 +5,7 @@ package remotetermappstore
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -153,6 +154,10 @@ func PublishDraft(draftAppId string) (string, error) {
 		return "", err
 	}
 
+	if err := requireSecretBindingsStorage(draftAppId, localAppId); err != nil {
+		return "", err
+	}
+
 	if err := copyDir(draftDir, localDir); err != nil {
 		return "", err
 	}
@@ -187,6 +192,10 @@ func RevertDraft(draftAppId string) error {
 
 	if _, err := os.Stat(localDir); os.IsNotExist(err) {
 		return fmt.Errorf("local app does not exist: %s", localDir)
+	}
+
+	if err := requireSecretBindingsStorage(localAppId, draftAppId); err != nil {
+		return err
 	}
 
 	if err := copyDir(localDir, draftDir); err != nil {
@@ -227,12 +236,18 @@ func MakeDraftFromLocal(localAppId string) (string, error) {
 		return "", err
 	}
 
+	if err := requireSecretBindingsStorage(localAppId, draftAppId); err != nil {
+		return "", err
+	}
+
 	if err := copyDir(localDir, draftDir); err != nil {
 		return "", err
 	}
 
+	// A draft without its bindings would look complete to the next call, which returns
+	// early when the draft folder exists, so the half-made draft must not survive.
 	if err := copySecretBindings(localAppId, draftAppId); err != nil {
-		return "", err
+		return "", errors.Join(err, os.RemoveAll(draftDir), deleteSecretBindings(draftAppId))
 	}
 
 	return draftAppId, nil
@@ -248,12 +263,14 @@ func DeleteApp(appId string) error {
 		return err
 	}
 
-	if err := os.RemoveAll(appDir); err != nil {
-		return fmt.Errorf("failed to delete app directory: %w", err)
-	}
-
+	// Bindings go first: if their removal fails the app is still there to retry, whereas
+	// a surviving file with no app would be inherited by the next app with this id.
 	if err := deleteSecretBindings(appId); err != nil {
 		return err
+	}
+
+	if err := os.RemoveAll(appDir); err != nil {
+		return fmt.Errorf("failed to delete app directory: %w", err)
 	}
 
 	return nil
@@ -709,10 +726,29 @@ func RenameLocalApp(appName string, newAppName string) error {
 		return fmt.Errorf("failed to check if new draft app exists: %w", err)
 	}
 
+	oldDraftAppId := MakeAppId(AppNSDraft, appName)
+	newDraftAppId := MakeAppId(AppNSDraft, newAppName)
+	if err := requireSecretBindingsStorage(oldLocalAppId, newLocalAppId, oldDraftAppId, newDraftAppId); err != nil {
+		return err
+	}
+
+	// Bindings move before the folders so a failure here changes nothing, and a folder
+	// failure below can put them back.
+	var bindingsMoves []secretBindingsMove
+	if localExists {
+		bindingsMoves = append(bindingsMoves, secretBindingsMove{from: oldLocalAppId, to: newLocalAppId})
+	}
+	if draftExists {
+		bindingsMoves = append(bindingsMoves, secretBindingsMove{from: oldDraftAppId, to: newDraftAppId})
+	}
+	if err := moveSecretBindingsAll(bindingsMoves); err != nil {
+		return fmt.Errorf("failed to move secret bindings: %w", err)
+	}
+
 	// Rename local app if it exists
 	if localExists {
 		if err := os.Rename(oldLocalDir, newLocalDir); err != nil {
-			return fmt.Errorf("failed to rename local app: %w", err)
+			return errors.Join(fmt.Errorf("failed to rename local app: %w", err), reverseSecretBindingsMoves(bindingsMoves))
 		}
 	}
 
@@ -725,18 +761,7 @@ func RenameLocalApp(appName string, newAppName string) error {
 					return fmt.Errorf("failed to rename draft app (and failed to rollback local rename: %v): %w", rollbackErr, err)
 				}
 			}
-			return fmt.Errorf("failed to rename draft app: %w", err)
-		}
-	}
-
-	if localExists {
-		if err := moveSecretBindings(oldLocalAppId, newLocalAppId); err != nil {
-			return err
-		}
-	}
-	if draftExists {
-		if err := moveSecretBindings(MakeAppId(AppNSDraft, appName), MakeAppId(AppNSDraft, newAppName)); err != nil {
-			return err
+			return errors.Join(fmt.Errorf("failed to rename draft app: %w", err), reverseSecretBindingsMoves(bindingsMoves))
 		}
 	}
 

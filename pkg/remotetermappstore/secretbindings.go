@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/LannCo/remoteterm/pkg/remotetermbase"
 )
@@ -62,6 +63,26 @@ func WriteAppSecretBindings(appId string, bindings map[string]string) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal bindings: %w", err)
 	}
+	return writeSecretBindingsBytes(bindingsPath, data)
+}
+
+type secretBindingsMove struct {
+	from string
+	to   string
+}
+
+// Callers check this before touching an app folder, so a missing data dir fails the
+// whole operation with nothing changed instead of halfway through.
+func requireSecretBindingsStorage(appIds ...string) error {
+	for _, appId := range appIds {
+		if _, err := GetSecretBindingsPath(appId); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeSecretBindingsBytes(bindingsPath string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(bindingsPath), 0700); err != nil {
 		return fmt.Errorf("failed to create secret bindings directory: %w", err)
 	}
@@ -72,9 +93,16 @@ func WriteAppSecretBindings(appId string, bindings map[string]string) error {
 }
 
 // The bindings file used to travel with the app folder on publish, draft and revert;
-// copying it here keeps that behaviour now that it lives elsewhere.
+// copying it here keeps that behaviour now that it lives elsewhere. Bytes are copied
+// as they are, so a source that no longer parses still moves with its app instead of
+// blocking the operation. A missing source clears the target so an older app with the
+// same id cannot leave its bindings behind.
 func copySecretBindings(fromAppId string, toAppId string) error {
 	fromPath, err := GetSecretBindingsPath(fromAppId)
+	if err != nil {
+		return err
+	}
+	toPath, err := GetSecretBindingsPath(toAppId)
 	if err != nil {
 		return err
 	}
@@ -85,18 +113,61 @@ func copySecretBindings(fromAppId string, toAppId string) error {
 	if err != nil {
 		return fmt.Errorf("failed to read secret bindings: %w", err)
 	}
-	var bindings map[string]string
-	if err := json.Unmarshal(data, &bindings); err != nil {
-		return fmt.Errorf("failed to parse secret bindings: %w", err)
-	}
-	return WriteAppSecretBindings(toAppId, bindings)
+	return writeSecretBindingsBytes(toPath, data)
 }
 
+// A rename keeps the bindings in one place at every moment; copy then delete leaves
+// two copies if the delete fails, so it is only the fallback for a cross-device move.
 func moveSecretBindings(fromAppId string, toAppId string) error {
+	fromPath, err := GetSecretBindingsPath(fromAppId)
+	if err != nil {
+		return err
+	}
+	toPath, err := GetSecretBindingsPath(toAppId)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Lstat(fromPath); errors.Is(err, fs.ErrNotExist) {
+		return deleteSecretBindings(toAppId)
+	}
+	if err := os.MkdirAll(filepath.Dir(toPath), 0700); err != nil {
+		return fmt.Errorf("failed to create secret bindings directory: %w", err)
+	}
+	err = os.Rename(fromPath, toPath)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, syscall.EXDEV) {
+		return fmt.Errorf("failed to move secret bindings: %w", err)
+	}
 	if err := copySecretBindings(fromAppId, toAppId); err != nil {
 		return err
 	}
-	return deleteSecretBindings(fromAppId)
+	if err := deleteSecretBindings(fromAppId); err != nil {
+		return errors.Join(err, deleteSecretBindings(toAppId))
+	}
+	return nil
+}
+
+// Applies the moves in order; if one fails, the ones already applied are reversed so
+// the bindings stay with the id whose folder they belong to.
+func moveSecretBindingsAll(moves []secretBindingsMove) error {
+	for i, m := range moves {
+		if err := moveSecretBindings(m.from, m.to); err != nil {
+			return errors.Join(err, reverseSecretBindingsMoves(moves[:i]))
+		}
+	}
+	return nil
+}
+
+func reverseSecretBindingsMoves(moves []secretBindingsMove) error {
+	var errs []error
+	for i := len(moves) - 1; i >= 0; i-- {
+		if err := moveSecretBindings(moves[i].to, moves[i].from); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func deleteSecretBindings(appId string) error {
