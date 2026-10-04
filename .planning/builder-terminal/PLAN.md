@@ -7468,7 +7468,7 @@ launch_run() {  # $1 = log name
 # Journal lines since START that mention this run's scratch root or any PID recorded for it.
 # Returns 2 (and says so) when the user journal cannot be read: that is "not run", never a PASS.
 journal_check() {
-    journalctl --user -n 1 --no-pager -q > /dev/null 2>&1 || { echo "journal UNAVAILABLE (not PASS)"; return 2; }
+    [ -n "$(journalctl --user -n 1 --no-pager -q 2>/dev/null)" ] || { echo "journal UNAVAILABLE (not PASS)"; return 2; }
     local pids pat=(-e "$SCR")
     pids=$({ cat "$SCR/logs/pids.txt" 2>/dev/null; own_procs; } | sort -u | paste -sd'|')
     [ -n "$pids" ] && pat+=(-e "(^|[^0-9])($pids)([^0-9]|\$)")
@@ -7576,6 +7576,7 @@ mark_panes() { builder_block_ids | tr ' ' '\n' | sed '/^$/d' | sort > "$T/ids-pr
 # builder focus is "terminal", and the new pane's shell starts in the app folder.
 check_new_pane() {  # $1 = label, $2 = expected pane count
     local ids count new dom foc bf
+    time_ok || { echo "$1 NOT RUN"; return 1; }
     for _ in $(seq 50); do
         ids=$(builder_block_ids); count=$(echo $ids | wc -w)
         [ "$count" -ge "$2" ] && break; sleep 0.2
@@ -8143,7 +8144,7 @@ builder_tabs | python3 -c 'import json,sys; print(json.loads(sys.stdin.read())[0
 CRASH_TAB=$(cat "$SCR/logs/crash-tab.txt")
 builder_block_ids > "$SCR/logs/crash-blocks.txt"
 layout_of "$CRASH_TAB" > "$SCR/logs/crash-layout.txt"
-[ -n "$(tr -d ' \n' < "$SCR/logs/crash-blocks.txt")" ] && [ -s "$SCR/logs/crash-layout.txt" ] || { echo "ABORT: the crash tab has no blocks or no layout to check later"; exit 1; }
+[ -n "$(tr -d ' \n' < "$SCR/logs/crash-blocks.txt")" ] && [ -n "$(tr -d ' \n' < "$SCR/logs/crash-layout.txt")" ] || { echo "ABORT: the crash tab has no blocks or no layout to check later"; exit 1; }
 own_pid "$SRV" && [ "$(ps -o sid= -p "$SRV" | tr -d ' ')" = "$SID" ] || { echo "ABORT: $SRV is not this run's server"; exit 1; }
 kill -9 "$SRV"
 for _ in $(seq 30); do [ -z "$(own_procs)" ] && break; sleep 1; done
