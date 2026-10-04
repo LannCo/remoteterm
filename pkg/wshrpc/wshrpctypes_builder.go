@@ -186,8 +186,9 @@ type CommandSeedBuilderAppRtnData struct {
 }
 
 type CommandOpenBuilderTerminalData struct {
-	BuilderId string `json:"builderid"`
-	TabId     string `json:"tabid"`
+	BuilderId     string `json:"builderid"`
+	TargetBlockId string `json:"targetblockid,omitempty"`
+	TargetAction  string `json:"targetaction,omitempty"`
 }
 
 type CommandGetBuilderAppDirData struct {

@@ -21,25 +21,13 @@ import {
     getAllBuilderWindows,
     getBuilderWindowByWebContentsId,
 } from "./emain-builder";
-import {
-    bringWindowToFront,
-    findBuilderWindowForApp,
-    openPathDetached,
-    pickTerminalWindow,
-} from "./emain-builder-select";
+import { findBuilderWindowForApp, openPathDetached } from "./emain-builder-select";
 import { callWithOriginalXdgCurrentDesktopAsync, unamePlatform } from "./emain-platform";
 import { handleTabLoadSucceeded } from "./emain-tab-lifecycle";
 import { getRemoteTermTabViewByWebContentsId } from "./emain-tabview";
 import { handleCtrlShiftState } from "./emain-util";
 import { getRemoteTermVersion } from "./emain-remotetermsrv";
-import {
-    createNewRemoteTermWindow,
-    focusedRemoteTermWindow,
-    getAllRemoteTermWindows,
-    getQuakeWindow,
-    getRemoteTermWindowByWebContentsId,
-    revealQuakeWindow,
-} from "./emain-window";
+import { createNewRemoteTermWindow, getRemoteTermWindowByWebContentsId } from "./emain-window";
 import { ElectronWshClient } from "./emain-wsh";
 
 const electronApp = electron.app;
@@ -549,24 +537,11 @@ export function initIpcHandlers() {
         if (bw == null) {
             return "This action is only available in a builder window.";
         }
-        const ww = pickTerminalWindow(focusedRemoteTermWindow, getAllRemoteTermWindows());
-        if (ww == null) {
-            return "No RemoteTerm window is open. Open one, then try again.";
-        }
-        const tabId = ww.activeTabView?.remoteTermTabId;
-        if (!tabId) {
-            return "The RemoteTerm window has no active tab.";
-        }
         try {
-            await RpcApi.OpenBuilderTerminalCommand(ElectronWshClient, { builderid: bw.builderId, tabid: tabId });
+            await RpcApi.OpenBuilderTerminalCommand(ElectronWshClient, { builderid: bw.builderId });
         } catch (e) {
             return `Could not open a terminal: ${e instanceof Error ? e.message : String(e)}`;
         }
-        if (ww === getQuakeWindow() && !ww.isVisible()) {
-            await revealQuakeWindow();
-            return "";
-        }
-        bringWindowToFront(ww);
         return "";
     });
 

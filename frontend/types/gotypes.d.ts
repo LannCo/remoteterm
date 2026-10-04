@@ -526,7 +526,8 @@ declare global {
     // wshrpc.CommandOpenBuilderTerminalData
     type CommandOpenBuilderTerminalData = {
         builderid: string;
-        tabid: string;
+        targetblockid?: string;
+        targetaction?: string;
     };
 
     // wshrpc.CommandPublishAppData

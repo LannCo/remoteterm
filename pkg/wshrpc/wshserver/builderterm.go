@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"slices"
 	"sync"
 	"time"
 
@@ -199,4 +200,67 @@ func addBuilderTermBlock(ctx context.Context, tabId string, appDir string, targe
 		return "", fmt.Errorf("error queuing layout action: %w", err)
 	}
 	return blockData.OID, nil
+}
+
+func (ws *WshServer) OpenBuilderTerminalCommand(ctx context.Context, data wshrpc.CommandOpenBuilderTerminalData) error {
+	if err := checkBuilderCaller(wshutil.GetRpcSourceFromContext(ctx), data.BuilderId, false); err != nil {
+		return err
+	}
+	if !isValidBuilderTargetAction(data.TargetAction) {
+		return fmt.Errorf("invalid target action %q", data.TargetAction)
+	}
+	if data.TargetAction != "" && data.TargetBlockId == "" {
+		return fmt.Errorf("a split needs a target terminal")
+	}
+	return withBuilderLock(data.BuilderId, func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		writeCtx, cancelFn := makeBuilderWriteContext()
+		defer cancelFn()
+		defer sendBuilderUpdates(writeCtx)
+		return openBuilderTerminal(writeCtx, data)
+	})
+}
+
+// Open never creates or deletes tabs; the folder comes from the app id stored on the tab, never rtinfo.
+func openBuilderTerminal(ctx context.Context, data wshrpc.CommandOpenBuilderTerminalData) error {
+	tabs, err := rtcore.FindBuilderTabs(ctx, data.BuilderId)
+	if err != nil {
+		return err
+	}
+	if len(tabs) != 1 {
+		return fmt.Errorf("builder terminal not ready")
+	}
+	tab := tabs[0]
+	appDir, err := buildercontroller.ResolveAppDirForAppId(tab.Meta.GetString(rtstore.MetaKey_BuilderAppId, ""))
+	if err != nil {
+		return err
+	}
+	if data.TargetAction != "" && !slices.Contains(tab.BlockIds, data.TargetBlockId) {
+		return fmt.Errorf("the split target is not a terminal in this builder")
+	}
+	termCount, err := countTermBlocks(ctx, tab.BlockIds)
+	if err != nil {
+		return err
+	}
+	if termCount >= MaxBuilderTermBlocks {
+		return fmt.Errorf("too many terminals in this builder (max %d)", MaxBuilderTermBlocks)
+	}
+	_, err = addBuilderTermBlock(ctx, tab.OID, appDir, data.TargetBlockId, data.TargetAction)
+	return err
+}
+
+func countTermBlocks(ctx context.Context, blockIds []string) (int, error) {
+	blocks, err := rtstore.DBSelectMap[*remotetermobj.Block](ctx, blockIds)
+	if err != nil {
+		return 0, fmt.Errorf("error reading terminals: %w", err)
+	}
+	count := 0
+	for _, block := range blocks {
+		if block.Meta.GetString(remotetermobj.MetaKey_View, "") == "term" {
+			count++
+		}
+	}
+	return count, nil
 }
