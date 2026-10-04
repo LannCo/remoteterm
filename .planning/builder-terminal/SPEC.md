@@ -1,7 +1,7 @@
-# Builder terminal panel: design spec (v3)
+# Builder terminal panel: design spec (v4)
 
 Date: 2026-10-04. Branch: `feat/builder-terminal` off local `main` 0fee7150 (builder-by-hand).
-v3 folds in two audit rounds (requirements and security, rounds 1 and 2); disposition tables at the end. In this spec `Cmd:` is the keymodel notation: Cmd on macOS, Alt on Linux/Windows (`frontend/util/keyutil.ts:78-84`).
+v4 folds in three audit rounds (requirements and security, rounds 1-3); disposition tables at the end. In this spec `Cmd:` is the keymodel notation: Cmd on macOS, Alt on Linux/Windows (`frontend/util/keyutil.ts:78-84`).
 
 ## Problem
 
@@ -18,7 +18,7 @@ The left side of the builder window becomes a tiled terminal area, so one or mor
 - S3. New-pane and split keybindings, header split buttons and context-menu splits, with a builder pane as source, add a local shell pane with cwd = app folder, focused. Two splits in quick succession both appear. (Deviation from main windows: a builder split never copies the source pane's connection or cwd.)
 - S4. With the terminal side focused, `Cmd:w` closes the focused pane, including the last one: the pane's block row is deleted and its shell PID (from `echo $$`) is gone within 5 s. After the last pane closes, the panel shows an empty state with an "Open terminal" button, builder focus moves to the app side, and the window stays open. With the app side focused, `Cmd:w` closes the builder window. Ctrl+W is never bound in the builder (it stays readline word-delete).
 - S5. Terminal panel width is resizable and persists for the window's lifetime via `builder:layout` key `terminal`.
-- S6. Closing the builder window, and switching it to another app (`switchBuilderApp`), each delete the builder tab, its blocks and layout state from the DB, and every pane's shell PID is gone within 5 s. Processes an agent detached with `setsid`/`nohup` are out of scope.
+- S6. Closing the builder window (title-bar close and `Cmd:w` from the app side), and switching it to another app (`switchBuilderApp`), each delete the builder tab, its blocks and layout state from the DB, and every pane's shell PID is gone within 5 s. Processes an agent detached with `setsid`/`nohup` are out of scope.
 - S7. After a backend crash or quit that skipped S6 cleanup, the next server start deletes every leftover builder tab and its blocks, logging `[startup] builder sweep: removed N tabs` before the `WAVESRV-ESTART` line (`cmd/server/main-server.go:344`).
 - S8. Builder tabs never appear in any workspace's `tabids`, tab bar, or the workspace switcher.
 - S9. Writes to `app.go` from two panes within one rebuild debounce window (300 ms, `pkg/buildercontroller/appwatcher.go:34`), with live rebuild on, produce exactly one `building` transition.
@@ -41,7 +41,8 @@ The left side of the builder window becomes a tiled terminal area, so one or mor
 - Renderers and the Electron main process hold the authkey and are trusted: any of them can already delete any tab or block through existing RPCs (`pkg/web/ws.go:232`, `/wave/service`). Builder invariants are not defended against a compromised renderer.
 - Pane shells do not hold the authkey (`pkg/authkey/authkey.go:34`); they reach the server only over wshrpc with a block-scoped JWT, as an unrestricted RPC client. The design goal: a pane (e.g. a prompt-injected agent) cannot, through *builder-specific* mechanisms, cause silent deletion of tabs it does not own, kill sibling panes, or keep a builder tab alive past teardown.
 - The Preview `<webview>` gets no authkey, no preload, and cannot reach builder IPC (`emain/authkey.ts:12-26`, `emain/emain-websecurity.ts:88`, `emain/emain.ts:149-155`). D6 adds a dedicated preview partition.
-- Pre-existing, recorded not fixed: pane JWTs live 365 days and are not revoked on block delete (`pkg/remotetermjwt/wavejwt.go:132-134`); `REMOTETERM_JWT` is in the pane env; `SetRTInfoCommand` accepts any oref (builder-by-hand R5). This spec stops trusting rtinfo for any destructive or path decision.
+- The builder-specific RPCs (`EnsureBuilderTabCommand`, `OpenBuilderTerminalCommand`, `DeleteBuilderCommand`) check the router-stamped RPC source (`wshutil.GetRpcSourceFromContext`, stamped per link at `pkg/wshutil/wshrouter.go:566-568`), so a pane cannot call them (D2).
+- Pre-existing, recorded not fixed: pane JWTs live 365 days and are not revoked on block delete (`pkg/remotetermjwt/wavejwt.go:132-134`); `REMOTETERM_JWT` is in the pane env; `SetRTInfoCommand` accepts any oref (builder-by-hand R5). This spec stops trusting rtinfo for the builder tab's lifecycle and pane cwd. Other builder features still follow rtinfo `builder:appid` (build controller, Open folder, the renderer's app id on reload); a pane rewriting it can desync them from the terminals, which D5 detects and shows as an error.
 
 ## Design
 
@@ -52,32 +53,34 @@ The left side of the builder window becomes a tiled terminal area, so one or mor
 - **Delete:** `rtcore.DeleteBuilderTab(ctx, tabId, expectedOwner)`:
   - Missing tab: no-op, nil error.
   - Refuses (error, deletes nothing) unless the predicate holds and, when `expectedOwner != ""`, `builder:owner == expectedOwner`.
-  - Best effort: deletes each block with `DeleteBlock(ctx, id, false)` (publishes `Event_BlockClose`; controllers are destroyed asynchronously), logging and continuing past per-block errors; then the `LayoutState`; then the `Tab`. Returns the first error after attempting everything.
+  - Deletes each block with `DeleteBlock(ctx, id, false)` (publishes `Event_BlockClose`; controllers are destroyed asynchronously), logging and continuing past per-block errors. If every block was deleted, deletes the `LayoutState`, then the `Tab`. If any block delete failed, keeps the tab and layout state (so the sweep or a later delete retries) and returns the first error.
 - **Find:** `rtcore.FindBuilderTabs(ctx, builderId)` selects tabs by `json_extract(data, '$.meta."builder:owner"')` in SQL (`builderId == ""` means any non-empty owner), then filters by the predicate.
-- **Cascade skip:** in `DeleteBlock(recursive=true)`, when the parent tab satisfies the predicate, skip the "last block -> delete tab" cascade. Today that path calls `DeleteTab("")`, errors, and returns *before* `sendBlockCloseEvent`, leaking the shell (`pkg/rtcore/block.go:142-156`). With the skip, `DeleteBlock` returns nil and publishes BlockClose.
-- **Reserved meta:** `rtstore.UpdateObjectMeta` (`pkg/rtstore/wstore.go:57`) rejects any key with prefix `builder:` (covers `builder:*` section-clears and nil deletes) on `tab:` and `block:` orefs, so `SetMetaCommand` and `ObjectService.UpdateObjectMeta` are both covered. `CreateBuilderTab` writes at insert and does not go through it.
-- **Workspace membership:** `UpdateWorkspaceTabIds` (`pkg/rtcore/workspace.go:453-461`) rejects a tab id whose tab has non-empty `builder:owner`.
-- **Local only:** `SetMetaCommand` and `CreateBlockCommand` reject a `connection` value other than `""` / `"local"` for a block whose tab satisfies the predicate.
+- **Cascade skip:** in `DeleteBlock(recursive=true)`, when the parent tab satisfies the predicate, skip the "last block -> delete tab" cascade. Today that path calls `DeleteTab("")`, errors, and returns *before* `sendBlockCloseEvent`, leaking the shell (`pkg/rtcore/block.go:142-156`). With the skip, `DeleteBlock` returns nil and publishes BlockClose. Independently, `sendBlockCloseEvent` moves to immediately after `deleteBlockObj` succeeds, so no later cascade error (any tab) can skip it.
+- **Reserved meta:** `rtstore.UpdateObjectMeta` (`pkg/rtstore/wstore.go:57`) rejects any key with prefix `builder:` (covers `builder:*` section-clears and nil deletes) on `tab:` orefs, so `SetMetaCommand` and `ObjectService.UpdateObjectMeta` are both covered. Only tab meta carries builder keys; block meta is not guarded. `CreateBuilderTab` writes at insert and does not go through it.
+- **Workspace membership:** `UpdateWorkspaceTabIds` (`pkg/rtcore/workspace.go:453-461`) rejects a tab id whose tab has non-empty `builder:owner`, and rejects on a tab lookup error (fail closed).
+- **Local only:** `rtstore.UpdateObjectMeta` (block orefs) and `rtcore.CreateBlock` / `CreateSubBlock` reject a `connection` value other than `""` / `"local"` when the block's tab (resolved through parent blocks, as `DBFindTabForBlockId`) satisfies the predicate. This covers `SetMetaCommand`, the conn picker, `wsh ssh`/`wsh wsl`, `CreateBlockCommand`, `CreateSubBlockCommand` and `ObjectService`. It is a UX guard (unroutable SSH prompts), not a security boundary.
 - **Workspace env:** `makeSwapToken` omits `WORKSPACEID` when the workspace id is empty (`pkg/blockcontroller/blockcontroller.go:618-630`).
 - **Block def:** `MakeBuilderTerminalBlockDef` (`pkg/buildercontroller/appdir.go:38-47`) also pins the durable-shell meta key to false (exact key confirmed in the plan).
 
 ### D2. Serialisation and RPCs
 
-- **Lock:** a keyed mutex per builderId (map guarded by its own mutex; helper funcs with `Lock(); defer Unlock()`), held by Ensure, Open and the tab teardown in `DeleteBuilderCommand`. Entries are never removed (one per builder window per process lifetime).
-- **`EnsureBuilderTabCommand{builderid, appid} -> {tabid}`** (under the lock). Called only via Electron IPC, which fills both fields from the calling window (`bw.builderId`, `bw.builderAppId`):
-  - `appid` empty or failing `ValidateAppId` -> error.
+- **Caller check:** `EnsureBuilderTabCommand` and `OpenBuilderTerminalCommand` reject any caller whose RPC source is not the Electron main route (`wshutil.ElectronRoute`). `DeleteBuilderCommand` accepts the Electron route or `builder:<builderid>` for the same builderId (the renderer's `switchBuilderApp` calls it). Everything else (`proc:`, `controller:`, `conn:`, `tab:`, `feblock:`, other builders) is rejected. Exact source strings for the Electron and renderer links are confirmed in the plan with a test per accepted and rejected source. `builderid` must parse as a UUID.
+- **Lock:** a keyed mutex per builderId (map guarded by its own mutex; helper funcs with `Lock(); defer Unlock()`), held by Ensure, Open and the tab teardown in `DeleteBuilderCommand`. Entries are never removed (one per builder window per process lifetime; the caller check stops panes minting ids). After acquiring, Ensure and Open return `ctx.Err()` if their RPC context is done.
+- **Update broadcast:** Ensure, Open and the teardown in `DeleteBuilderCommand` run on a context wrapped with `remotetermobj.ContextWithUpdates`, and call `wps.Broker.SendUpdateEvents(remotetermobj.ContextGetUpdatesRtn(ctx))` before returning, on success and after rollback (as `CreateBlockCommand` does, `pkg/wshrpc/wshserver/wshserver.go:219, 286-288`). Without it the renderer never sees new panes' layout actions or the tab's deletion. The startup sweep is exempt (no clients yet).
+- **App dir:** new `buildercontroller.ResolveAppDirForAppId(appId)`: `GetAppDir` (validates the id and bounds the dir to the apps root, `pkg/remotetermappstore/waveappstore.go:79-86`) plus the symlink and `Lstat` checks of `ResolveBuilderAppDir`. It never reads rtinfo. `ResolveBuilderAppDir` keeps serving its existing callers.
+- **`EnsureBuilderTabCommand{builderid, appid} -> {tabid, appid}`** (under the lock). Electron IPC fills both fields from the calling window (`bw.builderId`, `bw.builderAppId`):
+  - `appid` empty or invalid -> error.
   - `FindBuilderTabs(builderid)`: if one has `builder:appid == appid`, return it. Others (stale app) are deleted with `DeleteBuilderTab(…, builderid)` first.
-  - Resolve the app dir from `appid` (`ResolveBuilderAppDir` semantics, builder-by-hand D7); failure -> error, nothing created.
+  - `ResolveAppDirForAppId(appid)`; failure -> error, nothing created.
   - `CreateBuilderTab`, then one block from `MakeBuilderTerminalBlockDef(appDir)` with an `insert` layout action (`focused: true`). Any failure after the tab insert deletes the tab before returning the error.
-  - Write rtinfo `builder:tabid` as a renderer hint; nothing server-side reads it.
 - **`OpenBuilderTerminalCommand{builderid, targetblockid?, targetaction?}`** replaces `{builderid, tabid}` (under the lock). Validate fully, then write:
   - `targetaction` in `""`, `splitright`, `splitleft`, `splitup`, `splitdown` (the strings `CreateBlockCommand` uses, `pkg/wshrpc/wshserver/wshserver.go:226-286`); anything else, including `replace`, rejected.
   - Tab: exactly one `FindBuilderTabs(builderid)` result, else error "builder terminal not ready". Open never creates or deletes tabs.
-  - App dir from the tab's own `builder:appid` (server-written), never rtinfo.
+  - App dir: `ResolveAppDirForAppId` of the tab's own `builder:appid` (server-written), never rtinfo.
   - When `targetaction != ""`: `targetblockid` required and must be in `tab.BlockIds` (direct child).
   - Cap: reject with "too many terminals in this builder (max 16)" when the tab has 16 blocks with `view: "term"`.
   - Create the block, queue the layout action (`insert`, or the split on `targetblockid`) with `focused: true`; if queueing fails, delete the new block and return the error.
-- **`DeleteBuilderCommand`**: the tab teardown runs on a detached context (`context.WithTimeout(context.Background(), 15s)`), not the RPC context, under the lock: `DeleteBuilderTab(t, builderid)` for each `FindBuilderTabs(builderid)`, then clear rtinfo `builder:tabid`. It keeps deleting the builder controller as today. No tombstone: `switchBuilderApp` reuses the builderId after calling it.
+- **`DeleteBuilderCommand`**: the tab teardown runs on a detached context (`context.WithTimeout(context.Background(), 15s)`), not the RPC context, under the lock: `DeleteBuilderTab(t, builderid)` for each `FindBuilderTabs(builderid)`. It keeps deleting the builder controller as today. No tombstone: `switchBuilderApp` reuses the builderId after calling it.
 
 ### D3. Startup sweep
 
@@ -85,7 +88,8 @@ In `cmd/server/main-server.go`, after `InitJobController` and `InitBlockControll
 
 ### D4. Electron main process
 
-- New IPC `ensure-builder-tab` -> `EnsureBuilderTabCommand{builderid: bw.builderId, appid: bw.builderAppId}`; returns `{tabid}` or `{error}`.
+- New IPC `ensure-builder-tab` -> `EnsureBuilderTabCommand{builderid: bw.builderId, appid: bw.builderAppId}`; returns `{tabid, appid}` or `{error}`. The window is in `builderWindows` with `builderAppId` set before `builder-init` is sent (`emain/emain-builder.ts:84-87`, `emain/emain-ipc.ts:492-497`); the plan confirms the panel cannot call the IPC earlier.
+- `switchBuilderApp` awaits `setBuilderWindowAppId(null)` before reloading (`builder-apppanel-model.ts:315-317`).
 - `open-builder-terminal` keeps deriving `builderId` from the calling window, stops picking or focusing a main window, and forwards `targetblockid` / `targetaction` after checking each is a string of at most 64 chars (else error).
 - `destroyBuilderWindow` (`emain/emain-ipc.ts:226`): awaits `DeleteBuilderCommand` in try/catch (continuing on error), then deletes builder rtinfo, then destroys the window. The `closed` handler's no-response `DeleteBuilderCommand` stays as an idempotent fallback.
 - App switch has one path, `switchBuilderApp` (`frontend/builder/store/builder-apppanel-model.ts:308-324`: `DeleteBuilderCommand`, clear app id, reload). `app-selection-modal.tsx` only runs in a renderer with no app selected and needs no change.
@@ -95,7 +99,7 @@ In `cmd/server/main-server.go`, after `InitJobController` and `InitBlockControll
 - **Subscriptions:** `initBuilder` adds `waveobj:update`, `config`, `blockfile`, the badges subscription, and `subscribeToConnEvents()` (`frontend/app/store/global.ts:55-96`, `:753-790`). No `userinput` (local-only panes).
 - **`staticTabIdAtom`** becomes a `PrimitiveAtom<string>`; only the builder bootstrap writes it in production code. `uiContext` reads `staticTabIdAtom` at call time instead of the init-time closure (`frontend/app/store/global-atoms.ts:19-25`); unchanged for main windows.
 - **Bootstrap** (`BuilderTermPanel`, once the window has an app id):
-  1. `ensure-builder-tab` IPC -> tab id. Error: message + Retry; app column unaffected.
+  1. `ensure-builder-tab` IPC -> `{tabid, appid}`. Error: message + Retry; app column unaffected. If the returned `appid` differs from `atoms.builderAppId` (rtinfo was rewritten), show "Terminal app and builder app differ; reopen the builder" instead of mounting.
   2. `loadAndPinWaveObject` the tab, then load and pin its `LayoutState`.
   3. If `staticTabId` is unset, set it. If it is set to a different id (cannot happen without an app switch, which reloads), reload the renderer.
   4. Mount the tile layout for that tab inside `TabModelContext`, with `TileLayoutContents.onNodeDelete = ObjectService.DeleteBlock(blockId)` (as `tabcontent.tsx:38-46`; the D1 cascade skip keeps the tab).
@@ -103,8 +107,9 @@ In `cmd/server/main-server.go`, after `InitJobController` and `InitBlockControll
 - **Tab vanishes while mounted** (tab atom becomes null): unmount the tile layout, `deleteLayoutModelForTab`, show the Retry state; Retry reloads the renderer.
 - **Layout:** `builder-workspace.tsx` restores the horizontal `PanelGroup`: left `BuilderTermPanel` (`layout.terminal`, default 40, min 20), resize handle, right column (existing app/build vertical group). A saved layout without `terminal` uses 40.
 - **Empty state:** when the layout has no visible leaves, show "No terminals" and an "Open terminal" button.
+- **Header button:** the app panel's "Open terminal" is disabled until bootstrap step 1 has succeeded.
 - **Reload:** a renderer reload (same builderId and app) re-runs the bootstrap; Ensure returns the existing tab; panes and shells survive.
-- **Preview partition:** the Preview `<webview>` (`frontend/builder/tabs/builder-previewtab.tsx:215-224`) gets an explicit in-memory partition `builder-preview`, so web blocks in the builder tab (default `persist:webblock`) do not share its cookies or storage. `hardenWebviewAttach` must accept it (confirmed in the plan).
+- **Preview partition:** the Preview `<webview>` (`frontend/builder/tabs/builder-previewtab.tsx:215-224`) gets an explicit in-memory partition `builder-preview-<builderId>`, so web blocks in the builder tab (default `persist:webblock`) and other builders' previews do not share its cookies or storage. `hardenWebviewAttach` keeps explicit partitions (`emain/emain-websecurity.ts:92-94`); permission handlers reach every session (`emain/emain.ts:147`). Preview storage no longer survives an app restart.
 
 ### D6. Focus, keys, menus, block creation
 
@@ -143,21 +148,24 @@ In `cmd/server/main-server.go`, after `InitJobController` and `InitBlockControll
 
 - **Go unit** (`pkg/rtcore`, `pkg/rtstore`, `pkg/wshrpc/wshserver`, `pkg/blockcontroller`, `pkg/buildercontroller`, `cmd/server` sweep helper):
   - `CreateBuilderTab`: tab + layout state, no workspace, both meta keys.
-  - `DeleteBuilderTab`: deletes blocks, layout state, tab; BlockClose per block; refuses a workspace tab carrying `builder:owner`; refuses owner mismatch; idempotent; continues past a failing block.
+  - `DeleteBuilderTab`: deletes blocks, layout state, tab; BlockClose per block; refuses a workspace tab carrying `builder:owner`; refuses owner mismatch; idempotent; a failing block leaves the tab present and a later sweep removes it.
+  - Caller check: Ensure and Open accept the Electron source only; Delete accepts Electron and `builder:<same id>`; `proc:`/`controller:`/`tab:`/other-builder sources rejected with zero rows changed.
+  - Broadcast: Ensure, Open and Delete teardown each publish `waveobj:update` for the LayoutState / tab changes they make (including the tab delete).
   - `FindBuilderTabs`: by owner and any-owner; excludes workspace tabs.
   - `DeleteBlock(recursive=true)` on the last block of a builder tab: nil, BlockClose published, tab remains.
-  - `UpdateObjectMeta` rejects `builder:owner`, `builder:*`, nil `builder:owner` on tab and block orefs, via both `SetMetaCommand` and `ObjectService.UpdateObjectMeta`; other keys unaffected.
+  - `UpdateObjectMeta` rejects `builder:owner`, `builder:*`, nil `builder:owner` on tab orefs, via both `SetMetaCommand` and `ObjectService.UpdateObjectMeta`; other keys unaffected.
+  - `DeleteBlock`: BlockClose published even when a later cascade step errors.
   - `UpdateWorkspaceTabIds` rejects a builder tab id.
-  - Non-local `connection` rejected for builder-tab blocks via `SetMetaCommand` and `CreateBlockCommand`; accepted for normal tabs.
-  - Ensure: idempotent; concurrent Ensure creates one tab; invalid app id or bad app dir creates nothing; first call creates exactly one terminal block with `cmd:cwd` = app dir and durable off; different appid replaces the tab; failure after tab insert leaves no tab.
+  - Non-local `connection` rejected for builder-tab blocks and their sub-blocks via `SetMetaCommand`, `CreateBlockCommand`, `CreateSubBlockCommand`; accepted for normal tabs.
+  - Ensure: idempotent; concurrent Ensure creates one tab; invalid app id or bad app dir creates nothing; app dir from the `appid` argument even when rtinfo `builder:appid` differs; first call creates exactly one terminal block with `cmd:cwd` = app dir and durable off; different appid replaces the tab; failure after tab insert leaves no tab.
   - Open: appends; split on a direct-child target; sub-block target, foreign target, missing target and `replace` rejected with zero new rows; 17th term block rejected; no tab -> "not ready", zero rows; queue failure removes the new block; cwd from tab meta even when rtinfo appid differs.
   - `DeleteBuilderCommand`: removes all owner tabs regardless of rtinfo; completes when the caller's RPC context is cancelled early.
   - Keyed lock: Delete interleaved with two waiting Ensures under `-race` yields one tab.
   - Sweep: removes builder tabs only; workspace tab with spoofed `builder:owner` survives; logs the count; helper runs between controller init and durable reconnect.
   - `makeSwapToken`: no `WORKSPACEID` for a builder pane.
-- **Vitest:** layout default/merge without `terminal`; focus switching including zero-pane -> app; key table routing by focus (including `Cmd:w` both ways, unbound keys, webview key list contains only `Cmd:w`); last-pane close calls `closeNode` not `closeTab`; `onNodeDelete` wired to `ObjectService.DeleteBlock`; create intercept (term -> IPC with action, non-term -> ObjectService, `replaceBlock` term no-op); bootstrap order (pin before `staticTabId`, no layout model before step 3); tab-vanished state; split handlers honour `focused` and fall back to insert; main windows never write `staticTabIdAtom`.
+- **Vitest:** layout default/merge without `terminal`; focus switching including zero-pane -> app; key table routing by focus (including `Cmd:w` both ways, unbound keys, webview key list contains only `Cmd:w`); last-pane close calls `closeNode` not `closeTab`; `onNodeDelete` wired to `ObjectService.DeleteBlock`; create intercept (term -> IPC with action, non-term -> ObjectService, `replaceBlock` term no-op); bootstrap order (pin before `staticTabId`, no layout model before step 3); appid mismatch error state; header button disabled before Ensure; tab-vanished state driven by a delete update; split handlers honour `focused` and fall back to insert; main windows never write `staticTabIdAtom`.
 - `tsc --noEmit`; `go test ./pkg/...`; tsunami package list; full vitest; `go test -race` on touched packages.
-- **E2E, isolated only:** nested Xvfb with `DISPLAY` unset for everything not launched on it, scratch HOME and XDG dirs, `REMOTETERM_CONFIG_HOME`, `REMOTETERM_DATA_HOME`, `REMOTETERM_ISOLATED_PROFILE=1`, scratch `GOCACHE`/`GOMODCACHE`, private Vite `cacheDir`; never the live display or the user's data dirs. Keys sent are the Linux bindings (Alt for `Cmd:`). Checks: S1; S2; S3 (including two rapid splits); S4 (Alt+W closes pane with PID and row gone; last pane -> empty state, window open; Ctrl+W in a shell deletes a word); S9; S6 via window close and via `switchBuilderApp`; S7 (kill server mid-session, restart, log line before `WAVESRV-ESTART`, rows gone); S8; S10 (workspace tab with `builder:owner` injected by direct DB write survives restart).
+- **E2E, isolated only:** nested Xvfb with `DISPLAY` unset for everything not launched on it, scratch HOME and XDG dirs, `REMOTETERM_CONFIG_HOME`, `REMOTETERM_DATA_HOME`, `REMOTETERM_ISOLATED_PROFILE=1`, scratch `GOCACHE`/`GOMODCACHE`, private Vite `cacheDir`; never the live display or the user's data dirs. Keys sent are the Linux bindings (Alt for `Cmd:`). Checks: S1; S2; S3 (including two rapid splits); S4 (Alt+W closes pane with PID and row gone; last pane -> empty state, window open; Ctrl+W in a shell deletes a word); S9 with a barrier (both panes run `while [ ! -e $T/go ]; do :; done; echo >> app.go`, then the test creates `$T/go`); S6 via title-bar close, via Alt+W from the app side, and via `switchBuilderApp`; S7 (kill server mid-session, restart, log line before `WAVESRV-ESTART`, rows gone); S8; S10 (workspace tab with `builder:owner` injected by direct DB write survives restart).
 
 ## Risks
 
@@ -223,3 +231,22 @@ In `cmd/server/main-server.go`, after `InitJobController` and `InitBlockControll
 | Sec L-F `PrimitiveAtom`, reload loop | Accepted; reload cannot loop (fresh renderer, lock fix) | D5 |
 | Sec L-G durable default | Accepted: pinned false | D1 |
 | Sec L-H IPC arg typing | Accepted | D4 |
+
+## Audit disposition: round 3 (v3)
+
+| Finding | Disposition | Where |
+|---|---|---|
+| Req M2 / Sec M1 builder RPCs callable by panes | Accepted: RPC source allowlist | D2, trust model |
+| Req M1 no update broadcast from Ensure/Open/teardown | Accepted | D2, tests |
+| Sec M2 tab deleted after failed block delete | Accepted: keep tab on any block failure | D1 |
+| Sec L1 Ensure app dir via rtinfo-reading resolver | Accepted: `ResolveAppDirForAppId`; rtinfo desync recorded | D2, trust model |
+| Sec L2 / Req m3 local-only gaps (sub-blocks, other writers) | Accepted: check in `UpdateObjectMeta` and `CreateBlock`/`CreateSubBlock` | D1 |
+| Sec L3 / Req m4 shared preview partition | Accepted: per-builder partition | D5 |
+| Sec L4 block-oref meta guard has no consumer | Accepted: tab orefs only | D1 |
+| Sec L5 BlockClose skipped on cascade error | Accepted: publish right after delete | D1 |
+| Sec L6 lock not context-aware | Accepted: `ctx.Err()` after acquire | D2 |
+| Sec I1 unawaited `setBuilderWindowAppId`; IPC timing | Accepted | D4 |
+| Req m1 renderer vs window app id | Accepted: Ensure returns appid; mismatch error | D2, D5 |
+| Req m2 header Open before Ensure | Accepted: disabled until step 1 | D5 |
+| Req m5 dead `builder:tabid` rtinfo | Accepted: dropped | D2 |
+| Req m6 S6 close paths; S9 timing | Accepted | Testing |
