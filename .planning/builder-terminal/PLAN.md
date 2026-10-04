@@ -37,6 +37,7 @@ Every task's requirements include this section.
   ```
 - Commits: stage only the files the task names (`git add <paths>`); the worktree has untracked `golang-1.26.2` and `zig-0.14.0`, never add them. Commit messages put user-facing impact first. End every commit message with the line `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Do not push.
 - Prose in British English except identifiers. No em-dashes anywhere (use `-`, commas, colons or parentheses).
+- Baseline (HEAD 26227a42, before Task 1): `go test ./pkg/... -count=1` is all `ok` (or `[no test files]`), and `./node_modules/.bin/task generate` changes nothing (`git status --short` lists only the untracked `golang-1.26.2` and `zig-0.14.0`). Steps that say "no new failures" or "no other changes" compare against this.
 - Expected-failure steps name which tests or builds must fail and why. Quoted messages are exact when they come from this plan's code (test messages, `builder terminal not ready`, and so on); compiler, TypeScript and library messages are given as examples, so a different wording of the same failure is not a mismatch.
 - If a step's expected output differs from what you see, stop and report the difference with the command output instead of adapting silently. If a cited line has shifted, find the code by the quoted text and say so in your report.
 
@@ -530,7 +531,7 @@ Expected: `ok  	github.com/LannCo/remoteterm/pkg/rtstore` twice.
 - [ ] **Step 5: Run the dependants**
 
 Run: `go test ./pkg/rtcore/... ./pkg/jobcontroller/... ./pkg/wshrpc/... ./pkg/service/... -count=1`
-Expected: all `ok` or `[no test files]`.
+Expected: no new failures compared with the baseline (every line `ok` or `[no test files]`).
 
 - [ ] **Step 6: Commit**
 
@@ -1371,7 +1372,7 @@ Expected: `ok  	github.com/LannCo/remoteterm/pkg/rtcore` twice.
 - [ ] **Step 7: Run the dependants**
 
 Run: `go test ./pkg/... -count=1 2>&1 | grep -v '^ok\|no test files'`
-Expected: no output (every package `ok` or without tests).
+Expected: no new failures compared with the baseline: no output. Here `grep -v` exiting 1 with no output is the success case (nothing but `ok` and `[no test files]` lines).
 
 - [ ] **Step 8: Commit**
 
@@ -1781,8 +1782,11 @@ func TestWithBuilderLockSerialises(t *testing.T) {
 			defer wg.Done()
 			withBuilderLock(builderId, func() error {
 				n := inside.Add(1)
-				if n > maxInside.Load() {
-					maxInside.Store(n)
+				for {
+					m := maxInside.Load()
+					if n <= m || maxInside.CompareAndSwap(m, n) {
+						break
+					}
 				}
 				time.Sleep(5 * time.Millisecond)
 				inside.Add(-1)
@@ -2041,7 +2045,7 @@ type CommandEnsureBuilderTabRtnData struct {
 ```
 
 Run: `./node_modules/.bin/task generate`
-Expected: exits 0. `git status --short` now lists `frontend/types/gotypes.d.ts`, `frontend/app/store/wshclientapi.ts`, `pkg/wshrpc/wshclient/wshclient.go` as modified (plus your `wshrpctypes_builder.go`). `grep -n EnsureBuilderTabCommand frontend/app/store/wshclientapi.ts pkg/wshrpc/wshclient/wshclient.go` shows one function in each. If any other file changed, stop and report.
+Expected: exits 0. Compared with the baseline (where `task generate` changes nothing), `git status --short` now lists exactly `frontend/types/gotypes.d.ts`, `frontend/app/store/wshclientapi.ts`, `pkg/wshrpc/wshclient/wshclient.go` and your `wshrpctypes_builder.go` as modified, besides the untracked toolchains; no other changes. `grep -n EnsureBuilderTabCommand frontend/app/store/wshclientapi.ts pkg/wshrpc/wshclient/wshclient.go` shows one function in each. If any other file changed, stop and report.
 
 Run: `export PATH=$PWD/golang-1.26.2/bin:$PATH && go vet ./pkg/wshrpc/wshserver/`
 Expected: exit 0. Handlers are bound by reflection (`pkg/wshrpc/wshrpcmeta.go:91-110`), so the missing method is not a compile error yet; the tests below catch it.
@@ -2607,7 +2611,9 @@ and append:
 
 ```go
 // Sent once per write phase, after success and after a rollback. Without it the renderer never sees new
-// panes' layout actions or the tab's deletion. Failed transactions contribute no updates.
+// panes' layout actions or the tab's deletion. Updates are kept per object, last one wins, for every
+// committed store call; a store transaction that fails adds none. So when a write phase undoes its own
+// earlier writes (deleting a half-created tab or block), the broadcast carries the deletes for them.
 func sendBuilderUpdates(writeCtx context.Context) {
 	wps.Broker.SendUpdateEvents(remotetermobj.ContextGetUpdatesRtn(writeCtx))
 }
@@ -2751,7 +2757,7 @@ type CommandOpenBuilderTerminalData struct {
 ```
 
 Run: `./node_modules/.bin/task generate`
-Expected: exit 0; `frontend/types/gotypes.d.ts` now declares `CommandOpenBuilderTerminalData` with `builderid`, `targetblockid?`, `targetaction?` and no `tabid`.
+Expected: exit 0; `frontend/types/gotypes.d.ts` now declares `CommandOpenBuilderTerminalData` with `builderid`, `targetblockid?`, `targetaction?` and no `tabid`; no other changes besides the three generated files and `wshrpctypes_builder.go`.
 
 Run: `export PATH=$PWD/golang-1.26.2/bin:$PATH && go vet ./pkg/wshrpc/wshserver/`
 Expected: vet fails because the old handler in `wshserver.go` still reads `data.TabId`, which the type no longer has.
@@ -3391,7 +3397,7 @@ func TestDeleteBlockCommandOnLastBuilderPaneKeepsTab(t *testing.T) {
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `export PATH=$PWD/golang-1.26.2/bin:$PATH && go test ./pkg/wshrpc/wshserver/... -count=1 -run 'TestDeleteBuilderCommand|TestBuilderLockSerialises|TestDeleteBlockCommandOnLast'`
-Expected: FAIL. `TestDeleteBuilderCommandRemovesEveryOwnerTab` (`2 builder tabs left`), `TestDeleteBuilderCommandCompletesWhenCallerContextIsCancelled` (`1 builder tabs left after a cancelled caller`), `TestDeleteBuilderCommandAcceptsElectronAndOwnRendererOnly` (`source "proc:..." accepted`), `TestDeleteBuilderCommandBroadcastsTabDelete` and `TestDeleteBuilderCommandWaitsForBuilderLock` (`returned while the builder lock was held`) fail. The others pass already: the old handler deletes no tabs, so the lock test cannot see two, and `TestDeleteBlockCommandOnLastBuilderPaneKeepsTab` passes because of Task 3. They pin behaviour the new handler must keep.
+Expected: FAIL. `TestDeleteBuilderCommandRemovesEveryOwnerTab` (`2 builder tabs left`), `TestDeleteBuilderCommandCompletesWhenCallerContextIsCancelled` (`1 builder tabs left after a cancelled caller`), `TestDeleteBuilderCommandAcceptsElectronAndOwnRendererOnly` (`source "proc:..." accepted`), `TestDeleteBuilderCommandBroadcastsTabDelete` (`no waveobj:update delete for the builder tab`) and `TestDeleteBuilderCommandWaitsForBuilderLock` (`returned while the builder lock was held`) fail. The others pass already: the old handler deletes no tabs, so the lock test cannot see two, and `TestDeleteBlockCommandOnLastBuilderPaneKeepsTab` passes because of Task 3. They pin behaviour the new handler must keep.
 
 - [ ] **Step 3: Implement**
 
@@ -4043,15 +4049,17 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `frontend/remoteterm.ts:252` (builder subscriptions)
 - Modify: `frontend/layout/lib/layoutModelHooks.ts:45-48`
 - Modify: `frontend/app/store/keymodel.ts:67-71, 146-196, 244-261, 371-385, 498-510, 633-660`
-- Modify: `frontend/app/store/focusManager.ts:15-48`
-- Test: `frontend/app/store/global-atoms.test.ts` (append), `frontend/app/store/global-builder-subs.test.ts` (new), `frontend/layout/tests/layoutModelHooks.test.ts` (new), `frontend/app/store/keymodel-builder.test.ts` (new)
+- Modify: `frontend/app/store/focusManager.ts:4, 15-48`
+- Modify: `frontend/builder/store/builder-apppanel-model.ts:50` (`configUnsubFn`), `:130-138` (its own `config` subscription), `:542-545` (its cleanup in `dispose`)
+- Test: `frontend/app/store/global-atoms.test.ts` (append), `frontend/app/store/global-builder-subs.test.ts` (new), `frontend/layout/tests/layoutModelHooks.test.ts` (new), `frontend/app/store/keymodel-builder.test.ts` (new), `frontend/app/store/focusManager.test.ts` (new), `frontend/builder/store/builder-apppanel-subs.test.ts` (new)
 
 **Interfaces:**
 - Consumes: nothing new.
 - Produces:
   - `atoms.staticTabId: PrimitiveAtom<string>` (`GlobalAtomsType.staticTabId: jotai.PrimitiveAtom<string>`); only the builder bootstrap (Task 14) writes it in production code
   - `atoms.uiContext` reads `staticTabId` at call time
-  - `initBuilderWaveEventSubs(): void` exported from `@/app/store/global` (`waveobj:update`, `config`, `blockfile`, badges; no `userinput`)
+  - `initBuilderWaveEventSubs(): void` exported from `@/app/store/global` (`waveobj:update`, `config`, `blockfile`, badges; no `userinput`); `BuilderAppPanelModel` no longer subscribes to `config` itself (it did so only because builder windows had no global subscription; `configUnsubFn` has no other user, `grep -rn configUnsubFn frontend` lists only that file), so a builder window has one `config` subscription
+  - `FocusManager.blockFocusAtom` depends on `atoms.staticTabId`, so it recomputes once a builder sets its tab
   - `getLayoutModelForStaticTab()` returns `null` while `staticTabId` is unset
   - keymodel (module-private, used by Task 16): `magnifyFocusedNode()`, `activateSearch(event)`, `deactivateSearch()` hoisted to module level and null-safe; `getFocusedBlockInStaticTab()`, `switchBlockInDirection()`, `globalRefocus()`, `uxCloseBlock()`, `genericClose()` return early without a layout model
   - test helpers local to `keymodel-builder.test.ts`: `h` (hoisted state), `linuxKey(desc: string): WaveKeyboardEvent`, `makeLayoutModel(focusedBlockId: string)`
@@ -4293,10 +4301,83 @@ describe("keymodel without a layout model or with an empty tree", () => {
 });
 ```
 
+Create `frontend/app/store/focusManager.test.ts`:
+
+```ts
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+import { atom } from "jotai";
+import { describe, expect, it, vi } from "vitest";
+
+const h = vi.hoisted(() => ({ layoutModel: null as any }));
+
+vi.mock("@/app/store/global", async () => {
+    const { atom } = await import("jotai");
+    return { atoms: { staticTabId: atom(null) }, getBlockComponentModel: vi.fn() };
+});
+vi.mock("@/layout/index", () => ({ getLayoutModelForStaticTab: () => h.layoutModel }));
+
+import { atoms } from "@/app/store/global";
+import { FocusManager } from "./focusManager";
+import { globalStore } from "./jotaiStore";
+
+describe("FocusManager.blockFocusAtom", () => {
+    it("recomputes once a builder window sets its static tab", () => {
+        const focusAtom = FocusManager.getInstance().blockFocusAtom;
+        expect(globalStore.get(focusAtom)).toBeNull();
+        h.layoutModel = { focusedNode: atom({ id: "node-b1", data: { blockId: "b1" } }) };
+        globalStore.set(atoms.staticTabId, "tab-1");
+        expect(globalStore.get(focusAtom)).toBe("b1");
+    });
+});
+```
+
+Create `frontend/builder/store/builder-apppanel-subs.test.ts` (the `@/layout/index` mock is unused until Task 14 makes the model import `builder-term-model.ts`; it is there so this file keeps loading then):
+
+```ts
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+import { describe, expect, it, vi } from "vitest";
+
+const h = vi.hoisted(() => ({ subscribe: vi.fn((_sub: { eventType: string }) => () => {}) }));
+
+vi.mock("@/app/store/wshclientapi", () => ({
+    // Every RPC resolves to an empty object; initialize() tolerates that, and only its subscriptions matter here.
+    RpcApi: new Proxy({}, { get: () => async () => ({}) }),
+}));
+vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
+vi.mock("@/app/store/wps", () => ({ waveEventSubscribeSingle: h.subscribe }));
+vi.mock("@/layout/index", () => ({ deleteLayoutModelForTab: vi.fn() }));
+vi.mock("@/store/global", async () => {
+    const { atom } = await import("jotai");
+    const settingAtom = atom(false);
+    return {
+        atoms: { builderId: atom("builder-1"), builderAppId: atom("draft/app"), staticTabId: atom(null), fullConfigAtom: atom(null) },
+        getApi: vi.fn(() => ({})),
+        getSettingsKeyAtom: vi.fn(() => settingAtom),
+        WOS: { makeORef: (otype: string, oid: string) => `${otype}:${oid}` },
+    };
+});
+
+import { BuilderAppPanelModel } from "./builder-apppanel-model";
+
+describe("BuilderAppPanelModel.initialize", () => {
+    it("leaves the config subscription to initBuilderWaveEventSubs", async () => {
+        vi.spyOn(console, "error").mockImplementation(() => {});
+        await BuilderAppPanelModel.getInstance().initialize();
+        const events = h.subscribe.mock.calls.map((call) => call[0].eventType);
+        expect(events).toContain("builderstatus");
+        expect(events).not.toContain("config");
+    });
+});
+```
+
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `npx vitest run frontend/app/store/global-atoms.test.ts frontend/app/store/global-builder-subs.test.ts frontend/layout/tests/layoutModelHooks.test.ts frontend/app/store/keymodel-builder.test.ts`
-Expected: FAIL. `uiContext` reads `undefined` after the set (the closure ignores `staticTabId`); `initBuilderWaveEventSubs` is not exported; `setNodeFocus`/`refocusNode` throw (they dereference a null layout model); `getLayoutModelForStaticTab` throws or the `not.toHaveBeenCalled` assertion fails (it builds a `tab:null` object); the keymodel cases fail their `not.toThrow` assertions.
+Run: `npx vitest run frontend/app/store/global-atoms.test.ts frontend/app/store/global-builder-subs.test.ts frontend/layout/tests/layoutModelHooks.test.ts frontend/app/store/keymodel-builder.test.ts frontend/app/store/focusManager.test.ts frontend/builder/store/builder-apppanel-subs.test.ts`
+Expected: FAIL. `uiContext` reads `undefined` after the set (the closure ignores `staticTabId`); `initBuilderWaveEventSubs` is not exported; `setNodeFocus`/`refocusNode` throw (they dereference a null layout model); `getLayoutModelForStaticTab` throws or the `not.toHaveBeenCalled` assertion fails (it builds a `tab:null` object); the keymodel cases fail their `not.toThrow` assertions; the FocusManager test reads `null` after the tab is set (the atom has no dependency to recompute on); the apppanel test finds a `config` subscription.
 
 - [ ] **Step 3: Make `staticTabId` writable and `uiContext` live**
 
@@ -4371,7 +4452,8 @@ function initGlobalWaveEventSubs(initOpts: RemoteTermInitOpts) {
     });
 }
 
-// Builder panes are local only, so there is no connection prompt to route and no userinput subscription.
+// The config event keeps settings such as the live-rebuild toggle current in builder windows. Builder panes
+// are local only, so there is no connection prompt to route and no userinput subscription.
 function initBuilderWaveEventSubs() {
     subscribeToSharedWaveEvents();
 }
@@ -4389,6 +4471,8 @@ In `frontend/remoteterm.ts`, replace line 252 (`await loadConnStatus();` inside 
 ```
 
 and add `initBuilderWaveEventSubs` to the `@/store/global` import (lines 22-30).
+
+Builder windows now get `config` from `initBuilderWaveEventSubs`, so remove `BuilderAppPanelModel`'s own subscription, which existed only because they had none (its comment says so; the comment's point now lives on `initBuilderWaveEventSubs` above). In `frontend/builder/store/builder-apppanel-model.ts`: delete the field `configUnsubFn: (() => void) | null = null;` (line 50); delete lines 130-138 (the three-line comment `// The builder window loads the config once at startup ...` and the `this.configUnsubFn = waveEventSubscribeSingle({ eventType: "config", ... });` call, plus the blank line before it); and delete the `if (this.configUnsubFn) { ... }` block in `dispose()` (lines 542-545). Check: `grep -rn configUnsubFn frontend` prints nothing afterwards.
 
 - [ ] **Step 5: Null-safe layout callers**
 
@@ -4430,11 +4514,13 @@ with
     const layoutNodeId = layoutModel.getNodeByBlockId(blockId);
 ```
 
-In `frontend/app/store/focusManager.ts`, replace the constructor body and `refocusNode` (lines 15-48) with:
+In `frontend/app/store/focusManager.ts`, change line 4 to `import { atoms, getBlockComponentModel } from "@/app/store/global";` and replace the constructor body and `refocusNode` (lines 15-48) with:
 
 ```ts
     private constructor() {
         this.blockFocusAtom = atom((get) => {
+            // Read so the atom recomputes when a builder window sets its tab after init.
+            get(atoms.staticTabId);
             const layoutModel = getLayoutModelForStaticTab();
             if (layoutModel == null) {
                 return null;
@@ -4620,8 +4706,8 @@ and delete the nested `function activateSearch(...)` and `function deactivateSea
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `npx vitest run frontend/app/store/ frontend/layout/`
-Expected: all pass, including the existing store and layout suites.
+Run: `npx vitest run frontend/app/store/ frontend/layout/ frontend/builder/`
+Expected: all pass, including the existing store, layout and builder suites.
 
 - [ ] **Step 7: Type-check**
 
@@ -4631,7 +4717,7 @@ Expected: exit 0.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add frontend/app/store/global-atoms.ts frontend/types/custom.d.ts frontend/app/store/global.ts frontend/remoteterm.ts frontend/layout/lib/layoutModelHooks.ts frontend/app/store/keymodel.ts frontend/app/store/focusManager.ts frontend/app/store/global-atoms.test.ts frontend/app/store/global-builder-subs.test.ts frontend/layout/tests/layoutModelHooks.test.ts frontend/app/store/keymodel-builder.test.ts
+git add frontend/app/store/global-atoms.ts frontend/types/custom.d.ts frontend/app/store/global.ts frontend/remoteterm.ts frontend/layout/lib/layoutModelHooks.ts frontend/app/store/keymodel.ts frontend/app/store/focusManager.ts frontend/builder/store/builder-apppanel-model.ts frontend/app/store/global-atoms.test.ts frontend/app/store/global-builder-subs.test.ts frontend/layout/tests/layoutModelHooks.test.ts frontend/app/store/keymodel-builder.test.ts frontend/app/store/focusManager.test.ts frontend/builder/store/builder-apppanel-subs.test.ts
 git commit -m "feat(builder): renderer groundwork for a terminal tab in builder windows
 
 Builder windows now receive object, config, blockfile, badge and
@@ -4640,7 +4726,9 @@ layout tolerates a window with no tab yet or with an empty tree.
 
 Miscellanea: staticTabIdAtom is a PrimitiveAtom and uiContext reads it
 when called; getLayoutModelForStaticTab returns null without a static
-tab; search and magnify handlers hoisted to module level.
+tab; search and magnify handlers hoisted to module level; the builder
+app panel model drops its own config subscription; FocusManager's block
+focus atom recomputes when the static tab is set.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -4844,7 +4932,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `frontend/app/store/builder-terminal.test.ts`
 - Modify: `frontend/app/store/global.ts:377-460` (create family), `:627-645` (`hideBlockKeepAlive`), imports `:30-38`
 - Test: `frontend/app/store/global-builder-create.test.ts`
-- Modify: `frontend/builder/store/builder-apppanel-model.ts:40` (`noticeAtom`), `:200-203` (`openTerminal`), imports
+- Modify: `frontend/builder/store/builder-apppanel-model.ts:40` (`noticeAtom`), `:190-193` (`openTerminal`; it was `:200-203` before Task 11 removed 10 lines above it), imports
 - Test: `frontend/builder/store/builder-apppanel-model.test.ts` (append)
 
 **Interfaces:**
@@ -5238,7 +5326,7 @@ In `frontend/builder/store/builder-apppanel-model.ts`, add `import { BuilderNoti
     noticeAtom: PrimitiveAtom<string> = BuilderNoticeAtom;
 ```
 
-and replace `openTerminal` (lines 200-203) with:
+and replace `openTerminal` (lines 190-193 after Task 11) with:
 
 ```ts
     async openTerminal() {
@@ -5275,7 +5363,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Create: `frontend/builder/store/builder-term-model.ts`, `frontend/builder/store/builder-term-model.test.ts`
 - Create: `frontend/builder/store/builder-layout.ts`, `frontend/builder/store/builder-layout.test.ts`
 - Create: `frontend/builder/builder-termcontents.tsx`, `frontend/builder/builder-termcontents.test.tsx`
-- Modify: `frontend/builder/store/builder-apppanel-model.ts:308-324` (`switchBuilderApp`), imports
+- Modify: `frontend/builder/store/builder-apppanel-model.ts:298-314` (`switchBuilderApp`; `:308-324` before Task 11; Task 13 adds one import line and removes one line from `openTerminal`, so the number holds), imports
 - Test: `frontend/builder/store/builder-apppanel-switch.test.ts` (new), `frontend/app/static-tab-writers.test.ts` (new)
 
 **Interfaces:**
@@ -5285,7 +5373,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `BuilderTermModel` singleton (`getInstance()`, `resetInstance()`): atoms `stateAtom: PrimitiveAtom<BuilderTermState>` (`"idle" | "loading" | "ready" | "error" | "mismatch" | "vanished" | "switching"`), `errorAtom`, `tabIdAtom`, `ensureOkAtom` (true exactly while `stateAtom` is `"ready"`; every state change goes through `setState`); methods `bootstrap()`, `retry()`, `markSwitching()`, `setState(state)`, `setError(message)`, `onTabValue(tabId, tab)`, `handlePaneCount(count)`, `hasPanes()`; const `BuilderTermMismatchMessage = "Terminal app and builder app differ; reopen the builder"`
   - `BuilderLayout = { terminal: number; app: number; build: number }`, `DefaultBuilderLayout = { terminal: 40, app: 80, build: 20 }`, `MinTerminalPercent = 20`, `mergeBuilderLayout(saved: Record<string, number>): BuilderLayout`
   - `makeBuilderTileContents(tabId: string, gapSizePx: number): TileLayoutContents` (`onNodeDelete` = `ObjectService.DeleteBlock(blockId)`, as `frontend/app/tab/tabcontent.tsx:38-40`)
-  - `switchBuilderApp` marks the panel "switching" before `DeleteBuilderCommand` and awaits `setBuilderWindowAppId(null)` before reloading
+  - `switchBuilderApp` marks the panel "switching" before `DeleteBuilderCommand`, awaits `setBuilderWindowAppId(null)` before reloading, and on any failure moves the panel to `"vanished"` (Retry reloads) instead of leaving it on "Switching app…"
 
 Bootstrap order (spec D5): Ensure through IPC, then pin the tab and its LayoutState, then set `staticTabId`. The order matters because `getLayoutModelForTab` subscribes a new model to its LayoutState only when the tab is the static tab at creation time (`frontend/layout/lib/layoutModelHooks.ts:25-33`); the model never calls `getLayoutModelForStaticTab()` (the panel does, in Task 15, only once the state is `ready`).
 
@@ -5542,6 +5630,7 @@ const h = vi.hoisted(() => ({
     rpc: { DeleteBuilderCommand: vi.fn(), SetRTInfoCommand: vi.fn() },
     api: { setBuilderWindowAppId: vi.fn(), doRefresh: vi.fn() },
     markSwitching: vi.fn(),
+    setState: vi.fn(),
 }));
 
 vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: h.rpc }));
@@ -5557,9 +5646,10 @@ vi.mock("@/store/global", async () => {
     };
 });
 vi.mock("@/builder/store/builder-term-model", () => ({
-    BuilderTermModel: { getInstance: () => ({ markSwitching: h.markSwitching }) },
+    BuilderTermModel: { getInstance: () => ({ markSwitching: h.markSwitching, setState: h.setState }) },
 }));
 
+import { globalStore } from "@/app/store/jotaiStore";
 import { BuilderAppPanelModel } from "./builder-apppanel-model";
 
 describe("switchBuilderApp", () => {
@@ -5591,6 +5681,18 @@ describe("switchBuilderApp", () => {
         await vi.advanceTimersByTimeAsync(1000);
         await done;
         expect(h.order).toEqual(["switching", "delete", "rtinfo", "appid", "refresh"]);
+        expect(h.setState).not.toHaveBeenCalled();
+    });
+
+    it("offers Retry instead of staying on Switching when the teardown fails", async () => {
+        vi.spyOn(console, "error").mockImplementation(() => {});
+        h.rpc.DeleteBuilderCommand.mockRejectedValueOnce(new Error("server gone"));
+        h.api.doRefresh.mockClear();
+        const model = BuilderAppPanelModel.getInstance();
+        await model.switchBuilderApp();
+        expect(h.setState).toHaveBeenCalledWith("vanished");
+        expect(globalStore.get(model.errorAtom)).toContain("server gone");
+        expect(h.api.doRefresh).not.toHaveBeenCalled();
     });
 });
 ```
@@ -5899,7 +6001,7 @@ export class BuilderTermModel {
 
 - [ ] **Step 6: Switch-app ordering**
 
-In `frontend/builder/store/builder-apppanel-model.ts`, add `import { BuilderTermModel } from "@/builder/store/builder-term-model";` and replace `switchBuilderApp` (lines 308-324) with:
+In `frontend/builder/store/builder-apppanel-model.ts`, add `import { BuilderTermModel } from "@/builder/store/builder-term-model";` and replace `switchBuilderApp` (lines 298-314 after Tasks 11 and 13) with:
 
 ```ts
     async switchBuilderApp() {
@@ -5919,6 +6021,8 @@ In `frontend/builder/store/builder-apppanel-model.ts`, add `import { BuilderTerm
         } catch (err) {
             console.error("Failed to switch builder app:", err);
             globalStore.set(this.errorAtom, `Failed to switch builder app: ${err.message || "Unknown error"}`);
+            // Leave "Switching app…" for a state with Retry (a renderer reload re-runs the bootstrap).
+            BuilderTermModel.getInstance().setState("vanished");
         }
     }
 ```
@@ -7208,30 +7312,90 @@ The recipe is the one that held for the builder-by-hand run, with its addendum a
 - Never use `DISPLAY=:0` or the user's running X/Wayland session; never run `xdotool`, `xwininfo`, `wmctrl` or anything else against a display other than the nested Xvfb, and then only with `DISPLAY` set explicitly for that one command. Every launch goes through `env -i`, so `DISPLAY` and `WAYLAND_DISPLAY` are absent everywhere except under `xvfb-run`, which sets `DISPLAY` for its own children only.
 - Never read from or write to the user's `~/.config`, `~/.local/share`, `~/waveapps`, dotfiles, or a running RemoteTerm (the user's dev profile is `~/.config/remoteterm-dev` and `~/.local/share/remoteterm-dev`; it may be running). Use `REMOTETERM_CONFIG_HOME`/`REMOTETERM_DATA_HOME`, never `REMOTETERM_HOME` (a legacy combined-home variable with different semantics).
 - Never run `task dev`, `electron-vite dev` or `npm run dev`.
-- `REMOTETERM_ISOLATED_PROFILE=1` is set as the recipe requires. Note in the report that nothing in this worktree reads it (`grep -rn ISOLATED_PROFILE emain frontend pkg cmd` finds nothing here); isolation rests on the config and data homes, `--user-data-dir`, and the scratch `HOME` and XDG dirs.
+- `REMOTETERM_ISOLATED_PROFILE=1` is set as the recipe requires. Note in the report that nothing in this worktree reads it (`grep -rn ISOLATED_PROFILE emain frontend pkg cmd` finds nothing here); isolation rests on the config and data homes, `--user-data-dir`, and the scratch `HOME`, XDG and `TMPDIR` dirs.
 - No window manager runs under Xvfb, so there is no title bar; the "title-bar close" check uses the renderer's `window.close()`, which takes the same BrowserWindow `close`/`closed` path. "Switch App" lives in a native context menu that cannot be clicked there; the check replays `switchBuilderApp`'s calls from the builder renderer (same RPCs, same `builder:<id>` route). `BuilderTermModel` is a module singleton that the page does not expose on `window`, so the replay cannot call `markSwitching()` first; the report must say that the "Switching app…" state is covered by unit tests only (Tasks 14 and 15). Say both substitutions in the report.
 
-- [ ] **Step 1: Scratch root and baseline**
+**Shell state (every step):**
+- Shell variables do not survive between tool calls. Step 1 prints the scratch root; every later shell call, including each fenced block below, starts with `SCR=<that literal path>; source "$SCR/lib.sh"` (written below as `SCR=/tmp/rtbt.XXXX`; substitute the real path).
+- `lib.sh` restores `REPO`, `SCR`, `PORT`, `START`, `NODEBIN` from `$SCR/logs/env.txt` and, once a launch has been recorded, `SID`, `EL`, `SRV`, `XDISP` from `$SCR/logs/run.env`. Nothing else is carried between calls: each block recomputes what it needs (block ids, tab ids, focused pane) from the DB or the page.
+- Before every `kill`, `ps -s` or `pgrep -s`, run `need SID SRV || exit 1` (the blocks below already do). An unset `SID` would make `ps -s ""` or `kill -- -` act on the wrong processes.
+
+- [ ] **Step 1: Scratch root, baseline and `lib.sh`**
 
 ```bash
 REPO=/media/owner/Workspace/remoteterm/remoteterm-builder-terminal
 SCR=$(mktemp -d /tmp/rtbt.XXXX) && chmod 700 "$SCR"
-mkdir -p "$SCR"/{home,run,cfg,data,ud,gocache,gomod,zigcache,vitecache,t,logs}
-chmod 700 "$SCR/run"
+mkdir -p "$SCR"/{home,run,cfg,data,ud,gocache,gomod,zigcache,vitecache,tmp,t,logs}
+chmod 700 "$SCR/run" "$SCR/tmp"
 touch "$SCR/start-marker"
 START="$(date '+%Y-%m-%d %H:%M:%S')"
 NODEBIN=$(dirname "$(command -v node)")
 PORT=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
-printf 'SCR=%q\nPORT=%q\nSTART=%q\nNODEBIN=%q\n' "$SCR" "$PORT" "$START" "$NODEBIN" | tee "$SCR/logs/env.txt"
+printf 'REPO=%q\nSCR=%q\nPORT=%q\nSTART=%q\nNODEBIN=%q\n' "$REPO" "$SCR" "$PORT" "$START" "$NODEBIN" | tee "$SCR/logs/env.txt"
 for d in ~/.config/remoteterm* ~/.local/share/remoteterm* ~/.config/RemoteTerm* ~/waveapps; do
     [ -e "$d" ] && find "$d" -maxdepth 3 -printf '%T@ %p\n' 2>/dev/null
 done | sort > "$SCR/logs/user-dirs-before.txt"
 stat -c '%Y %n' "$REPO/node_modules/.vite" "$REPO/node_modules/.vite-temp" > "$SCR/logs/vite-before.txt" 2>&1
-ls -d /tmp/xvfb-run.* 2>/dev/null | sort > "$SCR/logs/xvfb-before.txt"
 pgrep -a -f 'remoteterm|electron' > "$SCR/logs/live-processes-before.txt" || true
+echo "SCR=$SCR"
 ```
 
-Only `find`/`stat`/`pgrep` touch the user's paths, read-only, to record a baseline.
+Only `find`/`stat`/`pgrep` touch the user's paths, read-only, to record a baseline. Note the printed `SCR` path; it is the literal every later call starts with.
+
+Create `$SCR/lib.sh`:
+
+```bash
+# Sourced at the start of every shell call, after SCR=<literal path>.
+source "$SCR/logs/env.txt"
+[ -f "$SCR/logs/run.env" ] && source "$SCR/logs/run.env"
+T="$SCR/t"
+APPDIR="$SCR/home/waveapps/draft/e2e1"
+DB="$SCR/data/db/waveterm.db"
+need() { for v; do [ -n "${!v}" ] || { echo "ABORT: $v unset"; return 1; }; done; }
+cdp() { node "$SCR/cdp.mjs" "$PORT" "$@"; }
+bcdp() { cdp "RTApp Builder" "$@"; }
+mcdp() { cdp "RemoteTerm" "$@"; }
+dbq() { python3 "$SCR/db.py" "$DB" "$@"; }
+builder_tabs() { dbq "SELECT oid, json_extract(data,'\$.blockids') FROM db_tab WHERE json_extract(data,'\$.meta.\"builder:owner\"') IS NOT NULL"; }
+builder_block_ids() { builder_tabs | python3 -c 'import json,sys; rows = json.loads(sys.stdin.read()); print(" ".join(json.loads(rows[0][1])) if rows else "")'; }
+block_exists() { dbq "SELECT count(*) FROM db_block WHERE oid = ?" "$1"; }
+wait_file() { for _ in $(seq 100); do [ -s "$1" ] && return 0; sleep 0.1; done; echo "timeout waiting for $1"; return 1; }
+wait_dead() { for _ in $(seq 50); do kill -0 "$1" 2>/dev/null || return 0; sleep 0.1; done; echo "pid $1 still alive after 5s"; return 1; }
+# Session id of the launch that owns the debugging port; empty if nothing is listening for it.
+session_of_port() { local pid; pid=$(pgrep -o -f "remote-debugging-port=$PORT"); [ -n "$pid" ] && ps -o sid= -p "$pid" | tr -d ' '; }
+# Records the current launch for later calls.
+save_run() { printf 'SID=%q\nEL=%q\nSRV=%q\nXDISP=%q\n' "$SID" "$EL" "$SRV" "$XDISP" > "$SCR/logs/run.env"; }
+# Merges one setting into the scratch settings.json; the app's config watcher picks it up.
+set_setting() {
+    python3 - "$SCR/cfg/settings.json" "$1" "$2" <<'PY'
+import json, os, sys
+path, key, value = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
+data = json.load(open(path)) if os.path.exists(path) else {}
+data[key] = value
+json.dump(data, open(path, "w"), indent=2)
+PY
+}
+focused_block() { bcdp eval "document.activeElement?.closest('[data-blockid]')?.dataset.blockid ?? null"; }
+builder_focus() { bcdp eval "document.querySelector('[data-builder-focus]')?.dataset.builderFocus ?? null"; }
+dom_panes() { bcdp eval "document.querySelectorAll('[data-builder-term-panel] .block[data-blockid]').length"; }
+# Types a command into the focused pane and presses Enter.
+run_in_pane() { bcdp text "$1" && bcdp key Enter; }
+# Focuses a pane by clicking its terminal area.
+focus_pane() { bcdp click "[data-builder-term-panel] [data-blockid=\"$1\"] .block-content" || bcdp click "[data-builder-term-panel] [data-blockid=\"$1\"]"; }
+# After an action that should add one pane: checks the DB count, the newest pane's focus and its folder.
+check_new_pane() {  # $1 = label, $2 = expected block count
+    sleep 2
+    local ids count newest
+    ids=$(builder_block_ids)
+    count=$(echo $ids | wc -w)
+    newest=$(echo $ids | awk '{print $NF}')
+    echo "$1: db=$count dom=$(dom_panes) focused=$(focused_block) newest=$newest builderfocus=$(builder_focus)"
+    run_in_pane "pwd > $T/$1.pwd"
+    wait_file "$T/$1.pwd" && [ "$(cat "$T/$1.pwd")" = "$APPDIR" ] && [ "$count" = "$2" ] && echo "$1 PASS" || echo "$1 FAIL"
+}
+```
+
+(`main` windows are titled `RemoteTerm - <tab>`; builder windows `RTApp Builder (draft/e2e1)`, `frontend/remoteterm.ts:265`, `frontend/builder/builder-app.tsx:52`.)
 
 - [ ] **Step 2: Build with scratch caches**
 
@@ -7253,8 +7417,10 @@ export default {
 Then build (the build needs network for Go and npm modules; `DISPLAY` is not set):
 
 ```bash
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
+need REPO NODEBIN || exit 1
 cd "$REPO"
-BUILD_ENV=(env -i PATH="$REPO/golang-1.26.2/bin:$NODEBIN:/usr/local/bin:/usr/bin:/bin" HOME="$SCR/home" \
+BUILD_ENV=(env -i PATH="$REPO/golang-1.26.2/bin:$NODEBIN:/usr/local/bin:/usr/bin:/bin" HOME="$SCR/home" TMPDIR="$SCR/tmp" \
     XDG_CONFIG_HOME="$SCR/home/.config" XDG_CACHE_HOME="$SCR/home/.cache" XDG_DATA_HOME="$SCR/home/.local/share" \
     GOCACHE="$SCR/gocache" GOMODCACHE="$SCR/gomod" ZIG_GLOBAL_CACHE_DIR="$SCR/zigcache" ZIG_LOCAL_CACHE_DIR="$SCR/zigcache" \
     E2E_VITE_CACHE="$SCR/vitecache")
@@ -7401,36 +7567,6 @@ conn = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
 print(json.dumps(conn.execute(sys.argv[2], sys.argv[3:]).fetchall()))
 ```
 
-Create `$SCR/lib.sh` and `source` it in every shell used for the run:
-
-```bash
-# Sourced with SCR already set in the shell.
-REPO=/media/owner/Workspace/remoteterm/remoteterm-builder-terminal
-source "$SCR/logs/env.txt"
-T="$SCR/t"
-APPDIR="$SCR/home/waveapps/draft/e2e1"
-DB="$SCR/data/db/waveterm.db"
-cdp() { node "$SCR/cdp.mjs" "$PORT" "$@"; }
-bcdp() { cdp "RTApp Builder" "$@"; }
-mcdp() { cdp "RemoteTerm" "$@"; }
-dbq() { python3 "$SCR/db.py" "$DB" "$@"; }
-builder_tabs() { dbq "SELECT oid, json_extract(data,'\$.blockids') FROM db_tab WHERE json_extract(data,'\$.meta.\"builder:owner\"') IS NOT NULL"; }
-block_exists() { dbq "SELECT count(*) FROM db_block WHERE oid = ?" "$1"; }
-wait_file() { for _ in $(seq 100); do [ -s "$1" ] && return 0; sleep 0.1; done; echo "timeout waiting for $1"; return 1; }
-wait_dead() { for _ in $(seq 50); do kill -0 "$1" 2>/dev/null || return 0; sleep 0.1; done; echo "pid $1 still alive after 5s"; return 1; }
-# Session id of the launch that owns the debugging port; empty if nothing is listening for it.
-session_of_port() { local pid; pid=$(pgrep -o -f "remote-debugging-port=$PORT"); [ -n "$pid" ] && ps -o sid= -p "$pid" | tr -d ' '; }
-focused_block() { bcdp eval "document.activeElement?.closest('[data-blockid]')?.dataset.blockid ?? null"; }
-builder_focus() { bcdp eval "document.querySelector('[data-builder-focus]')?.dataset.builderFocus ?? null"; }
-dom_panes() { bcdp eval "document.querySelectorAll('[data-builder-term-panel] .block[data-blockid]').length"; }
-# Types a command into the focused pane and presses Enter.
-run_in_pane() { bcdp text "$1" && bcdp key Enter; }
-# Focuses a pane by clicking its terminal area.
-focus_pane() { bcdp click "[data-builder-term-panel] [data-blockid=\"$1\"] .block-content" || bcdp click "[data-builder-term-panel] [data-blockid=\"$1\"]"; }
-```
-
-(`main` windows are titled `RemoteTerm - <tab>`; builder windows `RTApp Builder (draft/e2e1)`, `frontend/remoteterm.ts:265`, `frontend/builder/builder-app.tsx:52`.)
-
 - [ ] **Step 4: Launch and safety preflight**
 
 Create `$SCR/launch.sh`:
@@ -7439,11 +7575,11 @@ Create `$SCR/launch.sh`:
 #!/bin/bash
 # DISPLAY and WAYLAND_DISPLAY are never passed in: env -i starts from nothing and xvfb-run sets DISPLAY for its children only.
 source "$1/logs/env.txt"
-cd /media/owner/Workspace/remoteterm/remoteterm-builder-terminal
+cd "$REPO"
 ulimit -c 0
 exec env -i \
-    PATH="$PWD/golang-1.26.2/bin:$NODEBIN:/usr/local/bin:/usr/bin:/bin" \
-    HOME="$SCR/home" XDG_RUNTIME_DIR="$SCR/run" \
+    PATH="$REPO/golang-1.26.2/bin:$NODEBIN:/usr/local/bin:/usr/bin:/bin" \
+    HOME="$SCR/home" XDG_RUNTIME_DIR="$SCR/run" TMPDIR="$SCR/tmp" \
     XDG_CONFIG_HOME="$SCR/home/.config" XDG_DATA_HOME="$SCR/home/.local/share" \
     XDG_CACHE_HOME="$SCR/home/.cache" XDG_STATE_HOME="$SCR/home/.local/state" \
     REMOTETERM_CONFIG_HOME="$SCR/cfg" REMOTETERM_DATA_HOME="$SCR/data" \
@@ -7454,31 +7590,37 @@ exec env -i \
     --remote-debugging-port="$PORT" --user-data-dir="$SCR/ud"
 ```
 
-Launch (run 1):
+`TMPDIR` puts `xvfb-run`'s temporary directory (and the app's) under `$SCR/tmp`, so nothing of this run is left in `/tmp` except the Xvfb lock handled in Step 11.
+
+Launch (run 1) and record it:
 
 ```bash
-source "$SCR/lib.sh"
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
 bash "$SCR/launch.sh" "$SCR" > "$SCR/logs/launch1.log" 2>&1 &
 sleep 20
 SID=$(session_of_port)
-[ -n "$SID" ] || echo "ABORT: nothing runs with remote-debugging-port=$PORT; stop here and report launch1.log"
-ps -s "$SID" -o pid,ppid,args > "$SCR/logs/session1.txt"
+[ -n "$SID" ] || { echo "ABORT: nothing runs with remote-debugging-port=$PORT; report launch1.log"; exit 1; }
 EL=$(pgrep -o -s "$SID" -x electron)
 SRV=$(pgrep -s "$SID" -f remotetermsrv | head -1)
-tr '\0' '\n' < /proc/$EL/environ | grep -E '^(DISPLAY|WAYLAND_DISPLAY|HOME|XDG_|REMOTETERM_)' > "$SCR/logs/preflight-environ.txt"
+XDISP=$(tr '\0' '\n' < /proc/$EL/environ | sed -n 's/^DISPLAY=:\([0-9]*\).*/\1/p')
+save_run; cat "$SCR/logs/run.env"
+need SID EL SRV XDISP || exit 1
+ps -s "$SID" -o pid,ppid,args > "$SCR/logs/session1.txt"
+tr '\0' '\n' < /proc/$EL/environ | grep -E '^(DISPLAY|WAYLAND_DISPLAY|HOME|TMPDIR|XDG_|REMOTETERM_)' > "$SCR/logs/preflight-environ.txt"
 tr '\0' '\n' < /proc/$SRV/environ | grep -E '^(DISPLAY|HOME|REMOTETERM_)' >> "$SCR/logs/preflight-environ.txt"
 ls -l /proc/$SRV/fd 2>/dev/null | grep -v -e "$SCR" -e "$REPO" -e 'pipe:' -e 'socket:' -e 'anon_inode' -e '/dev/' -e '/proc/' -e '/sys/' > "$SCR/logs/preflight-fds-outside.txt" || true
 journalctl --user --since "$START" --no-pager | grep -iE 'remoteterm|\.scope' > "$SCR/logs/preflight-journal.txt" || true
+cat "$SCR/logs/preflight-environ.txt" "$SCR/logs/preflight-fds-outside.txt" "$SCR/logs/preflight-journal.txt"
 ```
 
-Expected: `DISPLAY=:N` with N not 0 for both processes, no `WAYLAND_DISPLAY`; `HOME=$SCR/home`; `REMOTETERM_CONFIG_HOME=$SCR/cfg`, `REMOTETERM_DATA_HOME=$SCR/data`; `preflight-fds-outside.txt` empty; the journal shows no new unit or scope from this session. Any failure here: kill the session (`kill -TERM -- -$SID`, then `-KILL` after 5 s), clean up, and report; do not continue.
+Expected: `XDISP` is a number other than 0, `DISPLAY=:<XDISP>` for both processes, no `WAYLAND_DISPLAY`; `HOME=$SCR/home`, `TMPDIR=$SCR/tmp`; `REMOTETERM_CONFIG_HOME=$SCR/cfg`, `REMOTETERM_DATA_HOME=$SCR/data`; `preflight-fds-outside.txt` empty; the journal shows no new unit or scope from this session. Any failure here: in a new call, `need SID || exit 1; kill -TERM -- -"$SID"`, then `-KILL` after 5 s, clean up (Step 11), and report; do not continue.
 
 If a first-run feature-tour modal covers the main window, dismiss it through its own button with `mcdp clicktext ...` (the earlier run saw a "Durable SSH Sessions" tour).
 
 - [ ] **Step 5: S1 (first open) and S5 (resize persists)**
 
 ```bash
-source "$SCR/lib.sh"
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
 dbq "SELECT count(*) FROM db_workspace" | tee "$SCR/logs/workspaces-before.txt"
 mcdp eval "window.api.openBuilder()"
 sleep 5
@@ -7491,7 +7633,8 @@ builder_tabs | tee "$SCR/logs/s1-tabs.txt"
 Expected: exactly one builder tab with one block id. Then:
 
 ```bash
-B1=$(builder_tabs | python3 -c 'import json,sys; print(json.loads(json.loads(sys.stdin.read())[0][1])[0])')
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
+B1=$(builder_block_ids)
 [ "$(focused_block)" = "\"$B1\"" ] && echo "S1 focus PASS" || echo "S1 focus FAIL: $(focused_block)"
 [ "$(builder_focus)" = '"terminal"' ] && echo "S1 builder focus PASS" || echo "S1 builder focus FAIL"
 run_in_pane "pwd > $T/s1.pwd; echo \$\$ > $T/p1.pid"
@@ -7502,61 +7645,69 @@ bcdp shot "$SCR/logs/s1.png"
 S5:
 
 ```bash
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
 bcdp drag '[data-builder-focus] > [data-panel-group] > [data-resize-handle]' 200
 sleep 1.5
 bcdp eval "document.querySelector('[data-builder-focus] > [data-panel-group] > [data-panel]').dataset.panelSize"
 bcdp eval "window.RpcApi.GetRTInfoCommand(window.TabRpcClient, {oref: 'builder:' + window.globalStore.get(window.globalAtoms.builderId)}).then((r) => r['builder:layout'])"
+builder_block_ids > "$SCR/logs/s5-blocks-before-reload.txt"
 bcdp eval "location.reload()"; sleep 8
 bcdp eval "document.querySelector('[data-builder-focus] > [data-panel-group] > [data-panel]').dataset.panelSize"
-builder_tabs; kill -0 "$(cat "$T/p1.pid")" && echo "reload kept the shell PASS"
+builder_block_ids | diff "$SCR/logs/s5-blocks-before-reload.txt" - && echo "reload kept the blocks PASS"
+kill -0 "$(cat "$T/p1.pid")" && echo "reload kept the shell PASS"
 ```
 
-Expected: the panel size grows above 40 and `builder:layout.terminal` matches it (within 1); after the reload the size is the same, the builder tab and its block id are unchanged, and the p1 shell is alive (reload keeps panes).
+Expected: the panel size grows above 40 and `builder:layout.terminal` matches it (within 1); after the reload the size is the same, the builder tab's block ids are unchanged, and the p1 shell is alive (reload keeps panes).
 
 - [ ] **Step 6: S2 (Open terminal), S3 (keys, header split, two rapid splits), S8 (no builder tab in workspaces)**
 
-Record the main windows' tabs first, then add panes; after each step check the DB, the DOM pane count, the focused pane and its working directory:
+Header split buttons render only when `term:showsplitbuttons` is true (`frontend/app/block/blockframe-header.tsx:130, 137`), and it defaults to false (`pkg/rtconfig/defaultconfig/settings.json:5`). Turn it on first and require the button before any check:
 
 ```bash
-dbq "SELECT oid, json_array_length(json_extract(data,'\$.blockids')) FROM db_tab WHERE json_extract(data,'\$.meta.\"builder:owner\"') IS NULL" > "$SCR/logs/main-tabs-before.txt"
-check_new_pane() {  # $1 = label, $2 = expected block count
-    sleep 2
-    local ids; ids=$(builder_tabs | python3 -c 'import json,sys; print(" ".join(json.loads(json.loads(sys.stdin.read())[0][1])))')
-    local count; count=$(echo $ids | wc -w)
-    local newest; newest=$(echo $ids | awk '{print $NF}')
-    echo "$1: db=$count dom=$(dom_panes) focused=$(focused_block) newest=$newest builderfocus=$(builder_focus)"
-    run_in_pane "pwd > $T/$1.pwd"
-    wait_file "$T/$1.pwd" && [ "$(cat "$T/$1.pwd")" = "$APPDIR" ] && [ "$count" = "$2" ] && echo "$1 PASS" || echo "$1 FAIL"
-}
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
+set_setting "term:showsplitbuttons" true
+sleep 2
+bcdp eval "!!document.querySelector('[data-builder-term-panel] button[title=\"Split Horizontally\"]')"
+```
+
+Expected: `true`. If it prints `false`, stop and report (the S3 header-split check cannot run).
+
+Record the main windows' tabs, then add panes; after each action check the DB, the DOM pane count, the focused pane and its folder. Pane counts: 1 after Step 5, then 2 (Open terminal), 3 (Alt+D), 4 (Shift+Alt+D), 5 (chord), 6 (Alt+N), 7 (header split), 9 (two rapid splits).
+
+```bash
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
+main_tab_counts() { dbq "SELECT oid, json_array_length(json_extract(data,'\$.blockids')) FROM db_tab WHERE json_extract(data,'\$.meta.\"builder:owner\"') IS NULL"; }
+main_tab_counts > "$SCR/logs/main-tabs-before.txt"
 bcdp clicktext "Open terminal"; check_new_pane s2 2
-dbq "SELECT oid, json_array_length(json_extract(data,'\$.blockids')) FROM db_tab WHERE json_extract(data,'\$.meta.\"builder:owner\"') IS NULL" > "$SCR/logs/main-tabs-after.txt"
-diff "$SCR/logs/main-tabs-before.txt" "$SCR/logs/main-tabs-after.txt" && echo "S2 main windows untouched PASS"
+main_tab_counts | diff "$SCR/logs/main-tabs-before.txt" - && echo "S2 main windows untouched PASS"
 bcdp key Alt+D; check_new_pane s3-altd 3
 bcdp key Shift+Alt+D; check_new_pane s3-shiftaltd 4
 bcdp key Ctrl+Shift+S; bcdp key ArrowDown; check_new_pane s3-chord 5
 bcdp key Alt+N; check_new_pane s3-altn 6
 FOCUSED=$(focused_block | tr -d '"')
-bcdp click "[data-blockid=\"$FOCUSED\"] button[title=\"Split Horizontally\"]"; check_new_pane s3-header 7
+bcdp click "[data-builder-term-panel] [data-blockid=\"$FOCUSED\"] button[title=\"Split Horizontally\"]"; check_new_pane s3-header 7
 bcdp keys Alt+D Alt+D; sleep 3
-echo "rapid: db=$(builder_tabs) dom=$(dom_panes)"
+echo "rapid: db=$(builder_block_ids | wc -w) dom=$(dom_panes)"
 ```
 
-Expected: every step PASS (count, focus on the newest pane, `pwd` = app folder, builder focus `"terminal"`); the rapid pair leaves 9 blocks in the DB and 9 panes in the DOM. If the DB has 9 blocks but the DOM shows 8 after 3 s, the layout-save race from the spec's Risks reproduced: record it (screenshot, both counts, `bcdp eval` of the LayoutState's `pendingbackendactions` via `window.RpcApi`), mark S3-rapid FAIL, and continue.
+Expected: every step PASS (count, focus on the newest pane, `pwd` = app folder, builder focus `"terminal"`); the rapid pair leaves 9 blocks in the DB and 9 panes in the DOM. If the DB has 9 blocks but the DOM shows 8 after 3 s, the layout-save race from the spec's Risks reproduced: record it (screenshot, both counts, and the LayoutState's `pendingbackendactions` via `bcdp eval` with `window.RpcApi`), mark S3-rapid FAIL, and continue.
 
 S8:
 
 ```bash
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
 BT=$(builder_tabs | python3 -c 'import json,sys; print(json.loads(sys.stdin.read())[0][0])')
 dbq "SELECT json_extract(data,'\$.tabids') FROM db_workspace" | grep -q "$BT" && echo "S8 FAIL (workspace tabids)" || echo "S8 tabids PASS"
 mcdp eval "[...document.querySelectorAll('[data-tab-id],[data-tabid]')].map((e) => e.dataset.tabId ?? e.dataset.tabid)" | grep -q "$BT" && echo "S8 FAIL (tab bar)" || echo "S8 tab bar PASS"
-dbq "SELECT count(*) FROM db_workspace"
+dbq "SELECT count(*) FROM db_workspace" | diff "$SCR/logs/workspaces-before.txt" - && echo "S8 workspace count PASS"
 ```
 
-Expected: both PASS, and the workspace count equals `workspaces-before.txt` (recorded in Step 5).
+Expected: all three PASS. Here `grep -q` exiting 1 (no match) is the passing case.
 
 - [ ] **Step 7: S4 (close panes), Ctrl+W, held Alt+W**
 
 ```bash
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
 FOCUSED=$(focused_block | tr -d '"')
 run_in_pane "echo \$\$ > $T/p4.pid"; wait_file "$T/p4.pid"
 bcdp key Alt+W; sleep 0.5
@@ -7569,11 +7720,12 @@ wait_file "$T/ctrlw.txt" && [ "$(cat "$T/ctrlw.txt")" = "hello" ] && echo "Ctrl+
 Record every remaining pane's shell PID, then close them one at a time:
 
 ```bash
-for id in $(builder_tabs | python3 -c 'import json,sys; print(" ".join(json.loads(json.loads(sys.stdin.read())[0][1])))'); do
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
+for id in $(builder_block_ids); do
     focus_pane "$id"; run_in_pane "echo \$\$ > $T/pid-$id"; wait_file "$T/pid-$id"
 done
 for _ in $(seq 20); do
-    [ "$(builder_tabs | python3 -c 'import json,sys; print(len(json.loads(json.loads(sys.stdin.read())[0][1])))')" = "0" ] && break
+    [ -z "$(builder_block_ids)" ] && break
     bcdp key Alt+W; sleep 0.4
 done
 for f in "$T"/pid-*; do wait_dead "$(cat "$f")"; done
@@ -7589,17 +7741,12 @@ Expected: after the last Alt+W the builder tab still exists with `[]` blocks, ev
 - [ ] **Step 8: S9 (two writers, one rebuild)**
 
 ```bash
-python3 - "$SCR/cfg/settings.json" <<'PY'
-import json, os, sys
-path = sys.argv[1]
-data = json.load(open(path)) if os.path.exists(path) else {}
-data["builder:liverebuild"] = True
-json.dump(data, open(path, "w"), indent=2)
-PY
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
+set_setting "builder:liverebuild" true
 for _ in $(seq 120); do grep -q "status: running" "$APPDIR/.tsunami/build.log" 2>/dev/null && break; sleep 1; done
 bcdp key Alt+D; sleep 2
 bcdp eval "window.__e2eTransitions = []; const dot = document.querySelector('span.w-2.h-2.rounded-full'); new MutationObserver(() => window.__e2eTransitions.push(dot.className)).observe(dot, { attributes: true, attributeFilter: ['class'] }); !!dot"
-for id in $(builder_tabs | python3 -c 'import json,sys; print(" ".join(json.loads(json.loads(sys.stdin.read())[0][1])))'); do
+for id in $(builder_block_ids); do
     focus_pane "$id"; run_in_pane "while [ ! -e $T/go ]; do :; done; echo >> app.go"
 done
 touch "$T/go"; sleep 6
@@ -7610,33 +7757,57 @@ Expected: the observer finds the dot (`true`), and the transitions list contains
 
 - [ ] **Step 9: S6 (teardown on close, on Alt+W from the app side, on app switch)**
 
-For each of the three paths, first record the builder tab id and every pane's PID (as in Step 7), then act, then check within 5 s that `builder_tabs` no longer lists that tab, `block_exists` is `[[0]]` for each recorded block, and each PID is dead.
+For each of the three paths, run one call that records, acts and checks. The recording part is the same each time:
 
 ```bash
-# (a) BrowserWindow close, as from the title bar
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
+TAB=$(builder_tabs | python3 -c 'import json,sys; print(json.loads(sys.stdin.read())[0][0])')
+IDS=$(builder_block_ids)
+for id in $IDS; do focus_pane "$id"; run_in_pane "echo \$\$ > $T/s6-$id.pid"; wait_file "$T/s6-$id.pid"; done
+# (a) BrowserWindow close, as from the title bar:
 bcdp eval "window.close()"
-# (b) Alt+W with the app side focused
-mcdp eval "window.api.openBuilder('draft/e2e1')"; sleep 8
-bcdp clicktext "Code"; sleep 0.5; builder_focus     # expect "app"
-bcdp key Alt+W
-# (c) app switch: the "Switch App" item is in a native menu; replay switchBuilderApp's calls
-mcdp eval "window.api.openBuilder('draft/e2e1')"; sleep 8
+sleep 5
+builder_tabs | grep -q "$TAB" && echo "S6 FAIL: tab $TAB still present" || echo "S6 tab gone PASS"
+for id in $IDS; do [ "$(block_exists "$id")" = "[[0]]" ] || echo "S6 FAIL: block $id left"; wait_dead "$(cat "$T/s6-$id.pid")"; done
+cdp x targets
+```
+
+For (b), start with `mcdp eval "window.api.openBuilder('draft/e2e1')"; sleep 8`, then the recording part, then `bcdp clicktext "Code"; sleep 0.5; builder_focus` (expect `"app"`) and `bcdp key Alt+W` in place of `window.close()`, then the same checks.
+
+For (c), start the same way, then the recording part, then check reachability and replay `switchBuilderApp`:
+
+```bash
+bcdp eval "typeof window.BuilderTermModel"
 bcdp eval "(async () => { const id = window.globalStore.get(window.globalAtoms.builderId); await window.RpcApi.DeleteBuilderCommand(window.TabRpcClient, id); await new Promise((r) => setTimeout(r, 500)); await window.RpcApi.SetRTInfoCommand(window.TabRpcClient, { oref: 'builder:' + id, data: { 'builder:appid': null } }); await window.api.setBuilderWindowAppId(null); window.api.doRefresh(); return id; })()"
 ```
 
-Expected: all three paths PASS; after (a) and (b) the builder page is gone from `targets`; after (c) the window is still open and shows the app selection modal. For (c), before the replay, check `bcdp eval "typeof window.BuilderTermModel"`: it should print `"undefined"` (the model is not reachable), in which case record in the report that `markSwitching()` was not exercised end to end and is covered by unit tests only. If it is reachable, call `window.BuilderTermModel.getInstance().markSwitching()` first and record that instead. (The tab bar of the app panel has a "Code" button, `frontend/builder/builder-apppanel.tsx`; any click inside the app column sets app focus.)
+then the same checks.
+
+Expected: all three paths PASS; after (a) and (b) the builder page is gone from `targets`; after (c) the window is still open and shows the app selection modal. For (c), `typeof window.BuilderTermModel` should print `"undefined"` (the model is not reachable): record in the report that `markSwitching()` was not exercised end to end and is covered by unit tests only. If it is reachable, call `window.BuilderTermModel.getInstance().markSwitching()` before the replay and record that instead. (The app panel's tab bar has a "Code" button, `frontend/builder/builder-apppanel.tsx`; any click inside the app column sets app focus.)
 
 - [ ] **Step 10: S7 (sweep after a crash) and S10 (spoofed workspace tab survives)**
 
 ```bash
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
+need SID SRV || exit 1
 bcdp eval "window.close()"; sleep 2
 mcdp eval "window.api.openBuilder('draft/e2e1')"; sleep 8
-CRASH_TAB=$(builder_tabs | python3 -c 'import json,sys; print(json.loads(sys.stdin.read())[0][0])')
+builder_tabs | python3 -c 'import json,sys; print(json.loads(sys.stdin.read())[0][0])' > "$SCR/logs/crash-tab.txt"
 kill -9 "$SRV"
 for _ in $(seq 30); do [ -z "$(ps -s "$SID" -o pid=)" ] && break; sleep 1; done
-ps -s "$SID" -o pid,args      # expect empty; if Xvfb or dbus remain, kill -TERM -- -$SID, then -KILL after 5 s
-builder_tabs                   # expect the CRASH_TAB row still present (cleanup was skipped)
+ps -s "$SID" -o pid,args
+```
+
+Expected: the session list is empty (if Xvfb or dbus remain, `kill -TERM -- -"$SID"`, then `-KILL` after 5 s, and re-check). Then, as one call:
+
+```bash
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
+need SID || exit 1
+# The DB is written directly only while no process of the session is alive.
+[ -z "$(ps -s "$SID" -o pid=)" ] || { echo "ABORT: session $SID still has processes"; exit 1; }
+builder_tabs | grep -q "$(cat "$SCR/logs/crash-tab.txt")" && echo "crash left the builder tab (expected)" || echo "PRECONDITION FAIL: no leftover tab"
 WS_TAB=$(dbq "SELECT json_extract(data,'\$.tabids[0]') FROM db_workspace LIMIT 1" | python3 -c 'import json,sys; print(json.loads(sys.stdin.read())[0][0])')
+echo "$WS_TAB" > "$SCR/logs/spoofed-tab.txt"
 python3 - "$DB" "$WS_TAB" <<'PY'
 import sqlite3, sys
 conn = sqlite3.connect(sys.argv[1])
@@ -7646,23 +7817,30 @@ PY
 bash "$SCR/launch.sh" "$SCR" > "$SCR/logs/launch2.log" 2>&1 &
 sleep 20
 SID=$(session_of_port)
-[ -n "$SID" ] || echo "ABORT: the second launch is not running; stop here and report launch2.log"
+[ -n "$SID" ] || { echo "ABORT: the second launch is not running; report launch2.log"; exit 1; }
 EL=$(pgrep -o -s "$SID" -x electron)
 SRV=$(pgrep -s "$SID" -f remotetermsrv | head -1)
+XDISP=$(tr '\0' '\n' < /proc/$EL/environ | sed -n 's/^DISPLAY=:\([0-9]*\).*/\1/p')
+save_run; cat "$SCR/logs/run.env"
+need SID EL SRV XDISP || exit 1
 grep -n -e "builder sweep: removed" -e "WAVESRV-ESTART" "$SCR/data/rtapp.log" | tail -4
 builder_tabs
 dbq "SELECT json_extract(data,'\$.meta.\"builder:owner\"') FROM db_tab WHERE oid = ?" "$WS_TAB"
 dbq "SELECT json_extract(data,'\$.tabids') FROM db_workspace" | grep -c "$WS_TAB"
 ```
 
-The direct DB write runs only while no process of the session is alive (the `ps -s` check above is empty). Expected: in the second launch's lines, `[startup] builder sweep: removed 1 tabs` appears before that launch's `WAVESRV-ESTART`; `builder_tabs` prints `[]`; the spoofed workspace tab still exists, still carries `e2e-spoof`, and is still in its workspace's `tabids` (S10). Redo the preflight of Step 4 for this launch (environ, fds, journal) and record it.
+Expected: in the second launch's lines, `[startup] builder sweep: removed 1 tabs` appears before that launch's `WAVESRV-ESTART`; `builder_tabs` prints `[]`; the spoofed workspace tab still exists, still carries `e2e-spoof`, and is still in its workspace's `tabids` (S10). Redo the preflight of Step 4 for this launch (environ, fds, journal, in a new call with `need SID EL SRV`) and record it.
 
 - [ ] **Step 11: Cleanup and isolation proof**
 
 ```bash
-kill -TERM "$(pgrep -o -s "$SID" -x electron)"; sleep 5
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
+need SID EL XDISP || exit 1
+kill -TERM "$EL"; sleep 5
 [ -n "$(ps -s "$SID" -o pid=)" ] && { kill -TERM -- -"$SID"; sleep 5; kill -KILL -- -"$SID" 2>/dev/null; }
 ps -s "$SID" -o pid,args
+# Xvfb normally removes its own lock; remove it only for this run's display, and only once that Xvfb is gone.
+if pgrep -f "Xvfb :$XDISP( |$)" > /dev/null; then echo "Xvfb :$XDISP still running; leaving /tmp/.X$XDISP-lock"; elif [ -e "/tmp/.X$XDISP-lock" ]; then rm -f "/tmp/.X$XDISP-lock" && echo "removed /tmp/.X$XDISP-lock"; fi
 for d in ~/.config/remoteterm* ~/.local/share/remoteterm* ~/.config/RemoteTerm* ~/waveapps; do
     [ -e "$d" ] && find "$d" -maxdepth 3 -printf '%T@ %p\n' 2>/dev/null
 done | sort > "$SCR/logs/user-dirs-after.txt"
@@ -7670,16 +7848,16 @@ diff "$SCR/logs/user-dirs-before.txt" "$SCR/logs/user-dirs-after.txt" > "$SCR/lo
 ls -d ~/waveapps/draft/e2e1 2>/dev/null && echo "ISOLATION FAIL: app folder created in the real HOME"
 stat -c '%Y %n' "$REPO/node_modules/.vite" "$REPO/node_modules/.vite-temp" 2>&1 | diff "$SCR/logs/vite-before.txt" -
 journalctl --user --since "$START" --no-pager | grep -iE 'remoteterm|\.scope'
-ls -d /tmp/xvfb-run.* 2>/dev/null | sort | comm -13 "$SCR/logs/xvfb-before.txt" - | tee "$SCR/logs/xvfb-new.txt"
 ```
 
-Expected: the session is empty; `user-dirs-diff.txt` is empty. If the user's live dev instance was running (see `live-processes-before.txt`), its own database files may show new mtimes: list each changed path in the report and show, from the preflight fd snapshots, that none of this run's processes had it open; never touch those files. `~/waveapps/draft/e2e1` does not exist; the `.vite` stamps are unchanged; the journal has no new unit or scope from this run. Copy the evidence you cite (logs, PNGs) into the report or next to it under `$SCR`, then `chmod -R u+w "$SCR/gomod"` and `rm -rf "$SCR"` (Go marks its module cache read-only). Remove only the `/tmp/xvfb-run.*` directories listed in `xvfb-new.txt` (created during this run; anything in `xvfb-before.txt` belongs to someone else), before deleting `$SCR`: `xargs -r rm -rf < "$SCR/logs/xvfb-new.txt"`.
+Expected: the session is empty; `user-dirs-diff.txt` is empty. If the user's live dev instance was running (see `live-processes-before.txt`), its own database files may show new mtimes: list each changed path in the report and show, from the preflight fd snapshots, that none of this run's processes had it open; never touch those files. `~/waveapps/draft/e2e1` does not exist; the `.vite` stamps are unchanged; the journal has no new unit or scope from this run. Copy the evidence you cite (logs, PNGs) into the report or next to it, then, in a final call, `chmod -R u+w "$SCR/gomod"` and `rm -rf "$SCR"` (Go marks its module cache read-only). Nothing else in `/tmp` belongs to this run: `xvfb-run` and the app used `TMPDIR=$SCR/tmp`.
 
 - [ ] **Step 12: Report**
 
-Write `.planning/builder-terminal/E2E-REPORT.md`: the scratch root, launch command lines, PIDs and session ids; the preflight for both launches; one line per check (S1, S2, S3 including the rapid pair and whether the layout race reproduced, S4 including Ctrl+W and the held Alt+W, S5, S6 a/b/c, S7, S8, S9, S10) with PASS/FAIL and the evidence; the isolation proof; the cleanup record; and the two substitutions (no window manager, native Switch App menu). Do not commit it; the reviewer decides.
+Write `.planning/builder-terminal/E2E-REPORT.md`: the scratch root, launch command lines, PIDs and session ids; the preflight for both launches; one line per check (S1, S2, S3 including the rapid pair and whether the layout race reproduced, S4 including Ctrl+W and the held Alt+W, S5, S6 a/b/c, S7, S8, S9, S10) with PASS/FAIL and the evidence; the isolation proof; the cleanup record; and the two substitutions (no window manager, native Switch App menu, with the `markSwitching` note). Do not commit it; the reviewer decides.
 
 ---
+
 
 ## Spec coverage
 
@@ -7706,14 +7884,14 @@ Write `.planning/builder-terminal/E2E-REPORT.md`: the scratch root, launch comma
 | D2 `DeleteBuilderCommand` teardown (detached, under lock, controller kept) | 8 | `TestDeleteBuilderCommand*` |
 | D3 Startup sweep (order, per-tab errors, log line) | 2, 9 | `TestSweepBuilderTabsRemovesBuilderTabsOnly`, `TestBuilderSweepRunsBetweenControllerInitAndReconnect` |
 | D4 `ensure-builder-tab` IPC (window's own ids; gating confirmed) | 10 | tsc; E2E Step 5 |
-| D4 `switchBuilderApp` awaits `setBuilderWindowAppId(null)` | 14 | `switchBuilderApp` test in `builder-apppanel-switch.test.ts` |
+| D4 `switchBuilderApp` awaits `setBuilderWindowAppId(null)`; a failed switch offers Retry | 14 | both tests in `builder-apppanel-switch.test.ts` |
 | D4 `open-builder-terminal` (no main window, 64-char strings) | 7, 10 | `parseBuilderTerminalTarget` tests; E2E Step 6 |
 | D4 `destroyBuilderWindow` order (hidden at once, single teardown); `closed` fallback kept | 10 | `runBuilderTeardown` tests incl. the concurrent-calls test; E2E Step 9 |
 | D4 One switch path; modal unchanged | 14 | confirmed in "Spec items confirmed" |
-| D5 Subscriptions in `initBuilder` (no `userinput`) | 11 | `global-builder-subs.test.ts` |
+| D5 Subscriptions in `initBuilder` (no `userinput`; one `config` subscription) | 11 | `global-builder-subs.test.ts`, `builder-apppanel-subs.test.ts` |
 | D5 `staticTabIdAtom` writable, only builder writes; `uiContext` live | 11, 14 | `uiContext` tests, `static-tab-writers.test.ts` |
 | D5 Bootstrap steps 1-4 and ordering | 14, 15 | `pins the tab and its layout before setting the static tab...`, `builder-termcontents.test.tsx` |
-| D5 Null-tolerant layout-model callers | 11 | `keymodel-builder.test.ts`, `layoutModelHooks.test.ts`, `global-builder-subs.test.ts` |
+| D5 Null-tolerant layout-model callers | 11 | `keymodel-builder.test.ts`, `layoutModelHooks.test.ts`, `global-builder-subs.test.ts`, `focusManager.test.ts` |
 | D5 Tab vanishes; switching flag | 14, 15 | `drops the layout model and offers a reload...`, `shows switching...`, panel tests |
 | D5 Layout (horizontal split, default 40, min 20) | 14, 15 | `builder-layout.test.ts`; E2E Step 5 |
 | D5 Empty state | 15 | `shows the empty state over the layout...` |
