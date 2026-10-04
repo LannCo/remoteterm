@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
     objAtoms: new Map<string, any>(),
     api: { ensureBuilderTab: vi.fn(), doRefresh: vi.fn() },
     deleteLayoutModelForTab: vi.fn(),
+    pinGate: null as { oref: string; gate: Promise<void> } | null,
 }));
 
 vi.mock("@/store/global", async () => {
@@ -30,6 +31,9 @@ vi.mock("@/store/global", async () => {
             getWaveObjectAtom: objAtom,
             loadAndPinWaveObject: async (oref: string) => {
                 h.log.push(`pin:${oref}`);
+                if (h.pinGate?.oref === oref) {
+                    await h.pinGate.gate;
+                }
                 const val = h.objs.get(oref) ?? null;
                 globalStore.set(objAtom(oref), val);
                 return val;
@@ -64,6 +68,7 @@ describe("BuilderTermModel", () => {
     beforeEach(() => {
         BuilderTermModel.resetInstance();
         h.log.length = 0;
+        h.pinGate = null;
         h.objAtoms.clear();
         h.objs.clear();
         h.objs.set("tab:tab-1", { otype: "tab", oid: "tab-1", version: 1, layoutstate: "layout-1", blockids: ["b1"] });
@@ -158,6 +163,75 @@ describe("BuilderTermModel", () => {
         WOS.updateWaveObject(deleteTabUpdate());
         expect(globalStore.get(model.stateAtom)).toBe("switching");
         expect(h.deleteLayoutModelForTab).toHaveBeenCalledWith("tab-1");
+    });
+
+    function makeGate() {
+        let release: () => void;
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        return { gate, release };
+    }
+
+    it("stays switching when the app switch starts while Ensure is in flight", async () => {
+        const { gate, release } = makeGate();
+        h.api.ensureBuilderTab.mockImplementation(async () => {
+            await gate;
+            return { tabid: "tab-1", appid: "draft/app" };
+        });
+        const model = BuilderTermModel.getInstance();
+        const done = model.bootstrap();
+        expect(globalStore.get(model.stateAtom)).toBe("loading");
+        model.markSwitching();
+        release();
+        await done;
+        expect(globalStore.get(model.stateAtom)).toBe("switching");
+        expect(globalStore.get(model.ensureOkAtom)).toBe(false);
+        expect(globalStore.get(atoms.staticTabId)).toBeNull();
+        expect(globalStore.get(model.tabIdAtom)).toBeNull();
+    });
+
+    it("stays switching when the app switch starts while the tab is being pinned", async () => {
+        const { gate, release } = makeGate();
+        h.pinGate = { oref: "layout:layout-1", gate };
+        const model = BuilderTermModel.getInstance();
+        const done = model.bootstrap();
+        await vi.waitFor(() => expect(h.log).toContain("pin:layout:layout-1"));
+        model.markSwitching();
+        release();
+        await done;
+        expect(globalStore.get(model.stateAtom)).toBe("switching");
+        expect(globalStore.get(model.ensureOkAtom)).toBe(false);
+        expect(globalStore.get(atoms.staticTabId)).toBeNull();
+        expect(globalStore.get(model.tabIdAtom)).toBeNull();
+    });
+
+    it("does not report a load error over a state that moved on while pinning", async () => {
+        const { gate, release } = makeGate();
+        h.pinGate = { oref: "tab:tab-1", gate };
+        h.objs.delete("tab:tab-1");
+        const model = BuilderTermModel.getInstance();
+        const done = model.bootstrap();
+        await vi.waitFor(() => expect(h.log).toContain("pin:tab:tab-1"));
+        model.markSwitching();
+        release();
+        await done;
+        expect(globalStore.get(model.stateAtom)).toBe("switching");
+    });
+
+    it("is vanished, not ready, when the tab was deleted while the layout was being pinned", async () => {
+        const { gate, release } = makeGate();
+        h.pinGate = { oref: "layout:layout-1", gate };
+        const model = BuilderTermModel.getInstance();
+        const done = model.bootstrap();
+        await vi.waitFor(() => expect(h.log).toContain("pin:layout:layout-1"));
+        WOS.updateWaveObject(deleteTabUpdate());
+        release();
+        await done;
+        expect(globalStore.get(model.stateAtom)).toBe("vanished");
+        expect(globalStore.get(model.ensureOkAtom)).toBe(false);
+        model.retry();
+        expect(h.api.doRefresh).toHaveBeenCalledTimes(1);
     });
 
     it("moves builder focus to the terminal at the first pane and to the app at zero panes", () => {

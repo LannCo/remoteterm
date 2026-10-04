@@ -56,6 +56,9 @@ export class BuilderTermModel {
     async runBootstrap(): Promise<void> {
         this.setState("loading");
         const result = await getApi().ensureBuilderTab();
+        if (!this.isLoading()) {
+            return;
+        }
         if (result?.error || !result?.tabid) {
             this.setError(result?.error || "Could not start the terminals.");
             return;
@@ -71,7 +74,12 @@ export class BuilderTermModel {
             }
             await WOS.loadAndPinWaveObject<LayoutState>(WOS.makeORef("layout", tab.layoutstate));
         } catch (e) {
-            this.setError(`Could not load the terminals: ${e?.message ?? String(e)}`);
+            if (this.isLoading()) {
+                this.setError(`Could not load the terminals: ${e?.message ?? String(e)}`);
+            }
+            return;
+        }
+        if (!this.isLoading()) {
             return;
         }
         const staticTabId = globalStore.get(atoms.staticTabId);
@@ -85,7 +93,17 @@ export class BuilderTermModel {
         }
         globalStore.set(this.tabIdAtom, result.tabid);
         this.watchTab(result.tabid);
+        if (globalStore.get(WOS.getWaveObjectAtom<Tab>(WOS.makeORef("tab", result.tabid))) == null) {
+            this.setState("vanished");
+            return;
+        }
         this.setState("ready");
+    }
+
+    // Switch App can move the model on while a bootstrap await is still pending; the stale bootstrap must not
+    // overwrite that state.
+    isLoading(): boolean {
+        return globalStore.get(this.stateAtom) === "loading";
     }
 
     // The header's Open terminal button follows ensureOkAtom, so it is true exactly while the panel is
