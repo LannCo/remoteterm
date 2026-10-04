@@ -154,8 +154,8 @@ const MissingAppGoView = memo(() => {
                 <div className="flex flex-col gap-3">
                     <h2 className="text-2xl font-semibold text-primary">app.go is missing</h2>
                     <p className="text-base text-secondary leading-relaxed">
-                        The app folder has no <span className="font-mono">app.go</span>. Create the starter app, or
-                        add one from your editor.
+                        The app folder has no <span className="font-mono">app.go</span>. Create the starter app, or add
+                        one from your editor.
                     </p>
                 </div>
                 <button

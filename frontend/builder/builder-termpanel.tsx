@@ -52,10 +52,21 @@ const BuilderTermLayout = memo(({ tabId }: { tabId: string }) => {
         BuilderTermModel.getInstance().handlePaneCount(numLeafs);
     }, [numLeafs]);
 
+    // The count is only reported while mounted; without this, leaving "ready" (vanished, switching) would keep
+    // terminal focus and a stale pane count.
+    useEffect(() => {
+        return () => BuilderTermModel.getInstance().handlePaneCount(0);
+    }, []);
+
     return (
         <TabModelContext.Provider value={getTabModelByTabId(tabId)}>
             <div className="relative h-full w-full">
-                <TileLayout key={tabId} contents={contents} tabAtom={tabAtom} getCursorPoint={getApi().getCursorPoint} />
+                <TileLayout
+                    key={tabId}
+                    contents={contents}
+                    tabAtom={tabAtom}
+                    getCursorPoint={getApi().getCursorPoint}
+                />
                 {numLeafs === 0 && (
                     <div className="absolute inset-0 bg-main-bg">
                         <PanelMessage
@@ -96,7 +107,9 @@ export const BuilderTermPanel = memo(() => {
     } else if (state === "error") {
         content = <PanelMessage message={errorMsg} actionLabel="Retry" onAction={() => model.retry()} />;
     } else if (state === "vanished") {
-        content = <PanelMessage message="The terminal tab is gone." actionLabel="Retry" onAction={() => model.retry()} />;
+        content = (
+            <PanelMessage message="The terminal tab is gone." actionLabel="Retry" onAction={() => model.retry()} />
+        );
     } else if (state === "mismatch") {
         content = <PanelMessage message={BuilderTermMismatchMessage} />;
     } else if (state === "switching") {

@@ -69,7 +69,10 @@ const BuilderWorkspace = memo(() => {
         [saveLayout]
     );
 
-    const handleHorizontalLayout = useCallback((sizes: number[]) => updateLayout({ terminal: sizes[0] }), [updateLayout]);
+    const handleHorizontalLayout = useCallback(
+        (sizes: number[]) => updateLayout({ terminal: sizes[0] }),
+        [updateLayout]
+    );
 
     const handleVerticalLayout = useCallback(
         (sizes: number[]) => updateLayout({ app: sizes[0], build: sizes[1] }),

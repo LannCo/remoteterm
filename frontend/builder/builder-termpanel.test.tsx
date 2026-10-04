@@ -34,7 +34,11 @@ vi.mock("@/app/store/builder-terminal", () => ({ openBuilderTerminal: h.open }))
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { BuilderFocusManager } from "@/builder/store/builder-focusmanager";
-import { BuilderTermMismatchMessage, BuilderTermModel, type BuilderTermState } from "@/builder/store/builder-term-model";
+import {
+    BuilderTermMismatchMessage,
+    BuilderTermModel,
+    type BuilderTermState,
+} from "@/builder/store/builder-term-model";
 import { BuilderTermPanel } from "./builder-termpanel";
 
 function renderPanel(state: BuilderTermState, extra?: () => void) {
@@ -76,7 +80,9 @@ describe("BuilderTermPanel", () => {
     });
 
     it("shows an Ensure error with a Retry button", () => {
-        const model = renderPanel("error", () => globalStore.set(BuilderTermModel.getInstance().errorAtom, "Could not start the terminals: boom"));
+        const model = renderPanel("error", () =>
+            globalStore.set(BuilderTermModel.getInstance().errorAtom, "Could not start the terminals: boom")
+        );
         const retry = vi.spyOn(model, "retry").mockImplementation(() => {});
         expect(screen.getByText("Could not start the terminals: boom")).toBeTruthy();
         fireEvent.click(screen.getByText("Retry"));
@@ -87,6 +93,7 @@ describe("BuilderTermPanel", () => {
         h.layoutModel = { numLeafs: atom(0) };
         renderPanel("ready", () => globalStore.set(BuilderTermModel.getInstance().tabIdAtom, "tab-1"));
         expect(screen.getByText("No terminals")).toBeTruthy();
+        fireEvent.mouseDown(screen.getByText("Open terminal"));
         fireEvent.click(screen.getByText("Open terminal"));
         expect(h.open).toHaveBeenCalledWith("", null);
         expect(BuilderFocusManager.getInstance().getFocusType()).toBe("app");
@@ -101,5 +108,17 @@ describe("BuilderTermPanel", () => {
         });
         expect(screen.queryByText("No terminals")).toBeNull();
         expect(BuilderFocusManager.getInstance().getFocusType()).toBe("terminal");
+    });
+
+    it("returns builder focus to the app when the layout unmounts with panes still counted", async () => {
+        h.layoutModel = { numLeafs: atom(2) };
+        const model = renderPanel("ready", () => globalStore.set(BuilderTermModel.getInstance().tabIdAtom, "tab-1"));
+        expect(BuilderFocusManager.getInstance().getFocusType()).toBe("terminal");
+        expect(model.hasPanes()).toBe(true);
+        await act(async () => {
+            model.setState("vanished");
+        });
+        expect(BuilderFocusManager.getInstance().getFocusType()).toBe("app");
+        expect(model.hasPanes()).toBe(false);
     });
 });
