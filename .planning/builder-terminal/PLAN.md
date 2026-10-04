@@ -7445,6 +7445,9 @@ save_run() { printf 'SID=%q\nEL=%q\nSRV=%q\nXDISP=%q\n' "$SID" "$EL" "$SRV" "$XD
 # leader (no job control in a non-interactive shell), so setsid in launch.sh runs in that same
 # process and its PID becomes the session id; session_of_port cross-checks it.
 launch_run() {  # $1 = log name
+    # The tool shell may have job control on; with it on, the background job is a process-group
+    # leader and setsid forks, so the session id would not equal $!.
+    set +m
     bash "$SCR/launch.sh" "$SCR" > "$SCR/logs/$1.log" 2>&1 &
     local lpid=$!
     SID= EL= SRV= XDISP=
@@ -8241,7 +8244,7 @@ for d in ~/.config/remoteterm* ~/.local/share/remoteterm* ~/.config/RemoteTerm* 
 done | sort -k3 > "$SCR/logs/user-files-after.txt"
 diff "$SCR/logs/user-files-before.txt" "$SCR/logs/user-files-after.txt" > "$SCR/logs/user-files-diff.txt"; cat "$SCR/logs/user-files-diff.txt"
 ls -d ~/waveapps/draft/e2e1 2>/dev/null && echo "ISOLATION FAIL: app folder created in the real HOME"
-stat -c '%Y %n' "$REPO/node_modules/.vite" "$REPO/node_modules/.vite-temp" 2>&1 | diff "$SCR/logs/vite-before.txt" - && echo "vite stamps unchanged"
+stat -c '%Y %n' "$REPO/node_modules/.vite" 2>&1 | diff <(grep -v vite-temp "$SCR/logs/vite-before.txt") - && echo "vite stamps unchanged (.vite-temp excluded: electron-vite build writes its bundled config there; this worktree owns its node_modules)"
 J=$(journal_check); JRC=$?
 if [ "$JRC" -ne 0 ]; then echo "journal NOT RUN: $J"; elif [ -z "$J" ]; then echo "journal PASS"; else echo "journal FAIL:"; echo "$J"; fi
 ```
