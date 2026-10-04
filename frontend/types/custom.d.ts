@@ -16,7 +16,7 @@ declare global {
         fullConfigAtom: jotai.PrimitiveAtom<FullConfigType>; // driven from WOS, settings -- updated via WebSocket
         settingsAtom: jotai.Atom<SettingsType>; // derrived from fullConfig
         hasConfigErrors: jotai.Atom<boolean>; // derived from fullConfig
-        staticTabId: jotai.Atom<string>;
+        staticTabId: jotai.PrimitiveAtom<string>; // set at init in main windows; set once by the builder terminal panel
         isFullScreen: jotai.PrimitiveAtom<boolean>;
         zoomFactorAtom: jotai.PrimitiveAtom<number>;
         controlShiftDelayAtom: jotai.PrimitiveAtom<boolean>;

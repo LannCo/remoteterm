@@ -64,10 +64,15 @@ export function keyboardMouseDownHandler(e: MouseEvent) {
     }
 }
 
+// focusedNodeId is not cleared when the root node is deleted, so focusedNode can be undefined
+// while the tree is empty (a builder with no panes).
 function getFocusedBlockInStaticTab(): string {
     const layoutModel = getLayoutModelForStaticTab();
+    if (layoutModel == null) {
+        return null;
+    }
     const focusedNode = globalStore.get(layoutModel.focusedNode);
-    return focusedNode.data?.blockId;
+    return focusedNode?.data?.blockId;
 }
 
 function getSimpleControlShiftAtom() {
@@ -152,7 +157,7 @@ function uxCloseBlock(blockId: string) {
     }
 
     const layoutModel = getLayoutModelForStaticTab();
-    const node = layoutModel.getNodeByBlockId(blockId);
+    const node = layoutModel?.getNodeByBlockId(blockId);
     if (node) {
         fireAndForget(() => layoutModel.closeNode(node.id));
     }
@@ -173,6 +178,9 @@ function genericClose() {
     }
 
     const layoutModel = getLayoutModelForStaticTab();
+    if (layoutModel == null) {
+        return;
+    }
     fireAndForget(layoutModel.closeFocusedNode.bind(layoutModel));
 }
 
@@ -189,6 +197,9 @@ function switchBlockByBlockNum(index: number) {
 
 function switchBlockInDirection(direction: NavigateDirection) {
     const layoutModel = getLayoutModelForStaticTab();
+    if (layoutModel == null) {
+        return;
+    }
     layoutModel.switchNodeFocusInDirection(direction);
     setTimeout(() => {
         globalRefocus();
@@ -247,6 +258,9 @@ function globalRefocus() {
     }
 
     const layoutModel = getLayoutModelForStaticTab();
+    if (layoutModel == null) {
+        return;
+    }
     const focusedNode = globalStore.get(layoutModel.focusedNode);
     if (focusedNode == null) {
         // focus a node
@@ -319,6 +333,58 @@ async function handleSplitVertical(position: "before" | "after") {
     await createBlockSplitVertically(blockDef, focusedNode.data.blockId, position);
 }
 
+function magnifyFocusedNode() {
+    const layoutModel = getLayoutModelForStaticTab();
+    if (layoutModel == null) {
+        return;
+    }
+    const focusedNode = globalStore.get(layoutModel.focusedNode);
+    if (focusedNode == null) {
+        return;
+    }
+    const ephemeralNode = globalStore.get(layoutModel.ephemeralNode);
+    if (ephemeralNode?.id === focusedNode.id) {
+        layoutModel.addEphemeralNodeToLayout();
+        return;
+    }
+    layoutModel.magnifyNodeToggle(focusedNode.id);
+}
+
+function activateSearch(event: WaveKeyboardEvent): boolean {
+    const bcm = getBlockComponentModel(getFocusedBlockInStaticTab());
+    const viewModel = bcm?.viewModel;
+    if (viewModel == null) {
+        return false;
+    }
+    // Ctrl+f is reserved in most shells
+    if (event.control && viewModel.viewType == "term") {
+        return false;
+    }
+    if (viewModel.searchAtoms) {
+        if (globalStore.get(viewModel.searchAtoms.isOpen)) {
+            // Already open — increment the focusInput counter so this block's
+            // SearchComponent focuses its own input (avoids a global DOM query
+            // that could target the wrong block when multiple searches are open).
+            const cur = globalStore.get(viewModel.searchAtoms.focusInput) as number;
+            globalStore.set(viewModel.searchAtoms.focusInput, cur + 1);
+        } else {
+            globalStore.set(viewModel.searchAtoms.isOpen, true);
+        }
+        return true;
+    }
+    return false;
+}
+
+function deactivateSearch(): boolean {
+    const bcm = getBlockComponentModel(getFocusedBlockInStaticTab());
+    const searchAtoms = bcm?.viewModel?.searchAtoms;
+    if (searchAtoms && globalStore.get(searchAtoms.isOpen)) {
+        globalStore.set(searchAtoms.isOpen, false);
+        return true;
+    }
+    return false;
+}
+
 let lastHandledEvent: KeyboardEvent | null = null;
 
 // returns [keymatch, T]
@@ -370,7 +436,7 @@ function appHandleKeyDown(waveEvent: WaveKeyboardEvent): boolean {
     }
     if (isTabWindow()) {
         const layoutModel = getLayoutModelForStaticTab();
-        const focusedNode = globalStore.get(layoutModel.focusedNode);
+        const focusedNode = layoutModel == null ? null : globalStore.get(layoutModel.focusedNode);
         const blockId = focusedNode?.data?.blockId;
         if (blockId != null && shouldDispatchToBlock(waveEvent)) {
             const bcm = getBlockComponentModel(blockId);
@@ -496,16 +562,7 @@ function registerGlobalKeys() {
         return true;
     });
     globalKeyMap.set("Cmd:m", () => {
-        const layoutModel = getLayoutModelForStaticTab();
-        const focusedNode = globalStore.get(layoutModel.focusedNode);
-        if (focusedNode != null) {
-            const ephemeralNode = globalStore.get(layoutModel.ephemeralNode);
-            if (ephemeralNode?.id === focusedNode.id) {
-                layoutModel.addEphemeralNodeToLayout();
-            } else {
-                layoutModel.magnifyNodeToggle(focusedNode.id);
-            }
-        }
+        magnifyFocusedNode();
         return true;
     });
     globalKeyMap.set("Ctrl:Shift:ArrowUp", () => {
@@ -629,34 +686,6 @@ function registerGlobalKeys() {
             switchBlockByBlockNum(idx);
             return true;
         });
-    }
-    function activateSearch(event: WaveKeyboardEvent): boolean {
-        const bcm = getBlockComponentModel(getFocusedBlockInStaticTab());
-        // Ctrl+f is reserved in most shells
-        if (event.control && bcm.viewModel.viewType == "term") {
-            return false;
-        }
-        if (bcm.viewModel.searchAtoms) {
-            if (globalStore.get(bcm.viewModel.searchAtoms.isOpen)) {
-                // Already open — increment the focusInput counter so this block's
-                // SearchComponent focuses its own input (avoids a global DOM query
-                // that could target the wrong block when multiple searches are open).
-                const cur = globalStore.get(bcm.viewModel.searchAtoms.focusInput) as number;
-                globalStore.set(bcm.viewModel.searchAtoms.focusInput, cur + 1);
-            } else {
-                globalStore.set(bcm.viewModel.searchAtoms.isOpen, true);
-            }
-            return true;
-        }
-        return false;
-    }
-    function deactivateSearch(): boolean {
-        const bcm = getBlockComponentModel(getFocusedBlockInStaticTab());
-        if (bcm.viewModel.searchAtoms && globalStore.get(bcm.viewModel.searchAtoms.isOpen)) {
-            globalStore.set(bcm.viewModel.searchAtoms.isOpen, false);
-            return true;
-        }
-        return false;
     }
     globalKeyMap.set("Cmd:f", activateSearch);
     globalKeyMap.set("Escape", () => {

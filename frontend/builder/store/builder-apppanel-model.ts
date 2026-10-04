@@ -47,7 +47,6 @@ export class BuilderAppPanelModel {
     statusUnsubFn: (() => void) | null = null;
     appGoUpdateUnsubFn: (() => void) | null = null;
     watchStatusUnsubFn: (() => void) | null = null;
-    configUnsubFn: (() => void) | null = null;
     appIdUnsubFn: (() => void) | null = null;
     lastWrittenContent: string = null;
     reconcileSeq = 0;
@@ -124,16 +123,6 @@ export class BuilderAppPanelModel {
             scope: WOS.makeORef("builder", builderId),
             handler: (event) => {
                 globalStore.set(this.watchStatusAtom, event.data);
-            },
-        });
-
-        // The builder window loads the config once at startup (initBuilder in
-        // frontend/remoteterm.ts) and, unlike main windows, never runs
-        // initGlobalWaveEventSubs; without this the live-rebuild toggle could not change.
-        this.configUnsubFn = waveEventSubscribeSingle({
-            eventType: "config",
-            handler: (event) => {
-                globalStore.set(atoms.fullConfigAtom, event.data.fullconfig);
             },
         });
 
@@ -538,10 +527,6 @@ export class BuilderAppPanelModel {
         if (this.watchStatusUnsubFn) {
             this.watchStatusUnsubFn();
             this.watchStatusUnsubFn = null;
-        }
-        if (this.configUnsubFn) {
-            this.configUnsubFn();
-            this.configUnsubFn = null;
         }
         if (this.appIdUnsubFn) {
             this.appIdUnsubFn();

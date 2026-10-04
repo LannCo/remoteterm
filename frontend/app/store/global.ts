@@ -52,7 +52,7 @@ function initGlobal(initOpts: GlobalInitOptions) {
     }
 }
 
-function initGlobalWaveEventSubs(initOpts: RemoteTermInitOpts) {
+function subscribeToSharedWaveEvents() {
     waveEventSubscribeSingle({
         eventType: "waveobj:update",
         handler: (event) => {
@@ -68,6 +68,21 @@ function initGlobalWaveEventSubs(initOpts: RemoteTermInitOpts) {
         },
     });
     waveEventSubscribeSingle({
+        eventType: "blockfile",
+        handler: (event) => {
+            // console.log("blockfile event update", event);
+            const fileSubject = peekFileSubject(event.data.zoneid, event.data.filename);
+            if (fileSubject != null) {
+                fileSubject.next(event.data);
+            }
+        },
+    });
+    setupBadgesSubscription();
+}
+
+function initGlobalWaveEventSubs(initOpts: RemoteTermInitOpts) {
+    subscribeToSharedWaveEvents();
+    waveEventSubscribeSingle({
         eventType: "userinput",
         handler: (event) => {
             const connName = event.data?.connname;
@@ -80,17 +95,12 @@ function initGlobalWaveEventSubs(initOpts: RemoteTermInitOpts) {
         },
         scope: initOpts.windowId,
     });
-    waveEventSubscribeSingle({
-        eventType: "blockfile",
-        handler: (event) => {
-            // console.log("blockfile event update", event);
-            const fileSubject = peekFileSubject(event.data.zoneid, event.data.filename);
-            if (fileSubject != null) {
-                fileSubject.next(event.data);
-            }
-        },
-    });
-    setupBadgesSubscription();
+}
+
+// The config event keeps settings such as the live-rebuild toggle current in builder windows. Builder panes
+// are local only, so there is no connection prompt to route and no userinput subscription.
+function initBuilderWaveEventSubs() {
+    subscribeToSharedWaveEvents();
 }
 
 const blockCache = new Map<string, Map<string, any>>();
@@ -492,7 +502,7 @@ async function fetchWaveFile(
 
 function setNodeFocus(nodeId: string) {
     const layoutModel = getLayoutModelForStaticTab();
-    layoutModel.focusNode(nodeId);
+    layoutModel?.focusNode(nodeId);
 }
 
 const objectIdWeakMap = new WeakMap();
@@ -726,6 +736,9 @@ function refocusNode(blockId: string) {
         }
     }
     const layoutModel = getLayoutModelForStaticTab();
+    if (layoutModel == null) {
+        return;
+    }
     const layoutNodeId = layoutModel.getNodeByBlockId(blockId);
     if (layoutNodeId?.id == null) {
         return;
@@ -888,6 +901,7 @@ export {
     isHiddenBlock,
     initGlobal,
     initGlobalWaveEventSubs,
+    initBuilderWaveEventSubs,
     isDev,
     isKeepAliveWidgetView,
     loadConnStatus,
