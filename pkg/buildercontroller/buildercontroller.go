@@ -75,6 +75,7 @@ type BuilderController struct {
 	pendingAppId       string
 	pendingEnv         map[string]string
 	lastBuildInputHash string
+	lastAnnouncedHash  string
 	watcher            *AppWatcher
 	runBuildFn         func(ctx context.Context, appId string, builderEnv map[string]string)
 }
@@ -368,6 +369,8 @@ func RequestRebuildAfterSave(builderId string, appId string, builderEnv map[stri
 	if bc == nil {
 		return
 	}
+	// The editor already holds what it just wrote, so the save itself is never announced.
+	bc.recordAnnouncedHash(appId)
 	bc.RequestRebuild(appId, builderEnv)
 }
 
@@ -394,6 +397,46 @@ func (bc *BuilderController) getLastBuildInputHash() string {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
 	return bc.lastBuildInputHash
+}
+
+// The announced hash is what the editor has been told about, kept apart from the build
+// hash: a build that starts inside the watcher's debounce folds an outside edit into the
+// build hash, and gating the announcement on that hash would leave the editor showing
+// older content as clean, ready to overwrite the edit on the next save.
+func (bc *BuilderController) recordAnnouncedHash(appId string) {
+	appDir, err := remotetermappstore.GetAppDir(appId)
+	if err != nil {
+		return
+	}
+	hash, err := ComputeAppInputHash(appDir)
+	if err != nil {
+		return
+	}
+	bc.setLastAnnouncedHash(hash)
+}
+
+func (bc *BuilderController) setLastAnnouncedHash(hash string) {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	bc.lastAnnouncedHash = hash
+}
+
+func (bc *BuilderController) getLastAnnouncedHash() string {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	return bc.lastAnnouncedHash
+}
+
+// Compare and set under one lock, so two change callbacks racing on the same edit
+// announce it once.
+func (bc *BuilderController) markAnnounced(hash string) bool {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	if hash == bc.lastAnnouncedHash {
+		return false
+	}
+	bc.lastAnnouncedHash = hash
+	return true
 }
 
 // AGENTS.md in the starter files quotes these two status lines, so a change here

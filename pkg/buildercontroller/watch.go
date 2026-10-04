@@ -37,6 +37,9 @@ func (bc *BuilderController) StartWatching(appId string) wshrpc.BuilderWatchStat
 		return makeUnavailableStatus(watchClosedReason)
 	}
 	bc.StopWatching()
+	// The editor has just loaded the app, so what is on disk now is the baseline; without
+	// it the first change event would be announced even when it changed nothing.
+	bc.recordAnnouncedHash(appId)
 	var self atomic.Pointer[AppWatcher]
 	watcher, err := MakeAppWatcher(appDir, func() {
 		bc.handleAppFilesChanged(appId)
@@ -113,11 +116,19 @@ func (bc *BuilderController) handleAppFilesChanged(appId string) {
 		return
 	}
 	hash, err := ComputeAppInputHash(appDir)
-	if err == nil && hash == bc.getLastBuildInputHash() {
+	if err != nil {
+		// Without a hash an echo cannot be told from an outside change, so every event
+		// counts as an outside change.
+		publishAppGoUpdated(appId)
+		if liveRebuildEnabled() {
+			bc.RequestRebuild(appId, builderEnv)
+		}
 		return
 	}
-	publishAppGoUpdated(appId)
-	if !liveRebuildEnabled() {
+	if bc.markAnnounced(hash) {
+		publishAppGoUpdated(appId)
+	}
+	if hash == bc.getLastBuildInputHash() || !liveRebuildEnabled() {
 		return
 	}
 	bc.RequestRebuild(appId, builderEnv)

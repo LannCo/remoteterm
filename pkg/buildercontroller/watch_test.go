@@ -55,6 +55,7 @@ func TestHandleAppFilesChangedSuppressesEcho(t *testing.T) {
 		t.Fatal(err)
 	}
 	bc.setLastBuildInputHash(hash)
+	bc.setLastAnnouncedHash(hash)
 	bc.handleAppFilesChanged("draft/echo")
 	if published.Load() != 0 || builds.Load() != 0 {
 		t.Fatalf("echo of our own build: %d events, %d builds; want 0 and 0", published.Load(), builds.Load())
@@ -70,6 +71,64 @@ func TestHandleAppFilesChangedSuppressesEcho(t *testing.T) {
 	waitUntil(t, 2*time.Second, func() bool { return builds.Load() == 1 }, "the live rebuild")
 	if env, _ := gotEnv.Load().(map[string]string); env["FOO"] != "bar" {
 		t.Fatalf("live rebuild env = %v, want the builder's rtinfo env", env)
+	}
+}
+
+// An outside edit that a build folds into its input hash before the watcher's debounce
+// fires must still reach the editor, or the editor keeps older content as clean and the
+// next save overwrites the edit.
+func TestOutsideEditFoldedIntoBuildIsStillAnnounced(t *testing.T) {
+	home, _ := setupBuilderTest(t)
+	appDir := makeTestApp(t, home, "folded")
+	published := overrideWatchSeams(t, true)
+	bc := GetOrCreateController("test-folded")
+	t.Cleanup(func() { DeleteController("test-folded") })
+	setBuilderRtInfoForTest(t, "test-folded", "draft/folded", nil)
+	var builds atomic.Int32
+	bc.runBuildFn = func(ctx context.Context, appId string, builderEnv map[string]string) { builds.Add(1) }
+
+	// Opening the window starts a build and then the watcher.
+	bc.RequestRebuild("draft/folded", nil)
+	waitUntil(t, 2*time.Second, func() bool { return builds.Load() == 1 && !bc.isBuilding() }, "the first build")
+	if status := bc.StartWatching("draft/folded"); status.Status != WatchStatus_Active {
+		t.Fatalf("status = %+v", status)
+	}
+	bc.StopWatching()
+	bc.handleAppFilesChanged("draft/folded")
+	time.Sleep(100 * time.Millisecond)
+	if published.Load() != 0 || builds.Load() != 1 {
+		t.Fatalf("a change event that changed nothing: %d events, %d builds; want 0 and 1", published.Load(), builds.Load())
+	}
+
+	if err := os.WriteFile(filepath.Join(appDir, "app.go"), []byte("package main // agent\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// A pending build (live on) or a Rebuild click (live off) starts inside the debounce.
+	bc.RequestRebuild("draft/folded", nil)
+	waitUntil(t, 2*time.Second, func() bool { return builds.Load() == 2 && !bc.isBuilding() }, "the build")
+	bc.handleAppFilesChanged("draft/folded")
+	bc.handleAppFilesChanged("draft/folded")
+	if n := published.Load(); n != 1 {
+		t.Fatalf("%d appgoupdated events for an outside edit folded into a build, want 1", n)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if n := builds.Load(); n != 2 {
+		t.Fatalf("%d builds, want 2: the second build already included the edit", n)
+	}
+
+	// The Code-tab save path.
+	if err := os.WriteFile(filepath.Join(appDir, "app.go"), []byte("package main // saved\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	RequestRebuildAfterSave("test-folded", "draft/folded", nil)
+	waitUntil(t, 2*time.Second, func() bool { return builds.Load() == 3 && !bc.isBuilding() }, "the save's build")
+	bc.handleAppFilesChanged("draft/folded")
+	time.Sleep(100 * time.Millisecond)
+	if n := published.Load(); n != 1 {
+		t.Fatalf("%d appgoupdated events after a Code-tab save, want still 1", n)
+	}
+	if n := builds.Load(); n != 3 {
+		t.Fatalf("%d builds after a Code-tab save, want 3", n)
 	}
 }
 
