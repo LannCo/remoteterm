@@ -265,7 +265,9 @@ func countTermBlocks(ctx context.Context, blockIds []string) (int, error) {
 	return count, nil
 }
 
-// The builder's own renderer may call this too: switchBuilderApp tears down before reloading.
+// The builder's own renderer may call this too: switchBuilderApp tears down before reloading. The RPC context
+// is deliberately unused for the delete: a window that is closing must not leave shells behind. There is no
+// tombstone, because switchBuilderApp reuses the builder id after calling this.
 func (ws *WshServer) DeleteBuilderCommand(ctx context.Context, builderId string) error {
 	if err := checkBuilderCaller(wshutil.GetRpcSourceFromContext(ctx), builderId, true); err != nil {
 		return err
@@ -280,8 +282,6 @@ func (ws *WshServer) DeleteBuilderCommand(ctx context.Context, builderId string)
 	return err
 }
 
-// The RPC context is deliberately unused: a window that is closing must not leave shells behind. There is no
-// tombstone, because switchBuilderApp reuses the builder id after calling this.
 func deleteBuilderTabs(ctx context.Context, builderId string) error {
 	tabs, err := rtcore.FindBuilderTabs(ctx, builderId)
 	if err != nil {
