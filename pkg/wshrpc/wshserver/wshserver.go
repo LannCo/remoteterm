@@ -1232,7 +1232,11 @@ func (ws *WshServer) CheckGoVersionCommand(ctx context.Context) (*wshrpc.Command
 	fullConfig := watcher.GetFullConfig()
 	goPath := fullConfig.Settings.TsunamiGoPath
 
-	result := build.CheckGoVersion(goPath, "")
+	minGoVersion := ""
+	if sdkPath, err := remotetermapputil.ResolveTsunamiSdkPath(fullConfig.Settings.TsunamiSdkReplacePath); err == nil {
+		minGoVersion, _ = build.ReadSdkGoVersion(sdkPath)
+	}
+	result := build.CheckGoVersion(goPath, minGoVersion)
 
 	return &wshrpc.CommandCheckGoVersionRtnData{
 		GoStatus:    result.GoStatus,

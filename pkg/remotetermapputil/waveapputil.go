@@ -22,12 +22,14 @@ const (
 )
 
 func GetTsunamiScaffoldPath() string {
-	settings := rtconfig.GetWatcher().GetFullConfig().Settings
-	scaffoldPath := settings.TsunamiScaffoldPath
-	if scaffoldPath == "" {
-		scaffoldPath = filepath.Join(remotetermbase.GetWaveAppResourcesPath(), "tsunamiscaffold")
+	return scaffoldPathFromSettings(rtconfig.GetWatcher().GetFullConfig().Settings)
+}
+
+func scaffoldPathFromSettings(settings rtconfig.SettingsType) string {
+	if settings.TsunamiScaffoldPath != "" {
+		return settings.TsunamiScaffoldPath
 	}
-	return scaffoldPath
+	return filepath.Join(remotetermbase.GetWaveAppResourcesPath(), "tsunamiscaffold")
 }
 
 func GetTsunamiSdkPath() string {

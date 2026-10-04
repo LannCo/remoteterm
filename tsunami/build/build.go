@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/LannCo/remoteterm/tsunami/util"
-	"golang.org/x/mod/modfile"
 )
 
 const (
@@ -300,74 +299,42 @@ func createGoMod(tempDir, appNS, appName string, buildEnv *BuildEnv, opts BuildO
 	}
 	modulePath := fmt.Sprintf("tsunami/%s/%s", appNS, appName)
 
-	// Check if go.mod already exists in temp directory (copied from app path)
 	tempGoModPath := filepath.Join(tempDir, "go.mod")
-	var modFile *modfile.File
-	var err error
-
-	if _, err := os.Stat(tempGoModPath); err == nil {
-		// go.mod exists in temp dir, parse it
-		if verbose {
-			oc.Printf("[debug] Found existing go.mod in temp directory, parsing it")
-		}
-
-		// Parse the existing go.mod
-		goModContent, err := os.ReadFile(tempGoModPath)
-		if err != nil {
-			return fmt.Errorf("failed to read go.mod: %w", err)
-		}
-
-		modFile, err = modfile.Parse("go.mod", goModContent, nil)
-		if err != nil {
-			return fmt.Errorf("failed to parse existing go.mod: %w", err)
-		}
-	} else if os.IsNotExist(err) {
-		// go.mod doesn't exist, create new one
-		if verbose {
-			oc.Printf("[debug] No existing go.mod found, creating new one")
-		}
-
-		modFile = &modfile.File{}
-		if err := modFile.AddModuleStmt(modulePath); err != nil {
-			return fmt.Errorf("failed to add module statement: %w", err)
-		}
-
-		if err := modFile.AddGoStmt(buildEnv.GoVersion); err != nil {
-			return fmt.Errorf("failed to add go version: %w", err)
-		}
-
-		// Add requirement for tsunami SDK
-		if err := modFile.AddRequire("github.com/LannCo/remoteterm/tsunami", opts.SdkVersion); err != nil {
-			return fmt.Errorf("failed to add require directive: %w", err)
-		}
-	} else {
+	existing, err := os.ReadFile(tempGoModPath)
+	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("error checking for go.mod in temp directory: %w", err)
 	}
-
-	// Add replace directive for tsunami SDK if path is provided
-	if opts.SdkReplacePath != "" {
-		if err := modFile.AddReplace("github.com/LannCo/remoteterm/tsunami", "", opts.SdkReplacePath, ""); err != nil {
-			return fmt.Errorf("failed to add replace directive: %w", err)
+	if verbose {
+		if existing != nil {
+			oc.Printf("[debug] Found existing go.mod in temp directory, parsing it")
+		} else {
+			oc.Printf("[debug] No existing go.mod found, creating new one")
 		}
 	}
 
-	// Format and write the file
-	modFile.Cleanup()
-	goModContent, err := modFile.Format()
-	if err != nil {
-		return fmt.Errorf("failed to format go.mod: %w", err)
+	goLine := opts.MinGoVersion
+	if goLine == "" {
+		goLine = buildEnv.GoVersion
 	}
-
-	goModPath := filepath.Join(tempDir, "go.mod")
-	if err := os.WriteFile(goModPath, goModContent, 0644); err != nil {
+	goModContent, err := makeGoModContent(existing, goModParams{
+		ModulePath:     modulePath,
+		GoVersion:      goLine,
+		MinGoVersion:   opts.MinGoVersion,
+		SdkVersion:     opts.SdkVersion,
+		SdkReplacePath: opts.SdkReplacePath,
+	})
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(tempGoModPath, goModContent, 0644); err != nil {
 		return fmt.Errorf("failed to write go.mod file: %w", err)
 	}
 
 	if verbose {
 		oc.Printf("[debug] Created go.mod with module path: %s", modulePath)
-		oc.Printf("[debug] Added require: github.com/LannCo/remoteterm/tsunami %s", opts.SdkVersion)
+		oc.Printf("[debug] Added require: %s %s", TsunamiSdkModulePath, opts.SdkVersion)
 		if opts.SdkReplacePath != "" {
-			oc.Printf("[debug] Added replace directive: github.com/LannCo/remoteterm/tsunami => %s", opts.SdkReplacePath)
+			oc.Printf("[debug] Added replace directive: %s => %s", TsunamiSdkModulePath, opts.SdkReplacePath)
 		}
 	}
 
