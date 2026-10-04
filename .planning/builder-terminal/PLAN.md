@@ -7342,7 +7342,7 @@ The recipe is the one that held for the builder-by-hand run, with its addendum a
 - Never read from or write to the user's `~/.config`, `~/.local/share`, `~/waveapps`, dotfiles, or a running RemoteTerm (the user's dev profile is `~/.config/remoteterm-dev` and `~/.local/share/remoteterm-dev`; it may be running). Use `REMOTETERM_CONFIG_HOME`/`REMOTETERM_DATA_HOME`, never `REMOTETERM_HOME` (a legacy combined-home variable with different semantics).
 - Never run `task dev`, `electron-vite dev` or `npm run dev`.
 - `REMOTETERM_ISOLATED_PROFILE=1` is set as the recipe requires. Note in the report that nothing in this worktree reads it (`grep -rn ISOLATED_PROFILE emain frontend pkg cmd` finds nothing here); isolation rests on the config and data homes, `--user-data-dir`, and the scratch `HOME`, XDG and `TMPDIR` dirs.
-- No window manager runs under Xvfb, so there is no title bar; the "title-bar close" check uses the renderer's `window.close()`, which takes the same BrowserWindow `close`/`closed` path. "Switch App" lives in a native context menu that cannot be clicked there; the check replays `switchBuilderApp`'s calls from the builder renderer (same RPCs, same `builder:<id>` route). `BuilderTermModel` is a module singleton that the page does not expose on `window`, so the replay cannot call `markSwitching()` first; the report must say that the "Switching app…" state is covered by unit tests only (Tasks 14 and 15). Say both substitutions in the report.
+- No window manager runs under Xvfb, so there is no title bar; the "title-bar close" check uses the renderer's `window.close()`, which takes the same BrowserWindow `close`/`closed` path. "Switch App" lives in a native context menu that cannot be clicked there; the check replays `switchBuilderApp`'s calls from the builder renderer (same RPCs, same `builder:<id>` route). `BuilderTermModel` is a module singleton that the page does not expose on `window` (attempt 2 confirmed `typeof window.BuilderTermModel` is `"undefined"`), so the replay cannot call `markSwitching()` first: the "Switching app…" state is covered by unit tests only (Tasks 14 and 15), and the report says so. Say both substitutions in the report.
 
 **Shell state and process ownership (every step):**
 - Shell variables do not survive between tool calls. Step 1 prints the scratch root; every later shell call, including each fenced block below, starts with `SCR=<that literal path>; source "$SCR/lib.sh" || exit 1` (written below as `SCR=/tmp/rtbt.XXXX`; substitute the real path). `lib.sh` refuses to load unless `SCR` is a `/tmp/rtbt.*` path and `REPO`, `PORT`, `START`, `NODEBIN` are restored from `$SCR/logs/env.txt`; it then restores `SID`, `EL`, `SRV`, `XDISP` from `$SCR/logs/run.env` once a launch has been recorded. Nothing else is carried between calls: each block recomputes what it needs (block ids, tab ids, focused pane) from the DB or the page.
@@ -7423,7 +7423,8 @@ show_own() { local l; l=$(own_procs | paste -sd,); if [ -n "$l" ]; then ps -o pi
 
 cdp() { node "$SCR/cdp.mjs" "$PORT" "$@"; }
 bcdp() { cdp "RTApp Builder" "$@"; }
-mcdp() { cdp "RemoteTerm" "$@"; }
+# The visible main window is titled "RemoteTerm - <tab>"; a hidden pre-warmed page titled plain "RemoteTerm" has no tab bar.
+mcdp() { cdp "RemoteTerm - " "$@"; }
 dbq() { python3 "$SCR/db.py" "$DB" "$@"; }
 builder_tabs() { dbq "SELECT oid, json_extract(data,'\$.blockids') FROM db_tab WHERE json_extract(data,'\$.meta.\"builder:owner\"') IS NOT NULL"; }
 builder_block_ids() { builder_tabs | python3 -c 'import json,sys; rows = json.loads(sys.stdin.read()); print(" ".join(json.loads(rows[0][1])) if rows else "")'; }
@@ -7533,7 +7534,8 @@ PY
 }
 focused_block() { bcdp eval "document.activeElement?.closest('[data-blockid]')?.dataset.blockid ?? null"; }
 builder_focus() { bcdp eval "document.querySelector('[data-builder-focus]')?.dataset.builderFocus ?? null"; }
-dom_panes() { bcdp eval "document.querySelectorAll('[data-builder-term-panel] .block[data-blockid]').length"; }
+# .tile-leaf only: TileLayout also renders an off-screen drag-image copy of every pane under .tile-preview.
+dom_panes() { bcdp eval "document.querySelectorAll('[data-builder-term-panel] .tile-leaf .block[data-blockid]').length"; }
 # Types a command into the focused pane and presses Enter.
 run_in_pane() { bcdp text "$1" && bcdp key Enter; }
 # Focuses a pane by clicking its terminal area.
@@ -7686,7 +7688,7 @@ Create `$SCR/cdp.mjs` (Chrome DevTools Protocol client using Node's built-in `fe
 ```js
 // Usage: node cdp.mjs <port> <title-substring> <command> [args...]
 // Commands: targets | eval <expr> | key <combo> | keys <combo>... | keyrepeat <combo> | text <string>
-//           click <css-selector> | clicktext <button-text> | drag <css-selector> <dx> | shot <file.png>
+//           click <css-selector> | clicktext <button-text> | drag <css-selector> <dx> [y] | shot <file.png>
 import fs from "node:fs";
 
 // A hung page or socket must not stall the run: give up after 30 s.
@@ -7790,7 +7792,10 @@ try {
         await mouse("mousePressed", x, y);
         await mouse("mouseReleased", x, y);
     } else if (cmd === "drag") {
-        const { x, y } = await centerOf(`document.querySelector(${JSON.stringify(args[0])})`);
+        // Presses at the element's centre, or at viewport y = args[2] on the same x when given.
+        const center = await centerOf(`document.querySelector(${JSON.stringify(args[0])})`);
+        const x = center.x;
+        const y = args[2] != null ? Number(args[2]) : center.y;
         const dx = Number(args[1]);
         await mouse("mousePressed", x, y);
         for (let step = 1; step <= 10; step++) {
@@ -7887,16 +7892,21 @@ run_in_pane "pwd > $T/s1.pwd; echo \$\$ > $T/p1.pid" && wait_file "$T/p1.pid" &&
 bcdp shot "$SCR/logs/s1.png"
 ```
 
-S5:
+S5. The divider runs the full height of the panel; below the app tab row it borders the Preview `<webview>`, whose input never reaches the host page. The first drag presses at a y between the handle's top and the webview's top (attempt 2 used y=70, the app tab row) and checks with `elementFromPoint` that the press lands on the handle. The second drag, after the reload checks, presses at the middle of the stretch the handle shares with the webview, so it crosses the Preview (a fix that turns off webview pointer events during a divider drag is meant to make it pass):
 
 ```bash
 SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh" || exit 1
+HANDLE='[data-builder-focus] > [data-panel-group] > [data-resize-handle]'
 PANEL="document.querySelector('[data-builder-focus] > [data-panel-group] > [data-panel]')?.dataset.panelSize ?? null"
-bcdp drag '[data-builder-focus] > [data-panel-group] > [data-resize-handle]' 200
+LAYOUT_JS="window.RpcApi.GetRTInfoCommand(window.TabRpcClient, {oref: 'builder:' + window.globalStore.get(window.globalAtoms.builderId)}).then((r) => r['builder:layout']?.terminal ?? null)"
+# A y between the handle's top and the webview's top, only if the handle is the element there.
+CLEAR_Y=$(bcdp eval "(() => { const h = document.querySelector('$HANDLE').getBoundingClientRect(); const w = document.querySelector('webview')?.getBoundingClientRect(); const top = h.top + 4; const limit = w && w.height > 0 ? Math.min(w.top, h.bottom) : h.bottom; const y = Math.round((top + limit) / 2); const x = h.left + h.width / 2; return limit - top > 8 && document.elementFromPoint(x, y)?.closest('[data-resize-handle]') ? y : null; })()")
+[[ "$CLEAR_Y" =~ ^[0-9]+$ ]] || { echo "ABORT: no point on the handle clear of the webview ($CLEAR_Y)"; exit 1; }
+bcdp drag "$HANDLE" 200 "$CLEAR_Y"
 sleep 1.5
 SIZE1=$(bcdp eval "$PANEL" | tr -d '"')
-LAYOUT=$(bcdp eval "window.RpcApi.GetRTInfoCommand(window.TabRpcClient, {oref: 'builder:' + window.globalStore.get(window.globalAtoms.builderId)}).then((r) => r['builder:layout']?.terminal ?? null)")
-echo "size=$SIZE1 layout.terminal=$LAYOUT"
+LAYOUT=$(bcdp eval "$LAYOUT_JS")
+echo "drag at y=$CLEAR_Y: size=$SIZE1 layout.terminal=$LAYOUT"
 python3 -c 'import sys; s, l = float(sys.argv[1]), float(sys.argv[2]); sys.exit(0 if s > 40 and abs(s - l) <= 1 else 1)' "$SIZE1" "$LAYOUT" 2>/dev/null \
     && echo "S5 size saved PASS" || echo "S5 size saved FAIL"
 builder_block_ids > "$SCR/logs/s5-blocks-before-reload.txt"
@@ -7908,9 +7918,23 @@ python3 -c 'import sys; sys.exit(0 if abs(float(sys.argv[1]) - float(sys.argv[2]
     && echo "S5 size after reload PASS ($SIZE2)" || echo "S5 size after reload FAIL ($SIZE2)"
 builder_block_ids | diff "$SCR/logs/s5-blocks-before-reload.txt" - && echo "reload kept the blocks PASS" || echo "reload kept the blocks FAIL"
 [[ "$(cat "$T/p1.pid" 2>/dev/null)" =~ ^[0-9]+$ ]] && kill -0 "$(cat "$T/p1.pid")" && echo "reload kept the shell PASS" || echo "reload kept the shell FAIL"
+# Second drag: across the Preview webview.
+CROSS_Y=$(bcdp eval "(() => { const h = document.querySelector('$HANDLE').getBoundingClientRect(); const w = document.querySelector('webview')?.getBoundingClientRect(); if (!w || w.height === 0) return null; const top = Math.max(h.top, w.top), bottom = Math.min(h.bottom, w.bottom); return bottom - top > 8 ? Math.round((top + bottom) / 2) : null; })()")
+if [[ "$CROSS_Y" =~ ^[0-9]+$ ]]; then
+    bcdp drag "$HANDLE" 100 "$CROSS_Y"
+    sleep 1.5
+    SIZE3=$(bcdp eval "$PANEL" | tr -d '"')
+    LAYOUT3=$(bcdp eval "$LAYOUT_JS")
+    HSTATE=$(bcdp eval "document.querySelector('$HANDLE')?.dataset.resizeHandleState ?? null")
+    echo "drag at y=$CROSS_Y: size $SIZE2 -> $SIZE3, layout.terminal=$LAYOUT3, handle state $HSTATE"
+    python3 -c 'import sys; a, b, l = map(float, sys.argv[1:4]); sys.exit(0 if b > a + 3 and abs(b - l) <= 1 else 1)' "$SIZE2" "$SIZE3" "$LAYOUT3" 2>/dev/null \
+        && [ "$HSTATE" != '"drag"' ] && echo "S5 drag across preview PASS" || echo "S5 drag across preview FAIL"
+else
+    echo "S5 drag across preview NOT RUN (no Preview webview beside the handle: $CROSS_Y)"
+fi
 ```
 
-Expected: every S5 line PASS: the panel size grows above 40 and `builder:layout.terminal` matches it (within 1); after the reload the size is the same, the builder tab's block ids are unchanged, and the p1 shell is alive (reload keeps panes).
+Expected: every S5 line PASS. The clear drag grows the panel above 40 and `builder:layout.terminal` matches it (within 1). After the reload the size is the same, the builder tab's block ids are unchanged, and the p1 shell is alive (reload keeps panes). The drag across the Preview grows the panel by more than 3 more, is saved, and leaves the handle out of its `drag` state. Attempt 2 found that this crossing drag stalls without the webview pointer-events fix (finding F1); report its line separately from the persistence checks.
 
 - [ ] **Step 6: S2 (Open terminal), S3 (keys, header split, two rapid splits), S8 (no builder tab in workspaces)**
 
@@ -8101,7 +8125,7 @@ s6_record || exit 1
 bcdp eval "window.close()"
 s6_check a
 T1=$(cdp x targets) || { echo "S6 a FAIL: targets probe failed"; exit 1; }
-echo "$T1" | grep -q "RemoteTerm" || { echo "S6 a FAIL: targets lists no main window, so absence proves nothing"; exit 1; }
+echo "$T1" | grep -q "RemoteTerm - " || { echo "S6 a FAIL: targets lists no main window, so absence proves nothing"; exit 1; }
 echo "$T1" | grep -q "RTApp Builder" && echo "S6 a FAIL: builder page still listed" || echo "S6 a builder page gone PASS"
 ```
 
@@ -8116,7 +8140,7 @@ bcdp clicktext "Code"; sleep 0.5
 bcdp key Alt+W
 s6_check b
 T1=$(cdp x targets) || { echo "S6 b FAIL: targets probe failed"; exit 1; }
-echo "$T1" | grep -q "RemoteTerm" || { echo "S6 b FAIL: targets lists no main window, so absence proves nothing"; exit 1; }
+echo "$T1" | grep -q "RemoteTerm - " || { echo "S6 b FAIL: targets lists no main window, so absence proves nothing"; exit 1; }
 echo "$T1" | grep -q "RTApp Builder" && echo "S6 b FAIL: builder page still listed" || echo "S6 b builder page gone PASS"
 ```
 
@@ -8134,7 +8158,7 @@ cdp x targets | grep -q "RTApp Builder" && [ "$(bcdp eval "!!document.querySelec
     && echo "S6 c window open with app selection PASS" || echo "S6 c window open with app selection FAIL"
 ```
 
-Expected: every S6 line PASS for all three paths: after (a) and (b) the builder page is gone from `targets`; after (c) the window is still open and shows the app selection modal (its `my-app` input, as in Step 5). For (c), `typeof window.BuilderTermModel` should print `"undefined"` (the model is not reachable): record in the report that `markSwitching()` was not exercised end to end and is covered by unit tests only. If it is reachable, call `window.BuilderTermModel.getInstance().markSwitching()` before the replay and record that instead. (The app panel's tab bar has a "Code" button, `frontend/builder/builder-apppanel.tsx`; any click inside the app column sets app focus.)
+Expected: every S6 line PASS for all three paths: after (a) and (b) the builder page is gone from `targets`; after (c) the window is still open and shows the app selection modal (its `my-app` input, as in Step 5). For (c), `typeof window.BuilderTermModel` prints `"undefined"` (attempt 2): the model is not reachable from the page, so `markSwitching()` is not exercised end to end and is covered by unit tests only (Tasks 14 and 15); the report says so. If it ever prints anything else, record that and stop: the replay would then be skipping a step the page can reach. (The app panel's tab bar has a "Code" button, `frontend/builder/builder-apppanel.tsx`; any click inside the app column sets app focus.)
 
 - [ ] **Step 10: S7 (sweep after a crash) and S10 (spoofed workspace tab survives)**
 
@@ -8169,12 +8193,21 @@ for id in $(cat "$SCR/logs/crash-blocks.txt"); do [ "$(block_exists "$id")" = "[
 WS_TAB=$(dbq "SELECT json_extract(data,'\$.tabids[0]') FROM db_workspace LIMIT 1" | python3 -c 'import json,sys; print(json.loads(sys.stdin.read())[0][0])')
 [ -n "$WS_TAB" ] || { echo "ABORT: no workspace tab to spoof"; exit 1; }
 echo "$WS_TAB" > "$SCR/logs/spoofed-tab.txt"
+# A tab's meta may be JSON null, which json_set cannot descend through (attempt 2's spoof was a silent no-op),
+# so merge into coalesce(meta, {}), then read the value back before relaunching.
 python3 - "$DB" "$WS_TAB" <<'PY'
 import sqlite3, sys
 conn = sqlite3.connect(sys.argv[1])
-conn.execute("""UPDATE db_tab SET data = json_set(data, '$.meta."builder:owner"', 'e2e-spoof') WHERE oid = ?""", (sys.argv[2],))
+conn.execute(
+    """UPDATE db_tab SET data = json_set(data, '$.meta', json_patch(coalesce(json_extract(data, '$.meta'), '{}'),
+       json_object('builder:owner', 'e2e-spoof'))) WHERE oid = ?""",
+    (sys.argv[2],),
+)
 conn.commit()
 PY
+[ "$(dbq "SELECT json_extract(data,'\$.meta.\"builder:owner\"') FROM db_tab WHERE oid = ?" "$WS_TAB")" = '[["e2e-spoof"]]' ] \
+    || { echo "ABORT: the spoof did not apply to $WS_TAB, so S10 would prove nothing"; exit 1; }
+echo "spoof applied to $WS_TAB"
 launch_run launch2 || { echo "ABORT: run Step 11 cleanup and report"; exit 1; }
 preflight 2
 # WAVESRV-ESTART is consumed by emain without logging it (emain/emain-remotetermsrv.ts:107-121). Its stand-ins: emain's
