@@ -135,3 +135,34 @@ func mustMkdir(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 }
+
+func TestBuildPreflightRefusesHardLinkedMovedBackFiles(t *testing.T) {
+	for _, rel := range []string{"go.mod", "go.sum", "manifest.json", "static/tw.css"} {
+		t.Run(rel, func(t *testing.T) {
+			home, _ := setupBuilderTest(t)
+			appDir := makeTestApp(t, home, "linked")
+			victim := filepath.Join(home, "victim")
+			if err := os.WriteFile(victim, []byte("precious"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			mustMkdir(t, filepath.Join(appDir, "static"))
+			if err := os.Link(victim, filepath.Join(appDir, rel)); err != nil {
+				t.Fatal(err)
+			}
+			err := checkAppBuildInputs(appDir)
+			if err == nil || !strings.Contains(err.Error(), "refusing to build: "+rel+" ") || !strings.Contains(err.Error(), "hard links") {
+				t.Fatalf("checkAppBuildInputs = %v, want a hard-link refusal naming %s", err, rel)
+			}
+		})
+	}
+
+	// A hard-linked file the build only reads is fine.
+	home, _ := setupBuilderTest(t)
+	appDir := makeTestApp(t, home, "readonly-link")
+	if err := os.Link(filepath.Join(appDir, "app.go"), filepath.Join(home, "app-copy.go")); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkAppBuildInputs(appDir); err != nil {
+		t.Fatalf("checkAppBuildInputs refused a hard-linked app.go: %v", err)
+	}
+}

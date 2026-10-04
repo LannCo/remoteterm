@@ -28,6 +28,13 @@ func ReadAppRootFile(root *os.Root, rel string, maxSize int64) ([]byte, error) {
 	return data, err
 }
 
+// HasOtherHardLinks is for callers outside this package that let something else write an
+// app file by path (the Tsunami build's move-back): a hard-linked file would be written
+// through to its other names. Always false where the platform reports no link count.
+func HasOtherHardLinks(info fs.FileInfo) bool {
+	return hasOtherHardLinks(info)
+}
+
 // An agent that can write the app folder could plant `.tsunami -> ~/.config` or a
 // `build.log` symlink, so the directory and the file both go through the in-root helpers.
 func WriteAppBuildLog(appId string, contents []byte) error {

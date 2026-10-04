@@ -19,6 +19,9 @@ const appStaticDir = "static"
 
 var buildRootFiles = []string{"go.mod", "go.sum", "manifest.json"}
 
+// The build copies these back into the app folder by path when it finishes.
+var buildMovedBackFiles = []string{"go.mod", "go.sum", "manifest.json", "static/tw.css"}
+
 // The Tsunami build reads and writes the app folder by path (os.DirFS, os.Create, go build
 // -o): a FIFO stalls it for good and a symlink carries its reads and writes outside the
 // folder. Checking everything it touches through the app root first turns both into a
@@ -46,7 +49,28 @@ func checkAppBuildInputs(appDir string) error {
 	if err := checkStaticDir(root); err != nil {
 		return err
 	}
+	if err := checkMovedBackFiles(root); err != nil {
+		return err
+	}
 	return checkBinDir(root)
+}
+
+// The move-back opens these with os.Create, which writes through a hard link to the file's
+// other names, wherever they are.
+func checkMovedBackFiles(root *os.Root) error {
+	for _, rel := range buildMovedBackFiles {
+		info, err := root.Lstat(rel)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("cannot inspect %s: %w", rel, err)
+		}
+		if remotetermappstore.HasOtherHardLinks(info) {
+			return fmt.Errorf("refusing to build: %s in the app folder has other hard links, and the build would write through them", rel)
+		}
+	}
+	return nil
 }
 
 // fs.WalkDir follows a symlink at its starting point, so static itself is checked with
