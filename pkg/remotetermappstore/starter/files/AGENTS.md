@@ -7,8 +7,8 @@ This folder is a Tsunami app. Tsunami is a Go framework that renders a React-sty
 - Every `*.go` file directly in this folder, as `package main`. Files in subfolders are not compiled.
 - Everything under `static/`, embedded and served at `/static/<path>`.
 - The builder supplies `main()` and the module setup. Do not write a `main` function.
-- Do not define `func init()`; the build rejects it in `app.go`. For start-up work, define `func AppInit() error` in `app.go` (the build looks for it only in that file). It runs once before the app starts serving, and returning an error stops the app.
-- To use a third-party Go package, import it; the build adds it to `go.mod`.
+- Never define `func init()` in any file (the build checks `app.go` and rejects it there). For start-up work, define `func AppInit() error` in `app.go`; the build looks for it only in that file. It runs once before the app starts serving, and returning an error stops the app.
+- Prefer the Go standard library and the Tsunami SDK. If you import a third-party module, the build adds it to `go.mod` and must download it, so the build needs network access; if the user's machine may be offline, say so before adding one.
 
 ## Required declarations
 
@@ -46,6 +46,7 @@ The `.tsunami/` folder belongs to the builder; read from it, never write to it.
 ## After you change a file
 
 - The result of the most recent build is in `.tsunami/build.log`. Its last line is the build status: `status: running on port <n>` or `status: error`.
+- The builder rewrites this file when a build finishes. If the log is older than your last save, it does not describe your change yet: say the result is pending, or ask the user to rebuild.
 - If the status is `status: error`, the lines above it hold the compiler or build output. Fix the file and line it reports, then wait for the next build.
 - If `.tsunami/build.log` does not exist, no build has finished yet.
 - If the user has "Rebuild on external changes" turned off, saving a file does not start a build; the user clicks Rebuild in the builder. Until then `.tsunami/build.log` describes the previous build.

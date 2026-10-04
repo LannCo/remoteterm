@@ -614,11 +614,11 @@ var ToggleCounter = app.DefineComponent("ToggleCounter", func(props ToggleCounte
 
 	// 2. Effects and goroutines next. Two steps: first define the function, then call the hook.
 	//    Only close over atoms and refs, not values (they can be stale)
-	incrementCounterFn := func() func() {
-		renderCountRef.Current = renderCountRef.Current + 1
+	logVisibilityFn := func() func() {
+		log.Printf("%s visible: %v", props.Title, visibleAtom.Get())
 		return nil
 	}
-	app.UseEffect(incrementCounterFn, []any{})
+	app.UseEffect(logVisibilityFn, []any{visibleAtom.Get()})
 
 	// 3. Event handlers (close over atoms, not values)
 	handleToggle := func() {
@@ -630,8 +630,10 @@ var ToggleCounter = app.DefineComponent("ToggleCounter", func(props ToggleCounte
 		visibleAtom.Set(true)
 	}
 
-	// 4. Atom reads (fresh values right before render)
-	//    Read here so these values are not used by accident in the closures above
+	// 4. Atom and ref reads (fresh values right before render)
+	//    Read here so these values are not used by accident in the closures above.
+	//    Writing a ref does not cause a re-render, so this counts renders without adding any
+	renderCountRef.Current++
 	isVisible := visibleAtom.Get()
 	renderCount := renderCountRef.Current
 
@@ -774,7 +776,7 @@ TodoItem(TodoItemProps{
 
 Components in Tsunami:
 
-- Use Go structs with json tags for props (a component can also take `map[string]any` or `any`)
+- Use Go structs with json tags for props. Props must be a struct: other props values are dropped silently, so a component without props takes `struct{}`
 - Take props as their single argument
 - Return elements created with vdom.H (or nil to render nothing)
 - Can use all hooks (app.UseLocal, app.UseRef, etc)
@@ -1247,7 +1249,7 @@ func renderLineChart(data []MetricsPoint) any {
 }
 ```
 
-Supported components: `ResponsiveContainer`; the charts `LineChart`, `AreaChart`, `BarChart`, `PieChart`, `ScatterChart`, `RadarChart`, `ComposedChart`, `FunnelChart` and `Treemap`; the series `Line`, `Area`, `Bar`, `Pie`, `Cell`, `Scatter`, `Radar` and `Funnel`; and `CartesianGrid`, `XAxis`, `YAxis`, `ZAxis`, `Tooltip`, `Legend`, `PolarGrid`, `PolarAngleAxis`, `PolarRadiusAxis`, `ReferenceLine`, `ReferenceArea`, `ReferenceDot`, `Brush`, `ErrorBar` and `LabelList`. Any other `recharts:` name renders an error placeholder.
+Supported components: `ResponsiveContainer`; the charts `LineChart`, `AreaChart`, `BarChart`, `PieChart`, `ScatterChart`, `RadarChart`, `ComposedChart`, `FunnelChart` and `Treemap`; the series `Line`, `Area`, `Bar`, `Pie`, `Cell`, `Scatter`, `Radar` and `Funnel`; and `CartesianGrid`, `XAxis`, `YAxis`, `ZAxis`, `Tooltip`, `Legend`, `PolarGrid`, `PolarAngleAxis`, `PolarRadiusAxis`, `ReferenceLine`, `ReferenceArea`, `ReferenceDot`, `Brush`, `ErrorBar` and `LabelList`. An unknown `recharts:` name renders an error placeholder when it is the outermost chart element; nested inside a chart, it is dropped silently.
 
 Rules for chart elements:
 

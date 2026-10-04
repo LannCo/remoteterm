@@ -186,7 +186,19 @@ func TestGuideHasNoStaleApiOrChatFraming(t *testing.T) {
 	}
 }
 
-func TestStarterAppCompilesAgainstBundledSdk(t *testing.T) {
+// sdkModuleEnv is a Go toolchain plus a private copy of the bundled SDK, for building
+// throwaway modules offline. Both module tests share it so they find go, and decide to
+// skip, by the same rules.
+type sdkModuleEnv struct {
+	goBin  string
+	env    []string
+	minGo  string
+	sdkSrc string
+	sdkDir string
+}
+
+func prepareSdkModuleEnv(t *testing.T, work string) sdkModuleEnv {
+	t.Helper()
 	goBin, err := exec.LookPath("go")
 	if err != nil {
 		// go test runs with the toolchain that built it, even when PATH lacks go.
@@ -195,8 +207,7 @@ func TestStarterAppCompilesAgainstBundledSdk(t *testing.T) {
 			t.Skip("go not found: not on PATH and not at runtime.GOROOT()/bin/go")
 		}
 	}
-	root := repoRoot(t)
-	sdkSrc := filepath.Join(root, "tsunami")
+	sdkSrc := filepath.Join(repoRoot(t), "tsunami")
 	minGo, err := build.ReadSdkGoVersion(sdkSrc)
 	if err != nil {
 		t.Fatal(err)
@@ -211,26 +222,41 @@ func TestStarterAppCompilesAgainstBundledSdk(t *testing.T) {
 	if localGo := strings.TrimSpace(string(verOut)); build.CompareGoVersions(localGo, minGo) < 0 {
 		t.Skipf("local %s is older than the SDK's go %s", localGo, minGo)
 	}
+	sdkDir := filepath.Join(work, "sdk")
+	if err := build.CopySdkBundle(sdkSrc, sdkDir); err != nil {
+		t.Fatal(err)
+	}
+	return sdkModuleEnv{goBin: goBin, env: env, minGo: minGo, sdkSrc: sdkSrc, sdkDir: sdkDir}
+}
 
-	work := t.TempDir()
-	sdk := filepath.Join(work, "sdk")
-	if err := build.CopySdkBundle(sdkSrc, sdk); err != nil {
-		t.Fatal(err)
+func (e sdkModuleEnv) goMod(module string) []byte {
+	return []byte(fmt.Sprintf("module %s\n\ngo %s\n\nrequire %s v0.12.4\n\nreplace %s => %q\n", module, e.minGo, build.TsunamiSdkModulePath, build.TsunamiSdkModulePath, e.sdkDir))
+}
+
+func (e sdkModuleEnv) run(dir string, args ...string) (string, error) {
+	cmd := exec.Command(e.goBin, args...)
+	cmd.Dir = dir
+	cmd.Env = e.env
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func (e sdkModuleEnv) tidyOrSkip(t *testing.T, dir string) {
+	t.Helper()
+	out, err := e.run(dir, "mod", "tidy")
+	if err == nil {
+		return
 	}
-	appDir := filepath.Join(work, "app")
-	mainTmpl, err := os.ReadFile(filepath.Join(sdkSrc, "templates", "app-main.go.tmpl"))
-	if err != nil {
-		t.Fatal(err)
+	if strings.Contains(out, "GOPROXY=off") || strings.Contains(out, "module lookup disabled") {
+		t.Skipf("module cache is cold, cannot resolve SDK dependencies offline:\n%s", out)
 	}
-	goMod := fmt.Sprintf("module tsunami/draft/starter\n\ngo %s\n\nrequire %s v0.12.4\n\nreplace %s => %q\n", minGo, build.TsunamiSdkModulePath, build.TsunamiSdkModulePath, sdk)
-	for rel, content := range map[string][]byte{
-		"go.mod":          []byte(goMod),
-		"app.go":          starterFile(t, AppGoFileName),
-		"app-main.go":     mainTmpl,
-		"dist/index.html": []byte("<!doctype html>\n"),
-		"static/tw.css":   []byte(""),
-	} {
-		path := filepath.Join(appDir, rel)
+	t.Fatalf("go mod tidy: %v\n%s", err, out)
+}
+
+func writeTree(t *testing.T, dir string, files map[string][]byte) {
+	t.Helper()
+	for rel, content := range files {
+		path := filepath.Join(dir, rel)
 		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 			t.Fatal(err)
 		}
@@ -238,20 +264,25 @@ func TestStarterAppCompilesAgainstBundledSdk(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	run := func(args ...string) (string, error) {
-		cmd := exec.Command(goBin, args...)
-		cmd.Dir = appDir
-		cmd.Env = env
-		out, err := cmd.CombinedOutput()
-		return string(out), err
+}
+
+func TestStarterAppCompilesAgainstBundledSdk(t *testing.T) {
+	work := t.TempDir()
+	e := prepareSdkModuleEnv(t, work)
+	mainTmpl, err := os.ReadFile(filepath.Join(e.sdkSrc, "templates", "app-main.go.tmpl"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if out, err := run("mod", "tidy"); err != nil {
-		if strings.Contains(out, "GOPROXY=off") || strings.Contains(out, "module lookup disabled") {
-			t.Skipf("module cache is cold, cannot resolve SDK dependencies offline:\n%s", out)
-		}
-		t.Fatalf("go mod tidy: %v\n%s", err, out)
-	}
-	if out, err := run("build", "-o", filepath.Join(work, "starter-bin"), "."); err != nil {
+	appDir := filepath.Join(work, "app")
+	writeTree(t, appDir, map[string][]byte{
+		"go.mod":          e.goMod("tsunami/draft/starter"),
+		"app.go":          starterFile(t, AppGoFileName),
+		"app-main.go":     mainTmpl,
+		"dist/index.html": []byte("<!doctype html>\n"),
+		"static/tw.css":   []byte(""),
+	})
+	e.tidyOrSkip(t, appDir)
+	if out, err := e.run(appDir, "build", "-o", filepath.Join(work, "starter-bin"), "."); err != nil {
 		t.Fatalf("the starter app does not compile against the bundled SDK: %v\n%s", err, out)
 	}
 }
