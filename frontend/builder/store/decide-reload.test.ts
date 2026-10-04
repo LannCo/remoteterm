@@ -7,6 +7,7 @@ import { decideReload } from "./decide-reload";
 describe("decideReload", () => {
     const cases: [string, string, string, string, string, ReturnType<typeof decideReload>][] = [
         ["app.go deleted", "A", "A", null, null, { kind: "missing" }],
+        ["dirty editor, app.go deleted", "B", "A", null, "A", { kind: "missing" }],
         ["echo of our own save", "A", "A", "A", "A", { kind: "sync-original", content: "A" }],
         ["outside write identical to unsaved edits", "B", "A", "B", null, { kind: "sync-original", content: "B" }],
         ["clean editor, disk changed", "A", "A", "C", null, { kind: "replace", content: "C" }],

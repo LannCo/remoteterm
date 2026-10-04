@@ -48,6 +48,7 @@ export class BuilderAppPanelModel {
     configUnsubFn: (() => void) | null = null;
     appIdUnsubFn: (() => void) | null = null;
     lastWrittenContent: string = null;
+    reconcileSeq = 0;
     initialized = false;
 
     private constructor() {
@@ -309,8 +310,15 @@ export class BuilderAppPanelModel {
             seedError = `Failed to create starter app: ${err.message || "Unknown error"}`;
         }
         // Reload even after a failure so files written before it show up. loadAppFile clears
-        // the error, so the seed error is set afterwards.
-        await this.loadAppFile(appId);
+        // the error, so the seed error is set afterwards. A dirty editor must not be replaced
+        // by the starter (or by "" after a failed seed), so it goes through decideReload and
+        // ends up as a conflict the user resolves.
+        if (globalStore.get(this.codeContentAtom) !== globalStore.get(this.originalContentAtom)) {
+            globalStore.set(this.errorAtom, "");
+            await this.reconcileWithDisk(appId);
+        } else {
+            await this.loadAppFile(appId);
+        }
         if (seedError != null) {
             globalStore.set(this.errorAtom, seedError);
         }
@@ -363,7 +371,11 @@ export class BuilderAppPanelModel {
                 builderid: globalStore.get(atoms.builderId),
             });
             const formattedContent = base64ToString(result.data64);
-            globalStore.set(this.codeContentAtom, formattedContent);
+            // Keystrokes typed while the save was in flight must survive; the formatted text
+            // only replaces the editor when it still holds exactly what was sent.
+            if (globalStore.get(this.codeContentAtom) === content) {
+                globalStore.set(this.codeContentAtom, formattedContent);
+            }
             globalStore.set(this.originalContentAtom, formattedContent);
             globalStore.set(this.appGoMissingAtom, false);
             globalStore.set(this.diskChangedAtom, null);
@@ -380,12 +392,22 @@ export class BuilderAppPanelModel {
         if (!liveRebuild) {
             globalStore.set(this.externalChangeAtom, true);
         }
+        await this.reconcileWithDisk(appId);
+    }
+
+    // A read that finishes after a newer one has started is dropped, so diskChangedAtom
+    // always holds the latest disk read and "Load disk version" never loads older content.
+    async reconcileWithDisk(appId: string) {
+        const seq = ++this.reconcileSeq;
         let disk: string = null;
         try {
             const result = await RpcApi.ReadAppFileCommand(TabRpcClient, { appid: appId, filename: "app.go" });
             disk = result.notfound ? null : base64ToString(result.data64);
         } catch (err) {
             console.error("Failed to read app.go after an outside change:", err);
+            return;
+        }
+        if (seq !== this.reconcileSeq) {
             return;
         }
         const decision = decideReload(
@@ -400,10 +422,12 @@ export class BuilderAppPanelModel {
     applyReloadDecision(decision: ReloadDecision) {
         if (decision.kind === "missing") {
             globalStore.set(this.appGoMissingAtom, true);
+            globalStore.set(this.diskChangedAtom, null);
             return;
         }
         globalStore.set(this.appGoMissingAtom, false);
         if (decision.kind === "none") {
+            globalStore.set(this.diskChangedAtom, null);
             return;
         }
         this.lastWrittenContent = null;
