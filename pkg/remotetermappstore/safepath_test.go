@@ -306,6 +306,7 @@ func TestRenameAppFileMovesRegularFile(t *testing.T) {
 func TestCopyDirSkipsSymlinksAndCopiesFiles(t *testing.T) {
 	skipWithoutSymlinks(t)
 	home := setupAppStoreTest(t)
+	setDataDir(t)
 	dir := makeAppDir(t, home, "draft", "demo")
 	outside := filepath.Join(t.TempDir(), "secret.txt")
 	if err := os.WriteFile(outside, []byte("secret"), 0644); err != nil {
@@ -346,6 +347,7 @@ func TestCopyDirSkipsSymlinksAndCopiesFiles(t *testing.T) {
 
 func TestCopyDirCopiesLargeFileAndKeepsMode(t *testing.T) {
 	home := setupAppStoreTest(t)
+	setDataDir(t)
 	dir := makeAppDir(t, home, "draft", "demo")
 	if err := os.MkdirAll(filepath.Join(dir, "static"), 0755); err != nil {
 		t.Fatal(err)

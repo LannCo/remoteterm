@@ -25,8 +25,7 @@ const (
 	MaxNamespaceLen = 30
 	MaxAppNameLen   = 50
 
-	ManifestFileName       = "manifest.json"
-	SecretBindingsFileName = "secret-bindings.json"
+	ManifestFileName = "manifest.json"
 )
 
 var (
@@ -158,6 +157,10 @@ func PublishDraft(draftAppId string) (string, error) {
 		return "", err
 	}
 
+	if err := copySecretBindings(draftAppId, localAppId); err != nil {
+		return "", err
+	}
+
 	return localAppId, nil
 }
 
@@ -186,7 +189,10 @@ func RevertDraft(draftAppId string) error {
 		return fmt.Errorf("local app does not exist: %s", localDir)
 	}
 
-	return copyDir(localDir, draftDir)
+	if err := copyDir(localDir, draftDir); err != nil {
+		return err
+	}
+	return copySecretBindings(localAppId, draftAppId)
 }
 
 func MakeDraftFromLocal(localAppId string) (string, error) {
@@ -225,6 +231,10 @@ func MakeDraftFromLocal(localAppId string) (string, error) {
 		return "", err
 	}
 
+	if err := copySecretBindings(localAppId, draftAppId); err != nil {
+		return "", err
+	}
+
 	return draftAppId, nil
 }
 
@@ -240,6 +250,10 @@ func DeleteApp(appId string) error {
 
 	if err := os.RemoveAll(appDir); err != nil {
 		return fmt.Errorf("failed to delete app directory: %w", err)
+	}
+
+	if err := deleteSecretBindings(appId); err != nil {
+		return err
 	}
 
 	return nil
@@ -715,6 +729,17 @@ func RenameLocalApp(appName string, newAppName string) error {
 		}
 	}
 
+	if localExists {
+		if err := moveSecretBindings(oldLocalAppId, newLocalAppId); err != nil {
+			return err
+		}
+	}
+	if draftExists {
+		if err := moveSecretBindings(MakeAppId(AppNSDraft, appName), MakeAppId(AppNSDraft, newAppName)); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -742,64 +767,6 @@ func ReadAppManifest(appId string) (*wshrpc.AppManifest, error) {
 	}
 
 	return &manifest, nil
-}
-
-func ReadAppSecretBindings(appId string) (map[string]string, error) {
-	if err := ValidateAppId(appId); err != nil {
-		return nil, fmt.Errorf("invalid appId: %w", err)
-	}
-
-	appDir, err := GetAppDir(appId)
-	if err != nil {
-		return nil, err
-	}
-
-	bindingsPath := filepath.Join(appDir, SecretBindingsFileName)
-	data, err := os.ReadFile(bindingsPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return make(map[string]string), nil
-		}
-		return nil, fmt.Errorf("failed to read %s: %w", SecretBindingsFileName, err)
-	}
-
-	var bindings map[string]string
-	if err := json.Unmarshal(data, &bindings); err != nil {
-		return nil, fmt.Errorf("failed to parse %s: %w", SecretBindingsFileName, err)
-	}
-
-	if bindings == nil {
-		bindings = make(map[string]string)
-	}
-
-	return bindings, nil
-}
-
-func WriteAppSecretBindings(appId string, bindings map[string]string) error {
-	if err := ValidateAppId(appId); err != nil {
-		return fmt.Errorf("invalid appId: %w", err)
-	}
-
-	appDir, err := GetAppDir(appId)
-	if err != nil {
-		return err
-	}
-
-	if bindings == nil {
-		bindings = make(map[string]string)
-	}
-
-	data, err := json.MarshalIndent(bindings, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal bindings: %w", err)
-	}
-
-	bindingsPath := filepath.Join(appDir, SecretBindingsFileName)
-	if err := os.WriteFile(bindingsPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write %s: %w", SecretBindingsFileName, err)
-	}
-
-	return nil
 }
 
 func BuildAppSecretEnv(appId string, manifest *wshrpc.AppManifest, bindings map[string]string) (map[string]string, error) {
