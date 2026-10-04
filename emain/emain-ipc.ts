@@ -21,7 +21,13 @@ import {
     getAllBuilderWindows,
     getBuilderWindowByWebContentsId,
 } from "./emain-builder";
-import { findBuilderWindowForApp, openPathDetached } from "./emain-builder-select";
+import {
+    BuilderTeardownTimeoutMs,
+    findBuilderWindowForApp,
+    openPathDetached,
+    parseBuilderTerminalTarget,
+    runBuilderTeardown,
+} from "./emain-builder-select";
 import { callWithOriginalXdgCurrentDesktopAsync, unamePlatform } from "./emain-platform";
 import { handleTabLoadSucceeded } from "./emain-tab-lifecycle";
 import { getRemoteTermTabViewByWebContentsId } from "./emain-tabview";
@@ -213,29 +219,39 @@ function saveImageFileWithNativeDialog(
 
 async function destroyBuilderWindow(bw: BuilderWindowType) {
     const builderId = bw.builderId;
-    if (builderId) {
-        try {
+    await runBuilderTeardown(bw, {
+        deleteBuilder: async () => {
+            if (!builderId) {
+                return;
+            }
+            await RpcApi.DeleteBuilderCommand(ElectronWshClient, builderId, { timeout: BuilderTeardownTimeoutMs });
+        },
+        deleteRtInfo: async () => {
+            if (!builderId) {
+                return;
+            }
             await RpcApi.SetRTInfoCommand(ElectronWshClient, {
                 oref: `builder:${builderId}`,
                 data: {} as ObjRTInfo,
                 delete: true,
             });
-        } catch (e) {
-            console.error("Error deleting builder rtinfo:", e);
-        }
-    }
-    const wc = bw.webContents;
-    if (wc.isDevToolsOpened()) {
-        wc.closeDevTools();
-    }
-    for (const guest of electron.webContents.getAllWebContents()) {
-        if (guest.getType() === "webview" && guest.hostWebContents?.id === wc.id) {
-            if (guest.isDevToolsOpened()) {
-                guest.closeDevTools();
+        },
+        destroyWindow: () => {
+            const wc = bw.webContents;
+            if (wc.isDevToolsOpened()) {
+                wc.closeDevTools();
             }
-        }
-    }
-    bw.destroy();
+            for (const guest of electron.webContents.getAllWebContents()) {
+                if (guest.getType() === "webview" && guest.hostWebContents?.id === wc.id) {
+                    if (guest.isDevToolsOpened()) {
+                        guest.closeDevTools();
+                    }
+                }
+            }
+            bw.destroy();
+        },
+        logError: (message, err) => console.error(message, err),
+    });
 }
 
 export function initIpcHandlers() {
@@ -532,13 +548,40 @@ export function initIpcHandlers() {
         await destroyBuilderWindow(bw);
     });
 
-    electron.ipcMain.handle("open-builder-terminal", async (event): Promise<string> => {
+    electron.ipcMain.handle("ensure-builder-tab", async (event): Promise<BuilderTabInfo> => {
+        const bw = getBuilderWindowByWebContentsId(event.sender.id);
+        if (bw == null) {
+            return { error: "This action is only available in a builder window." };
+        }
+        if (!bw.builderAppId) {
+            return { error: "No app is open in this builder window." };
+        }
+        try {
+            const rtn = await RpcApi.EnsureBuilderTabCommand(ElectronWshClient, {
+                builderid: bw.builderId,
+                appid: bw.builderAppId,
+            });
+            return { tabid: rtn.tabid, appid: rtn.appid };
+        } catch (e) {
+            return { error: `Could not start the terminals: ${e instanceof Error ? e.message : String(e)}` };
+        }
+    });
+
+    electron.ipcMain.handle("open-builder-terminal", async (event, target: unknown): Promise<string> => {
         const bw = getBuilderWindowByWebContentsId(event.sender.id);
         if (bw == null) {
             return "This action is only available in a builder window.";
         }
+        const parsed = parseBuilderTerminalTarget(target);
+        if (parsed.error) {
+            return parsed.error;
+        }
         try {
-            await RpcApi.OpenBuilderTerminalCommand(ElectronWshClient, { builderid: bw.builderId });
+            await RpcApi.OpenBuilderTerminalCommand(ElectronWshClient, {
+                builderid: bw.builderId,
+                targetblockid: parsed.targetblockid,
+                targetaction: parsed.targetaction,
+            });
         } catch (e) {
             return `Could not open a terminal: ${e instanceof Error ? e.message : String(e)}`;
         }

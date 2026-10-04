@@ -51,3 +51,75 @@ export async function openPathDetached(
     });
     return "";
 }
+
+export const MaxBuilderTargetLen = 64;
+export const BuilderTeardownTimeoutMs = 20000;
+
+const InvalidTargetMessage = "Invalid terminal target.";
+
+export type ParsedBuilderTerminalTarget = {
+    targetblockid: string;
+    targetaction: string;
+    error?: string;
+};
+
+// The server validates the action and the block, but the IPC argument is still untyped data from a
+// renderer, so only short strings are forwarded.
+export function parseBuilderTerminalTarget(target: unknown): ParsedBuilderTerminalTarget {
+    const rtn: ParsedBuilderTerminalTarget = { targetblockid: "", targetaction: "" };
+    if (target == null) {
+        return rtn;
+    }
+    if (typeof target !== "object") {
+        return { ...rtn, error: InvalidTargetMessage };
+    }
+    const fields = target as Record<string, unknown>;
+    for (const key of ["targetblockid", "targetaction"] as const) {
+        const val = fields[key];
+        if (val == null) {
+            continue;
+        }
+        if (typeof val !== "string" || val.length > MaxBuilderTargetLen) {
+            return { targetblockid: "", targetaction: "", error: InvalidTargetMessage };
+        }
+        rtn[key] = val;
+    }
+    return rtn;
+}
+
+export type TeardownWindow = {
+    tearingDown?: boolean;
+    isDestroyed(): boolean;
+    hide(): void;
+};
+
+export type BuilderTeardownSteps = {
+    deleteBuilder: () => Promise<unknown>;
+    deleteRtInfo: () => Promise<unknown>;
+    destroyWindow: () => void;
+    logError: (message: string, err: unknown) => void;
+};
+
+// The teardown can take up to BuilderTeardownTimeoutMs, so the window is hidden at once and a second close
+// request meanwhile (Alt+W again, set-builder-window-appid) is ignored. The builder's terminals are deleted
+// while its rtinfo still exists, and the window goes last whatever failed, so a dead server cannot keep it open.
+export async function runBuilderTeardown(win: TeardownWindow, steps: BuilderTeardownSteps): Promise<void> {
+    if (win.tearingDown || win.isDestroyed()) {
+        return;
+    }
+    win.tearingDown = true;
+    win.hide();
+    try {
+        await steps.deleteBuilder();
+    } catch (e) {
+        steps.logError("Error deleting builder:", e);
+    }
+    try {
+        await steps.deleteRtInfo();
+    } catch (e) {
+        steps.logError("Error deleting builder rtinfo:", e);
+    }
+    if (!win.isDestroyed()) {
+        steps.destroyWindow();
+    }
+}

@@ -74,6 +74,17 @@ declare global {
         windowId: string;
     };
 
+    type BuilderTerminalTarget = {
+        targetblockid?: string;
+        targetaction?: string;
+    };
+
+    type BuilderTabInfo = {
+        tabid?: string;
+        appid?: string;
+        error?: string;
+    };
+
     type ElectronApi = {
         getAuthKey(): string; // get-auth-key
         getIsDev(): boolean; // get-is-dev
@@ -123,7 +134,8 @@ declare global {
         nativePaste: () => void; // native-paste
         openBuilder: (appId?: string) => void; // open-builder
         setBuilderWindowAppId: (appId: string) => Promise<boolean>; // set-builder-window-appid
-        openBuilderTerminal: () => Promise<string>; // open-builder-terminal
+        ensureBuilderTab: () => Promise<BuilderTabInfo>; // ensure-builder-tab
+        openBuilderTerminal: (target?: BuilderTerminalTarget) => Promise<string>; // open-builder-terminal
         openBuilderFolder: () => Promise<string>; // open-builder-folder
         doRefresh: () => void; // do-refresh
         getPathForFile: (file: File) => string; // webUtils.getPathForFile
