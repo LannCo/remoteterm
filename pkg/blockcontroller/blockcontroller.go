@@ -615,20 +615,7 @@ func makeSwapToken(ctx context.Context, logCtx context.Context, blockId string, 
 	remotetermbase.SetDualEnv(token.Env, remotetermbase.WaveBlockIdVarName, remotetermbase.LegacyWaveBlockIdVarName, blockId)
 	token.Env[remotetermbase.WaveVersionVarName] = remotetermbase.WaveVersion
 	remotetermbase.SetDualEnv(token.Env, remotetermbase.WaveFlagVarName, remotetermbase.LegacyWaveFlagVarName, "1")
-	tabId, err := rtstore.DBFindTabForBlockId(ctx, blockId)
-	if err != nil {
-		log.Printf("error finding tab for block: %v\n", err)
-	} else {
-		remotetermbase.SetDualEnv(token.Env, remotetermbase.WaveTabIdVarName, remotetermbase.LegacyWaveTabIdVarName, tabId)
-	}
-	if tabId != "" {
-		wsId, err := rtstore.DBFindWorkspaceForTabId(ctx, tabId)
-		if err != nil {
-			log.Printf("error finding workspace for tab: %v\n", err)
-		} else {
-			remotetermbase.SetDualEnv(token.Env, remotetermbase.WaveWorkspaceIdVarName, remotetermbase.LegacyWaveWorkspaceIdVarName, wsId)
-		}
-	}
+	addTabAndWorkspaceEnv(ctx, token.Env, blockId)
 	remotetermbase.SetDualEnv(token.Env, remotetermbase.WaveClientIdVarName, remotetermbase.LegacyWaveClientIdVarName, rtstore.GetClientId())
 	remotetermbase.SetDualEnv(token.Env, remotetermbase.WaveConnVarName, remotetermbase.LegacyWaveConnVarName, remoteName)
 	envMap, err := resolveEnvMap(blockId, blockMeta, remoteName)
@@ -640,4 +627,26 @@ func makeSwapToken(ctx context.Context, logCtx context.Context, blockId string, 
 	}
 	token.ScriptText = getCustomInitScript(logCtx, blockMeta, remoteName, shellType)
 	return token
+}
+
+// A builder pane's tab joins no workspace; an empty workspace id is left unset rather than exported empty.
+func addTabAndWorkspaceEnv(ctx context.Context, env map[string]string, blockId string) {
+	tabId, err := rtstore.DBFindTabForBlockId(ctx, blockId)
+	if err != nil {
+		log.Printf("error finding tab for block: %v\n", err)
+		return
+	}
+	remotetermbase.SetDualEnv(env, remotetermbase.WaveTabIdVarName, remotetermbase.LegacyWaveTabIdVarName, tabId)
+	if tabId == "" {
+		return
+	}
+	wsId, err := rtstore.DBFindWorkspaceForTabId(ctx, tabId)
+	if err != nil {
+		log.Printf("error finding workspace for tab: %v\n", err)
+		return
+	}
+	if wsId == "" {
+		return
+	}
+	remotetermbase.SetDualEnv(env, remotetermbase.WaveWorkspaceIdVarName, remotetermbase.LegacyWaveWorkspaceIdVarName, wsId)
 }
