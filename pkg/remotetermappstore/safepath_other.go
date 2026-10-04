@@ -5,4 +5,11 @@
 
 package remotetermappstore
 
+import "io/fs"
+
 const nonBlockFlag = 0
+
+// The Windows FileInfo carries no link count, so the hard-link refusal is unix-only.
+func hasOtherHardLinks(info fs.FileInfo) bool {
+	return false
+}

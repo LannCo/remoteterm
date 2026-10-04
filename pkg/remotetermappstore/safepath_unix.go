@@ -5,7 +5,15 @@
 
 package remotetermappstore
 
-import "syscall"
+import (
+	"io/fs"
+	"syscall"
+)
 
 // Opening a FIFO without this flag blocks until a peer appears, which would hang the caller.
 const nonBlockFlag = syscall.O_NONBLOCK
+
+func hasOtherHardLinks(info fs.FileInfo) bool {
+	st, ok := info.Sys().(*syscall.Stat_t)
+	return ok && st.Nlink > 1
+}

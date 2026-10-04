@@ -62,7 +62,7 @@ func TestWriteAppBuildLogRefusesSymlinkedTsunamiDirInsideApp(t *testing.T) {
 	}
 }
 
-func TestWriteAppBuildLogRefusesSymlinkedLogFile(t *testing.T) {
+func TestWriteAppBuildLogReplacesSymlinkedLogFile(t *testing.T) {
 	skipWithoutSymlinks(t)
 	home := setupAppStoreTest(t)
 	dir := makeAppDir(t, home, "draft", "demo")
@@ -73,14 +73,45 @@ func TestWriteAppBuildLogRefusesSymlinkedLogFile(t *testing.T) {
 	if err := os.WriteFile(victim, []byte("precious"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(victim, filepath.Join(dir, ".tsunami", "build.log")); err != nil {
+	logPath := filepath.Join(dir, ".tsunami", "build.log")
+	if err := os.Symlink(victim, logPath); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteAppBuildLog("draft/demo", []byte("x")); err == nil {
-		t.Fatal("write through a symlinked build.log succeeded")
+	if err := WriteAppBuildLog("draft/demo", []byte("x")); err != nil {
+		t.Fatal(err)
 	}
 	if got, _ := os.ReadFile(victim); string(got) != "precious" {
 		t.Fatalf("the symlink target was overwritten: %q", got)
+	}
+	info, err := os.Lstat(logPath)
+	if err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("build.log is not a regular file after the write: %v %v", info, err)
+	}
+}
+
+func TestWriteAppBuildLogReplacesHardLinkedLogFile(t *testing.T) {
+	home := setupAppStoreTest(t)
+	dir := makeAppDir(t, home, "draft", "demo")
+	if err := os.Mkdir(filepath.Join(dir, ".tsunami"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Stands in for ~/.bashrc: outside the app folder, on the same filesystem.
+	victim := filepath.Join(home, "victim")
+	if err := os.WriteFile(victim, []byte("precious"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(dir, ".tsunami", "build.log")
+	if err := os.Link(victim, logPath); err != nil {
+		t.Skipf("hard links unavailable: %v", err)
+	}
+	if err := WriteAppBuildLog("draft/demo", []byte("compiler output\nstatus: error\n")); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(victim); string(got) != "precious" {
+		t.Fatalf("the hard link target was written: %q", got)
+	}
+	if got, _ := os.ReadFile(logPath); string(got) != "compiler output\nstatus: error\n" {
+		t.Fatalf("build log = %q", got)
 	}
 }
 

@@ -78,3 +78,34 @@ func TestWriteAppFileRefusesFifoWithReader(t *testing.T) {
 		t.Fatalf("data reached the FIFO reader: %q", buf[:n])
 	}
 }
+
+func TestWriteFileInRootRefusesHardLinkedTarget(t *testing.T) {
+	home := setupAppStoreTest(t)
+	dir := makeAppDir(t, home, "draft", "demo")
+	victim := filepath.Join(home, "victim")
+	if err := os.WriteFile(victim, []byte("precious"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(victim, filepath.Join(dir, "app.go")); err != nil {
+		t.Fatal(err)
+	}
+	root, err := openAppRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err := writeFileInRoot(root, "app.go", []byte("package main // agent\n")); err == nil {
+		t.Fatal("overwrote a file with another hard link")
+	}
+	if got, _ := os.ReadFile(victim); string(got) != "precious" {
+		t.Fatalf("the hard link target was written: %q", got)
+	}
+
+	// A plain single-link file is still overwritten in place.
+	if err := writeFileInRoot(root, "other.go", []byte("one")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFileInRoot(root, "other.go", []byte("two")); err != nil {
+		t.Fatalf("overwriting a single-link file failed: %v", err)
+	}
+}

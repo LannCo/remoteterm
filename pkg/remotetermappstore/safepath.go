@@ -203,6 +203,12 @@ func writeFileInRoot(root *os.Root, rel string, contents []byte) error {
 		f.Close()
 		return fmt.Errorf("refusing to overwrite %s: not a regular file", filepath.Base(rel))
 	}
+	// A hard link planted in the app folder shares its inode with a file outside it, so
+	// writing it would write that file; the in-root checks above cannot tell the two apart.
+	if hasOtherHardLinks(info) {
+		f.Close()
+		return fmt.Errorf("refusing to overwrite %s: it has other hard links", filepath.Base(rel))
+	}
 	if err := f.Truncate(0); err != nil {
 		f.Close()
 		return fmt.Errorf("failed to truncate %s: %w", filepath.Base(rel), err)

@@ -4,7 +4,9 @@
 package remotetermappstore
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 )
 
@@ -51,5 +53,10 @@ func WriteAppBuildLog(appId string, contents []byte) error {
 	if !info.IsDir() {
 		return fmt.Errorf("refusing to use %s: not a plain directory", BuildLogDir)
 	}
-	return writeFileInRoot(root, BuildLogFile, contents)
+	// Unlinking first and creating with O_EXCL means a build.log hard-linked to a file
+	// outside the app folder only loses its link here; the outside file is never written.
+	if err := root.Remove(BuildLogFile); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("failed to replace %s: %w", BuildLogFile, err)
+	}
+	return createFileExclusiveInRoot(root, BuildLogFile, contents)
 }
