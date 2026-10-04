@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -134,7 +136,7 @@ func TestProbeTakesLastLineAndPassesLoginFlags(t *testing.T) {
 	}
 }
 
-func TestProbeRejectsRelativePath(t *testing.T) {
+func TestProbeRejectsRelativeOutput(t *testing.T) {
 	isolateGoDiscovery(t)
 	shell := filepath.Join(t.TempDir(), "zsh")
 	writeExecutable(t, shell, "#!/bin/sh\necho go\n")
@@ -144,12 +146,27 @@ func TestProbeRejectsRelativePath(t *testing.T) {
 	}
 }
 
+func readPidFile(t *testing.T, path string) int {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("fixture did not record a background pid: %v", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		t.Fatalf("bad pid file %q: %v", data, err)
+	}
+	return pid
+}
+
 func TestProbeTimesOutWithBackgroundChild(t *testing.T) {
 	isolateGoDiscovery(t)
 	goProbeTimeout = 300 * time.Millisecond
-	shell := filepath.Join(t.TempDir(), "bash")
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "bgpid")
+	shell := filepath.Join(dir, "bash")
 	// The test PATH is an empty temp dir, so the script sets its own to reach sleep.
-	writeExecutable(t, shell, "#!/bin/sh\nPATH=/usr/bin:/bin\n(sleep 30) &\nsleep 30\n")
+	writeExecutable(t, shell, "#!/bin/sh\nPATH=/usr/bin:/bin\nsleep 30 &\necho $! > '"+pidFile+"'\nsleep 30\n")
 	start := time.Now()
 	_, err := probeLoginShellForGo(shell)
 	elapsed := time.Since(start)
@@ -159,8 +176,37 @@ func TestProbeTimesOutWithBackgroundChild(t *testing.T) {
 	if elapsed < goProbeTimeout {
 		t.Fatalf("probe returned after %v, before the timeout; the fixture did not hang", elapsed)
 	}
-	if elapsed > goProbeTimeout+goProbeWaitDelay+time.Second {
+	if elapsed > goProbeTimeout+500*time.Millisecond {
 		t.Fatalf("probe took %v; the process group was not killed", elapsed)
+	}
+	requireProcessGone(t, readPidFile(t, pidFile))
+}
+
+func TestProbeSucceedsAndReapsBackgroundJobAfterCleanExit(t *testing.T) {
+	isolateGoDiscovery(t)
+	dir := t.TempDir()
+	fakeGo := filepath.Join(dir, "real", "go")
+	writeExecutable(t, fakeGo, plainFakeGo)
+	pidFile := filepath.Join(dir, "bgpid")
+	shell := filepath.Join(dir, "bash")
+	writeExecutable(t, shell, "#!/bin/sh\nPATH=/usr/bin:/bin\nsleep 30 &\necho $! > '"+pidFile+"'\necho '"+fakeGo+"'\n")
+	got, err := probeLoginShellForGo(shell)
+	if err != nil || got != fakeGo {
+		t.Fatalf("probeLoginShellForGo = %q, %v; want %q", got, err, fakeGo)
+	}
+	requireProcessGone(t, readPidFile(t, pidFile))
+}
+
+func TestProbeKeepsLastLineAfterLargeOutput(t *testing.T) {
+	isolateGoDiscovery(t)
+	dir := t.TempDir()
+	fakeGo := filepath.Join(dir, "real", "go")
+	writeExecutable(t, fakeGo, plainFakeGo)
+	shell := filepath.Join(dir, "bash")
+	writeExecutable(t, shell, "#!/bin/sh\nPATH=/usr/bin:/bin\nhead -c 102400 /dev/zero | tr '\\0' x\necho\necho '"+fakeGo+"'\n")
+	got, err := probeLoginShellForGo(shell)
+	if err != nil || got != fakeGo {
+		t.Fatalf("probeLoginShellForGo = %q, %v; want %q", got, err, fakeGo)
 	}
 }
 
@@ -202,12 +248,82 @@ func TestFindGoCachesFailureFor30Seconds(t *testing.T) {
 	if n := countRuns(); n != 1 {
 		t.Fatalf("probe ran %d times within the failure TTL, want 1", n)
 	}
-	goCache.lock.Lock()
-	goCache.failedAt = time.Now().Add(-31 * time.Second)
-	goCache.lock.Unlock()
+	setFailedAgo := func(ago time.Duration) {
+		goCache.lock.Lock()
+		defer goCache.lock.Unlock()
+		goCache.failedAt = time.Now().Add(-ago)
+	}
+	setFailedAgo(29 * time.Second)
+	FindGoExecutable("")
+	if n := countRuns(); n != 1 {
+		t.Fatalf("probe ran %d times 29s after the failure, want 1", n)
+	}
+	setFailedAgo(31 * time.Second)
 	FindGoExecutable("")
 	if n := countRuns(); n != 2 {
 		t.Fatalf("probe ran %d times after the TTL expired, want 2", n)
+	}
+}
+
+func TestFindGoConcurrentCallersShareOneProbe(t *testing.T) {
+	isolateGoDiscovery(t)
+	dir := t.TempDir()
+	fakeGo := filepath.Join(dir, "real", "go")
+	writeExecutable(t, fakeGo, plainFakeGo)
+	counter := filepath.Join(dir, "count")
+	shell := filepath.Join(dir, "bash")
+	writeExecutable(t, shell, "#!/bin/sh\necho x >> '"+counter+"'\necho '"+fakeGo+"'\n")
+	t.Setenv("SHELL", shell)
+	const callers = 8
+	results := make([]string, callers)
+	errs := make([]error, callers)
+	var wg sync.WaitGroup
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results[i], errs[i] = FindGoExecutable("")
+		}()
+	}
+	wg.Wait()
+	for i := 0; i < callers; i++ {
+		if errs[i] != nil || results[i] != fakeGo {
+			t.Fatalf("caller %d: FindGoExecutable = %q, %v; want %q", i, results[i], errs[i], fakeGo)
+		}
+	}
+	data, _ := os.ReadFile(counter)
+	if n := strings.Count(string(data), "x"); n != 1 {
+		t.Fatalf("probe ran %d times for %d concurrent callers, want 1", n, callers)
+	}
+}
+
+func TestFindGoRediscoversWhenCachedPathIsDeleted(t *testing.T) {
+	isolateGoDiscovery(t)
+	dir := t.TempDir()
+	first := filepath.Join(dir, "first", "go")
+	second := filepath.Join(dir, "second", "go")
+	writeExecutable(t, first, plainFakeGo)
+	writeExecutable(t, second, plainFakeGo)
+	goSearchPaths = func(string) []string { return []string{first, second} }
+	got, err := FindGoExecutable("")
+	if err != nil || got != first {
+		t.Fatalf("FindGoExecutable = %q, %v; want %q", got, err, first)
+	}
+	if err := os.Remove(first); err != nil {
+		t.Fatal(err)
+	}
+	got, err = FindGoExecutable("")
+	if err != nil || got != second {
+		t.Fatalf("after the cached Go was deleted, FindGoExecutable = %q, %v; want %q", got, err, second)
+	}
+	if err := os.Remove(second); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FindGoExecutable(""); err == nil {
+		t.Fatal("expected not found once every Go is deleted")
+	}
+	if fmtPath := GetCachedGoFmtPath(); fmtPath != "" {
+		t.Fatalf("GetCachedGoFmtPath = %q after a failed rediscovery, want empty", fmtPath)
 	}
 }
 

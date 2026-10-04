@@ -5,8 +5,6 @@
 
 package build
 
-import "os/exec"
+import "testing"
 
-func setProbeProcessGroup(cmd *exec.Cmd) {}
-
-func killProbeGroup(cmd *exec.Cmd) {}
+func requireProcessGone(t *testing.T, pid int) {}

@@ -4,7 +4,6 @@
 package build
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -55,20 +54,18 @@ func (e *GoTooOldError) Error() string {
 
 var goCache = &goDiscoveryCache{}
 
+// cappedWriter keeps the trailing window of what it is given: the probe's answer is the
+// last line, so when a chatty rc file overflows the cap the newest bytes are the ones to keep.
 type cappedWriter struct {
-	buf bytes.Buffer
+	buf []byte
 	max int
 }
 
-// Writes past the cap are reported as accepted so a chatty rc file sees no EPIPE.
+// Writes are always reported as fully accepted so a chatty rc file sees no EPIPE.
 func (w *cappedWriter) Write(p []byte) (int, error) {
-	remain := w.max - w.buf.Len()
-	if remain > 0 {
-		if len(p) > remain {
-			w.buf.Write(p[:remain])
-		} else {
-			w.buf.Write(p)
-		}
+	w.buf = append(w.buf, p...)
+	if len(w.buf) > w.max {
+		w.buf = append(w.buf[:0], w.buf[len(w.buf)-w.max:]...)
 	}
 	return len(p), nil
 }
@@ -106,7 +103,14 @@ func (c *goDiscoveryCache) lookup(floor string) (bool, string, error) {
 		return false, "", nil
 	}
 	if c.goPath != "" {
-		return true, c.goPath, nil
+		// brew upgrade, a snap refresh or a mise/asdf uninstall can delete the versioned
+		// GOROOT this path was canonicalised to.
+		if isExecutableFile(c.goPath) {
+			return true, c.goPath, nil
+		}
+		c.goPath = ""
+		c.gofmtPath = ""
+		return false, "", nil
 	}
 	if c.failErr != nil && time.Since(c.failedAt) < goDiscoveryFailureTTL {
 		return true, "", c.failErr
@@ -119,6 +123,7 @@ func (c *goDiscoveryCache) setFailure(floor string, err error) {
 	defer c.lock.Unlock()
 	c.floor = floor
 	c.goPath = ""
+	c.gofmtPath = ""
 	c.failErr = err
 	c.failedAt = time.Now()
 }
@@ -173,12 +178,14 @@ func discoverGo(minGoVersion string) (string, error) {
 		}
 		return false
 	}
+	// First try the standard PATH lookup
 	if goPath, err := exec.LookPath(goExeName()); err == nil {
 		if absPath, err := filepath.Abs(goPath); err == nil && accept(absPath) {
 			return absPath, nil
 		}
 	}
 	home, _ := os.UserHomeDir()
+	// Check each path
 	for _, candidate := range goSearchPaths(home) {
 		if isExecutableFile(candidate) && accept(candidate) {
 			return candidate, nil
@@ -200,33 +207,64 @@ func discoverGo(minGoVersion string) (string, error) {
 }
 
 func readGoVersion(goPath string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), goVersionTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, goPath, "version")
-	cmd.Env = goCmdEnv()
-	out, err := cmd.Output()
+	out, err := runGoCmd(goVersionTimeout, goPath, "version")
 	if err != nil {
 		return "", err
 	}
-	goVer, ok := ParseGoVersionOutput(string(out))
+	goVer, ok := ParseGoVersionOutput(out)
 	if !ok {
 		return "", errors.New("unparseable go version output")
 	}
 	return goVer, nil
 }
 
+// Both discovery execs run under findLock, so a hung shim whose child keeps stdout open
+// must not be able to block discovery: WaitDelay and the group kill bound it.
+func runGoCmd(timeout time.Duration, goPath string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, goPath, args...)
+	cmd.Env = goCmdEnv()
+	output := &cappedWriter{max: goProbeMaxOutput}
+	if err := runBounded(ctx, cmd, output); err != nil {
+		return "", err
+	}
+	return string(output.buf), nil
+}
+
+// The group is killed after every run, not only on timeout: an rc file can leave a
+// background job holding stdout after the shell has exited, and that job must not outlive
+// the probe. A shell that printed its answer and exited 0 still counts as success when
+// only the pipe drain (ErrWaitDelay) was cut short.
+func runBounded(ctx context.Context, cmd *exec.Cmd, output *cappedWriter) error {
+	cmd.Stdout = output
+	cmd.WaitDelay = goProbeWaitDelay
+	setProbeProcessGroup(cmd)
+	runErr := cmd.Run()
+	killProbeGroup(cmd)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if errors.Is(runErr, exec.ErrWaitDelay) {
+		return nil
+	}
+	return runErr
+}
+
 func defaultGoSearchPaths(home string) []string {
+	// Define platform-specific paths to check
 	if runtime.GOOS == "windows" {
 		return []string{
 			`c:\go\bin\go.exe`,
 			`c:\program files\go\bin\go.exe`,
 		}
 	}
+	// Unix-like systems (macOS, Linux, etc.)
 	paths := []string{
-		"/opt/homebrew/bin/go",
-		"/usr/local/bin/go",
-		"/usr/local/go/bin/go",
-		"/usr/bin/go",
+		"/opt/homebrew/bin/go", // Homebrew on Apple Silicon
+		"/usr/local/bin/go",    // Traditional Homebrew or manual install
+		"/usr/local/go/bin/go", // Official Go installation
+		"/usr/bin/go",          // System package manager
 	}
 	if home != "" {
 		paths = append(paths, filepath.Join(home, ".local", "go", "bin", "go"))
@@ -302,17 +340,13 @@ func probeLoginShellForGo(shellPath string) (string, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, shellPath, args...)
 	output := &cappedWriter{max: goProbeMaxOutput}
-	cmd.Stdout = output
-	cmd.WaitDelay = goProbeWaitDelay
-	setProbeProcessGroup(cmd)
-	runErr := cmd.Run()
-	if ctx.Err() != nil {
-		return "", fmt.Errorf("login shell probe timed out after %v", goProbeTimeout)
+	if err := runBounded(ctx, cmd, output); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return "", fmt.Errorf("login shell probe timed out after %v", goProbeTimeout)
+		}
+		return "", fmt.Errorf("login shell probe failed: %w", err)
 	}
-	if runErr != nil {
-		return "", fmt.Errorf("login shell probe failed: %w", runErr)
-	}
-	line := lastNonEmptyLine(output.buf.String())
+	line := lastNonEmptyLine(string(output.buf))
 	if !filepath.IsAbs(line) {
 		return "", fmt.Errorf("login shell probe returned %q, not an absolute path", line)
 	}
@@ -335,13 +369,9 @@ func lastNonEmptyLine(s string) string {
 // Shims (mise, asdf) and /snap/bin wrappers are not the toolchain; asking the found
 // binary for its GOROOT gives the real go and a gofmt that sits beside it.
 func canonicalizeGoPath(found string) (string, string) {
-	ctx, cancel := context.WithTimeout(context.Background(), goEnvTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, found, "env", "GOROOT")
-	cmd.Env = goCmdEnv()
-	out, err := cmd.Output()
+	out, err := runGoCmd(goEnvTimeout, found, "env", "GOROOT")
 	if err == nil {
-		goroot := strings.TrimSpace(string(out))
+		goroot := strings.TrimSpace(out)
 		if filepath.IsAbs(goroot) {
 			rootGo := filepath.Join(goroot, "bin", goExeName())
 			if isExecutableFile(rootGo) {

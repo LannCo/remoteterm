@@ -22,3 +22,11 @@ func setProbeProcessGroup(cmd *exec.Cmd) {
 		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
 }
+
+// ESRCH (nothing left in the group) is the normal case after a clean exit.
+func killProbeGroup(cmd *exec.Cmd) {
+	if cmd.Process == nil {
+		return
+	}
+	syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+}
