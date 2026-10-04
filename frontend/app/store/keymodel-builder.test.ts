@@ -65,7 +65,17 @@ vi.mock("./windowtype", () => ({
 import { appHandleKeyDown, registerGlobalKeys, uxCloseBlock } from "./keymodel";
 
 function linuxKey(desc: string): WaveKeyboardEvent {
-    const ev: any = { type: "keydown", key: "", code: "", cmd: false, alt: false, option: false, meta: false, control: false, shift: false };
+    const ev: any = {
+        type: "keydown",
+        key: "",
+        code: "",
+        cmd: false,
+        alt: false,
+        option: false,
+        meta: false,
+        control: false,
+        shift: false,
+    };
     for (const part of desc.split(":")) {
         if (part === "Cmd") {
             ev.cmd = true;
@@ -84,7 +94,8 @@ function linuxKey(desc: string): WaveKeyboardEvent {
 }
 
 function makeLayoutModel(focusedBlockId: string) {
-    const focused = focusedBlockId == null ? undefined : { id: `node-${focusedBlockId}`, data: { blockId: focusedBlockId } };
+    const focused =
+        focusedBlockId == null ? undefined : { id: `node-${focusedBlockId}`, data: { blockId: focusedBlockId } };
     return {
         focusedNode: atom(focused),
         ephemeralNode: atom(undefined),

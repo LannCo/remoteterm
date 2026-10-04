@@ -16,7 +16,12 @@ vi.mock("@/store/global", async () => {
     const { atom } = await import("jotai");
     const settingAtom = atom(false);
     return {
-        atoms: { builderId: atom("builder-1"), builderAppId: atom("draft/app"), staticTabId: atom(null), fullConfigAtom: atom(null) },
+        atoms: {
+            builderId: atom("builder-1"),
+            builderAppId: atom("draft/app"),
+            staticTabId: atom(null),
+            fullConfigAtom: atom(null),
+        },
         getApi: vi.fn(() => ({})),
         getSettingsKeyAtom: vi.fn(() => settingAtom),
         WOS: { makeORef: (otype: string, oid: string) => `${otype}:${oid}` },
