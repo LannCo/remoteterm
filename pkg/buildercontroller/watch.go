@@ -4,14 +4,14 @@
 package buildercontroller
 
 import (
-	"log"
-
 	"github.com/LannCo/remoteterm/pkg/remotetermappstore"
 	"github.com/LannCo/remoteterm/pkg/remotetermobj"
 	"github.com/LannCo/remoteterm/pkg/rtconfig"
 	"github.com/LannCo/remoteterm/pkg/wps"
 	"github.com/LannCo/remoteterm/pkg/wshrpc"
 )
+
+const watchClosedReason = "the builder was closed"
 
 var liveRebuildEnabled = func() bool {
 	return rtconfig.GetWatcher().GetFullConfig().Settings.BuilderLiveRebuild
@@ -24,37 +24,68 @@ var publishAppGoUpdated = func(appId string) {
 	})
 }
 
-// appId must come from the builder's rtinfo, never from a request.
+// appId must come from the builder's rtinfo, never from a request. The watcher is built
+// outside bc.lock (it walks up to maxWatchedDirs directories) and swapped in under it.
 func (bc *BuilderController) StartWatching(appId string) wshrpc.BuilderWatchStatusData {
 	appDir, err := remotetermappstore.GetAppDir(appId)
 	if err != nil {
-		return wshrpc.BuilderWatchStatusData{Status: WatchStatus_Unavailable, Reason: err.Error()}
+		return makeUnavailableStatus(err.Error())
 	}
-	bc.lock.Lock()
-	defer bc.lock.Unlock()
-	bc.stopWatcher_nolock()
+	if bc.isClosed() {
+		return makeUnavailableStatus(watchClosedReason)
+	}
+	bc.StopWatching()
 	watcher, err := MakeAppWatcher(appDir, func() {
 		bc.handleAppFilesChanged(appId)
 	}, bc.publishWatchStatus)
 	if err != nil {
-		return wshrpc.BuilderWatchStatusData{Status: WatchStatus_Unavailable, Reason: err.Error()}
+		return makeUnavailableStatus(err.Error())
+	}
+	return bc.installWatcher(watcher)
+}
+
+func makeUnavailableStatus(reason string) wshrpc.BuilderWatchStatusData {
+	return wshrpc.BuilderWatchStatusData{Status: WatchStatus_Unavailable, Reason: reason}
+}
+
+// A controller that DeleteController closed while its watcher was being built must not
+// keep that watcher: nothing would ever close it, and it would hold one of the global
+// slots and an inotify descriptor until restart.
+func (bc *BuilderController) installWatcher(watcher *AppWatcher) wshrpc.BuilderWatchStatusData {
+	replaced, status := bc.swapWatcher(watcher)
+	if replaced != nil {
+		replaced.Close()
+	}
+	return status
+}
+
+func (bc *BuilderController) swapWatcher(watcher *AppWatcher) (*AppWatcher, wshrpc.BuilderWatchStatusData) {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	if bc.closed {
+		return watcher, makeUnavailableStatus(watchClosedReason)
+	}
+	cur := bc.watcher
+	if cur != nil && !cur.isClosed() && cur.appDir == watcher.appDir {
+		// A concurrent StartWatching for the same app got there first.
+		return watcher, wshrpc.BuilderWatchStatusData{Status: WatchStatus_Active}
 	}
 	bc.watcher = watcher
-	return wshrpc.BuilderWatchStatusData{Status: WatchStatus_Active}
+	return cur, wshrpc.BuilderWatchStatusData{Status: WatchStatus_Active}
 }
 
 func (bc *BuilderController) StopWatching() {
-	bc.lock.Lock()
-	defer bc.lock.Unlock()
-	bc.stopWatcher_nolock()
+	if watcher := bc.takeWatcher(); watcher != nil {
+		watcher.Close()
+	}
 }
 
-func (bc *BuilderController) stopWatcher_nolock() {
-	if bc.watcher == nil {
-		return
-	}
-	bc.watcher.Close()
+func (bc *BuilderController) takeWatcher() *AppWatcher {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	watcher := bc.watcher
 	bc.watcher = nil
+	return watcher
 }
 
 // Off by default: an agent sandboxed to the app folder must not be able to run code
@@ -63,6 +94,12 @@ func (bc *BuilderController) stopWatcher_nolock() {
 // the hash comparison here is what keeps that save from also triggering a live rebuild.
 func (bc *BuilderController) handleAppFilesChanged(appId string) {
 	if bc.isClosed() {
+		return
+	}
+	// The frontend can point a live builder at another app; a watcher left on the old
+	// one must neither announce its changes nor build and run it.
+	curAppId, builderEnv, err := GetBuilderRebuildInputs(bc.builderId)
+	if err != nil || curAppId != appId {
 		return
 	}
 	appDir, err := remotetermappstore.GetAppDir(appId)
@@ -75,11 +112,6 @@ func (bc *BuilderController) handleAppFilesChanged(appId string) {
 	}
 	publishAppGoUpdated(appId)
 	if !liveRebuildEnabled() {
-		return
-	}
-	_, builderEnv, err := GetBuilderRebuildInputs(bc.builderId)
-	if err != nil {
-		log.Printf("BuilderController: live rebuild of %s skipped: %v\n", appId, err)
 		return
 	}
 	bc.RequestRebuild(appId, builderEnv)

@@ -18,6 +18,7 @@ type watchRecorder struct {
 	lock     sync.Mutex
 	changes  int
 	statuses []string
+	reasons  []string
 }
 
 func (r *watchRecorder) onChange() {
@@ -30,6 +31,16 @@ func (r *watchRecorder) onStatus(status string, reason string) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	r.statuses = append(r.statuses, status)
+	r.reasons = append(r.reasons, reason)
+}
+
+func (r *watchRecorder) lastReason() string {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	if len(r.reasons) == 0 {
+		return ""
+	}
+	return r.reasons[len(r.reasons)-1]
 }
 
 func (r *watchRecorder) changeCount() int {
@@ -60,13 +71,19 @@ func shortWatchTimings(t *testing.T) {
 
 func startTestWatcher(t *testing.T, appDir string) *watchRecorder {
 	t.Helper()
+	rec, _ := startTestWatcherWithHandle(t, appDir)
+	return rec
+}
+
+func startTestWatcherWithHandle(t *testing.T, appDir string) (*watchRecorder, *AppWatcher) {
+	t.Helper()
 	rec := &watchRecorder{}
 	w, err := MakeAppWatcher(appDir, rec.onChange, rec.onStatus)
 	if err != nil {
 		t.Fatalf("MakeAppWatcher: %v", err)
 	}
 	t.Cleanup(w.Close)
-	return rec
+	return rec, w
 }
 
 func writeAppFileForTest(t *testing.T, appDir string, rel string, content string) {
@@ -214,5 +231,80 @@ func TestWatcherCloseReleasesFds(t *testing.T) {
 	}
 	if after := countFds(); after > before {
 		t.Fatalf("open fds went from %d to %d after closing watchers", before, after)
+	}
+}
+
+// A slow Add must not stall the goroutine that reads Events: on Windows fsnotify's Add
+// waits for a reply from the backend reader, which may be blocked sending to Events.
+func TestWatcherKeepsDrainingEventsWhileAddIsInFlight(t *testing.T) {
+	shortWatchTimings(t)
+	home, _ := setupBuilderTest(t)
+	appDir := makeTestApp(t, home, "slowadd")
+	writeAppFileForTest(t, appDir, "static/keep.txt", "x")
+	rec, w := startTestWatcherWithHandle(t, appDir)
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	releaseAdd := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(releaseAdd)
+	w.lock.Lock()
+	realAdd := w.addFn
+	w.addFn = func(dir string) error {
+		if strings.HasSuffix(dir, "slow") {
+			close(entered)
+			<-release
+		}
+		return realAdd(dir)
+	}
+	w.lock.Unlock()
+
+	if err := os.Mkdir(filepath.Join(appDir, "static", "slow"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	waitSignal(t, entered, "the Add of the new directory")
+	writeAppFileForTest(t, appDir, "static/other.png", "o")
+	waitUntil(t, 2*time.Second, func() bool { return rec.changeCount() >= 1 }, "a change while the Add is still blocked")
+	releaseAdd()
+}
+
+func TestWatcherRootReturnsOverDirCapReleasesSlot(t *testing.T) {
+	shortWatchTimings(t)
+	home, _ := setupBuilderTest(t)
+	appDir := makeTestApp(t, home, "regrow")
+	maxWatchedDirs = 3
+	rec := startTestWatcher(t, appDir)
+	staging := filepath.Join(home, "staging")
+	for _, sub := range []string{"a", "b", "c"} {
+		if err := os.MkdirAll(filepath.Join(staging, "static", sub), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.RemoveAll(appDir); err != nil {
+		t.Fatal(err)
+	}
+	// Renamed into place so the poller sees the whole tree at once.
+	if err := os.Rename(staging, appDir); err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, 3*time.Second, func() bool { return activeWatcherCount() == 0 }, "the slot to be released")
+	if rec.lastStatus() != WatchStatus_Unavailable || !strings.Contains(rec.lastReason(), "more than 3") {
+		t.Fatalf("status %q reason %q, want unavailable over the cap", rec.lastStatus(), rec.lastReason())
+	}
+}
+
+func TestWatcherDirCapOnCreatedDirReleasesSlot(t *testing.T) {
+	shortWatchTimings(t)
+	home, _ := setupBuilderTest(t)
+	appDir := makeTestApp(t, home, "growcap")
+	writeAppFileForTest(t, appDir, "static/keep.txt", "x")
+	maxWatchedDirs = 3
+	rec := startTestWatcher(t, appDir)
+	if err := os.MkdirAll(filepath.Join(appDir, "static", "a", "b"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, 3*time.Second, func() bool { return activeWatcherCount() == 0 }, "the slot to be released")
+	if rec.lastStatus() != WatchStatus_Unavailable || !strings.Contains(rec.lastReason(), "more than 3") {
+		t.Fatalf("status %q reason %q, want unavailable over the cap", rec.lastStatus(), rec.lastReason())
 	}
 }

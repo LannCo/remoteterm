@@ -29,7 +29,9 @@ var (
 	watchDebounce        = 300 * time.Millisecond
 	rootPollInterval     = 1 * time.Second
 	rootUnavailableAfter = 10 * time.Second
-	maxWatchedDirs       = 1000
+	// A directory cap bounds inotify watches (one per directory). On macOS kqueue opens a
+	// file descriptor per watched file, so this cap does not bound descriptor use there.
+	maxWatchedDirs = 1000
 )
 
 var (
@@ -44,6 +46,7 @@ type AppWatcher struct {
 	watchedDirs map[string]bool
 	onChange    func()
 	onStatus    func(status string, reason string)
+	addFn       func(dir string) error
 	debounce    *time.Timer
 	closed      bool
 	rootMissing bool
@@ -90,6 +93,7 @@ func MakeAppWatcher(appDir string, onChange func(), onStatus func(status string,
 		watchedDirs: make(map[string]bool),
 		onChange:    onChange,
 		onStatus:    onStatus,
+		addFn:       fsw.Add,
 		closeCh:     make(chan struct{}),
 	}
 	if err := w.addTree(); err != nil {
@@ -103,13 +107,33 @@ func MakeAppWatcher(appDir string, onChange func(), onStatus func(status string,
 }
 
 func (w *AppWatcher) Close() {
-	if !w.markClosed() {
+	w.shutdown(true)
+}
+
+// A goroutine owned by the watcher's WaitGroup cannot wait for the group, so the
+// watcher stops itself with wait=false; a later Close() still waits for the goroutines.
+func (w *AppWatcher) shutdown(wait bool) {
+	first := w.markClosed()
+	if first {
+		close(w.closeCh)
+		w.fsw.Close()
+	}
+	if wait {
+		w.wg.Wait()
+	}
+	if first {
+		releaseWatcherSlot()
+	}
+}
+
+// "Unavailable" has to mean stopped: a watcher that reports it but keeps its slot and
+// inotify descriptor would hold them until the builder window closes.
+func (w *AppWatcher) abort(reason string) {
+	if w.isClosed() {
 		return
 	}
-	close(w.closeCh)
-	w.fsw.Close()
-	w.wg.Wait()
-	releaseWatcherSlot()
+	w.onStatus(WatchStatus_Unavailable, reason)
+	w.shutdown(false)
 }
 
 func (w *AppWatcher) markClosed() bool {
@@ -189,29 +213,48 @@ func isWatchableNewDir(rel string) bool {
 	return true
 }
 
+// The directory is reserved in the map before the Add, and the lock is never held across
+// the Add: on Windows fsnotify's Add and Remove wait for a reply from the backend's reader,
+// which can be blocked sending to Events, so a lock held here would also block Close.
 func (w *AppWatcher) addWatch(dir string) error {
-	w.lock.Lock()
-	defer w.lock.Unlock()
-	if w.closed || w.watchedDirs[dir] {
-		return nil
+	addFn, err := w.reserveWatch(dir)
+	if err != nil || addFn == nil {
+		return err
 	}
-	if len(w.watchedDirs) >= maxWatchedDirs {
-		return fmt.Errorf("more than %d folders to watch in %s", maxWatchedDirs, w.appDir)
-	}
-	if err := w.fsw.Add(dir); err != nil {
+	if err := addFn(dir); err != nil {
+		w.releaseWatch(dir)
 		return fmt.Errorf("cannot watch %s: %w", dir, err)
 	}
-	w.watchedDirs[dir] = true
 	return nil
 }
 
+func (w *AppWatcher) reserveWatch(dir string) (func(string) error, error) {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	if w.closed || w.watchedDirs[dir] {
+		return nil, nil
+	}
+	if len(w.watchedDirs) >= maxWatchedDirs {
+		return nil, fmt.Errorf("more than %d folders to watch in %s", maxWatchedDirs, w.appDir)
+	}
+	w.watchedDirs[dir] = true
+	return w.addFn, nil
+}
+
+func (w *AppWatcher) releaseWatch(dir string) {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	delete(w.watchedDirs, dir)
+}
+
+// Only the map is updated: fsnotify drops the watch of a deleted directory itself, and
+// calling Remove from the goroutine that reads Events can deadlock on Windows.
 func (w *AppWatcher) forgetWatches(dir string) {
 	w.lock.Lock()
 	defer w.lock.Unlock()
 	prefix := dir + string(filepath.Separator)
 	for watched := range w.watchedDirs {
 		if watched == dir || strings.HasPrefix(watched, prefix) {
-			w.fsw.Remove(watched)
 			delete(w.watchedDirs, watched)
 		}
 	}
@@ -264,16 +307,34 @@ func (w *AppWatcher) handleEvent(event fsnotify.Event) {
 	rel = filepath.ToSlash(rel)
 	if event.Op&fsnotify.Create != 0 && isWatchableNewDir(rel) {
 		if info, err := os.Lstat(name); err == nil && info.IsDir() {
-			if err := w.addDirTree(name); err != nil {
-				w.onStatus(WatchStatus_Unavailable, err.Error())
-			}
-			w.scheduleChange()
+			w.scanNewDirAsync(name)
 			return
 		}
 	}
 	if IsRelevantAppPath(rel) {
 		w.scheduleChange()
 	}
+}
+
+// Adding watches is kept off the goroutine that reads Events (see addWatch). The scan
+// is followed by a change, because files created in the directory before its watch
+// existed produced no events.
+func (w *AppWatcher) scanNewDirAsync(dir string) {
+	if w.isClosed() {
+		return
+	}
+	w.wg.Add(1)
+	go func() {
+		defer w.wg.Done()
+		defer func() {
+			panichandler.PanicHandler("AppWatcher.scanNewDir", recover())
+		}()
+		if err := w.addDirTree(dir); err != nil {
+			w.abort(err.Error())
+			return
+		}
+		w.scheduleChange()
+	}()
 }
 
 func (w *AppWatcher) handleRootLost() {
@@ -321,7 +382,7 @@ func (w *AppWatcher) pollRoot() {
 		if info, err := os.Lstat(w.appDir); err == nil && info.IsDir() {
 			w.setRootPresent()
 			if err := w.addTree(); err != nil {
-				w.onStatus(WatchStatus_Unavailable, err.Error())
+				w.abort(err.Error())
 				return
 			}
 			w.onStatus(WatchStatus_Active, "")

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -128,6 +129,73 @@ func TestHandleAppFilesChangedIgnoredOnClosedController(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	if published.Load() != 0 || builds.Load() != 0 {
 		t.Fatalf("closed controller: %d events, %d builds; want 0 and 0", published.Load(), builds.Load())
+	}
+}
+
+func TestHandleAppFilesChangedIgnoresStaleAppId(t *testing.T) {
+	home, _ := setupBuilderTest(t)
+	appDir := makeTestApp(t, home, "old")
+	makeTestApp(t, home, "new")
+	published := overrideWatchSeams(t, true)
+	bc := makeBuilderController("test-stale")
+	// The window was repointed at draft/new after the watcher on draft/old was created.
+	setBuilderRtInfoForTest(t, "test-stale", "draft/new", nil)
+	var builds atomic.Int32
+	bc.runBuildFn = func(ctx context.Context, appId string, builderEnv map[string]string) { builds.Add(1) }
+	if err := os.WriteFile(filepath.Join(appDir, "app.go"), []byte("package main // stale\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	bc.handleAppFilesChanged("draft/old")
+	time.Sleep(200 * time.Millisecond)
+	if published.Load() != 0 || builds.Load() != 0 {
+		t.Fatalf("stale app id: %d events, %d builds; want 0 and 0", published.Load(), builds.Load())
+	}
+}
+
+func TestInstallWatcherOnControllerClosedMeanwhileReleasesSlot(t *testing.T) {
+	home, _ := setupBuilderTest(t)
+	appDir := makeTestApp(t, home, "racedelete")
+	bc := makeBuilderController("test-racedelete")
+	watcher, err := MakeAppWatcher(appDir, func() {}, func(string, string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// DeleteController closed the controller between StartWatching's check and the swap.
+	bc.markClosed()
+	status := bc.installWatcher(watcher)
+	if status.Status != WatchStatus_Unavailable {
+		t.Fatalf("status = %+v, want unavailable", status)
+	}
+	if n := activeWatcherCount(); n != 0 {
+		t.Fatalf("%d watchers active after installing on a closed controller, want 0", n)
+	}
+	if bc.watcher != nil {
+		t.Fatal("a closed controller kept a watcher")
+	}
+	if status := bc.StartWatching("draft/racedelete"); status.Status != WatchStatus_Unavailable || activeWatcherCount() != 0 {
+		t.Fatalf("StartWatching on a closed controller: %+v, %d active", status, activeWatcherCount())
+	}
+}
+
+func TestConcurrentStartWatchingKeepsOneWatcher(t *testing.T) {
+	home, _ := setupBuilderTest(t)
+	makeTestApp(t, home, "twice")
+	bc := makeBuilderController("test-twice")
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			bc.StartWatching("draft/twice")
+		}()
+	}
+	wg.Wait()
+	if n := activeWatcherCount(); n != 1 {
+		t.Fatalf("%d watchers active after concurrent StartWatching, want 1", n)
+	}
+	bc.StopWatching()
+	if n := activeWatcherCount(); n != 0 {
+		t.Fatalf("%d watchers active after StopWatching, want 0", n)
 	}
 }
 
