@@ -51,7 +51,9 @@ const previewElectronApi: ElectronApi = {
 
     nativePaste: () => {},
     openBuilder: (_appId?: string) => {},
-    setBuilderWindowAppId: (_appId: string) => {},
+    setBuilderWindowAppId: (_appId: string) => Promise.resolve(true),
+    openBuilderTerminal: () => Promise.resolve(""),
+    openBuilderFolder: () => Promise.resolve(""),
     doRefresh: () => {},
     saveTextFile: (_fileName: string, _content: string) => Promise.resolve(false),
     setIsActive: async () => {},

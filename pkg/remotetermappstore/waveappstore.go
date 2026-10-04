@@ -5,14 +5,14 @@ package remotetermappstore
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 
-	"github.com/LannCo/remoteterm/pkg/remotetermapputil"
 	"github.com/LannCo/remoteterm/pkg/remotetermbase"
 	"github.com/LannCo/remoteterm/pkg/secretstore"
 	"github.com/LannCo/remoteterm/pkg/util/fileutil"
@@ -26,8 +26,7 @@ const (
 	MaxNamespaceLen = 30
 	MaxAppNameLen   = 50
 
-	ManifestFileName       = "manifest.json"
-	SecretBindingsFileName = "secret-bindings.json"
+	ManifestFileName = "manifest.json"
 )
 
 var (
@@ -87,32 +86,46 @@ func GetAppDir(appId string) (string, error) {
 }
 
 func copyDir(src, dst string) error {
+	if err := CheckNoSymlinks(src); err != nil {
+		return err
+	}
+	if err := CheckNoSymlinks(dst); err != nil {
+		return err
+	}
+	srcRoot, err := openAppRoot(src)
+	if err != nil {
+		return err
+	}
+	defer srcRoot.Close()
+
 	if err := os.RemoveAll(dst); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove existing directory: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-		return fmt.Errorf("failed to create parent directory: %w", err)
+	if err := os.MkdirAll(dst, 0755); err != nil {
+		return fmt.Errorf("failed to create destination directory: %w", err)
 	}
+	dstRoot, err := openAppRoot(dst)
+	if err != nil {
+		return err
+	}
+	defer dstRoot.Close()
 
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+	// Only regular files and directories are copied: a planted symlink, device or FIFO
+	// must not carry outside data into the published or reverted app.
+	return fs.WalkDir(srcRoot.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		relPath, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
+		if rel == "." {
+			return nil
 		}
-		dstPath := filepath.Join(dst, relPath)
-
-		if info.IsDir() {
-			return os.MkdirAll(dstPath, info.Mode())
+		if d.IsDir() {
+			return dstRoot.MkdirAll(rel, 0755)
 		}
-
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
+		if !d.Type().IsRegular() {
+			return nil
 		}
-		return os.WriteFile(dstPath, data, info.Mode())
+		return copyRegularFileBetweenRoots(srcRoot, dstRoot, rel)
 	})
 }
 
@@ -141,7 +154,15 @@ func PublishDraft(draftAppId string) (string, error) {
 		return "", err
 	}
 
+	if err := requireSecretBindingsStorage(draftAppId, localAppId); err != nil {
+		return "", err
+	}
+
 	if err := copyDir(draftDir, localDir); err != nil {
+		return "", err
+	}
+
+	if err := copySecretBindings(draftAppId, localAppId); err != nil {
 		return "", err
 	}
 
@@ -173,7 +194,14 @@ func RevertDraft(draftAppId string) error {
 		return fmt.Errorf("local app does not exist: %s", localDir)
 	}
 
-	return copyDir(localDir, draftDir)
+	if err := requireSecretBindingsStorage(localAppId, draftAppId); err != nil {
+		return err
+	}
+
+	if err := copyDir(localDir, draftDir); err != nil {
+		return err
+	}
+	return copySecretBindings(localAppId, draftAppId)
 }
 
 func MakeDraftFromLocal(localAppId string) (string, error) {
@@ -208,8 +236,18 @@ func MakeDraftFromLocal(localAppId string) (string, error) {
 		return "", err
 	}
 
+	if err := requireSecretBindingsStorage(localAppId, draftAppId); err != nil {
+		return "", err
+	}
+
 	if err := copyDir(localDir, draftDir); err != nil {
 		return "", err
+	}
+
+	// A draft without its bindings would look complete to the next call, which returns
+	// early when the draft folder exists, so the half-made draft must not survive.
+	if err := copySecretBindings(localAppId, draftAppId); err != nil {
+		return "", errors.Join(err, os.RemoveAll(draftDir), deleteSecretBindings(draftAppId))
 	}
 
 	return draftAppId, nil
@@ -222,6 +260,12 @@ func DeleteApp(appId string) error {
 
 	appDir, err := GetAppDir(appId)
 	if err != nil {
+		return err
+	}
+
+	// Bindings go first: if their removal fails the app is still there to retry, whereas
+	// a surviving file with no app would be inherited by the next app with this id.
+	if err := deleteSecretBindings(appId); err != nil {
 		return err
 	}
 
@@ -275,12 +319,26 @@ func WriteAppFile(appId string, fileName string, contents []byte) error {
 		return err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+	if err := CheckNoSymlinks(filePath); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(appDir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
-
-	if err := os.WriteFile(filePath, contents, 0644); err != nil {
-		return fmt.Errorf("failed to write file: %w", err)
+	root, err := openAppRoot(appDir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	rel, err := filepath.Rel(appDir, filePath)
+	if err != nil {
+		return err
+	}
+	if err := root.MkdirAll(filepath.Dir(rel), 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+	if err := writeFileInRoot(root, rel, contents); err != nil {
+		return err
 	}
 
 	return nil
@@ -301,19 +359,25 @@ func ReadAppFile(appId string, fileName string) (*FileData, error) {
 		return nil, err
 	}
 
-	fileInfo, err := os.Stat(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to stat file: %w", err)
+	if err := CheckNoSymlinks(filePath); err != nil {
+		return nil, err
 	}
-
-	contents, err := os.ReadFile(filePath)
+	root, err := openAppRoot(appDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %w", err)
+		return nil, err
 	}
-
+	defer root.Close()
+	rel, err := filepath.Rel(appDir, filePath)
+	if err != nil {
+		return nil, err
+	}
+	contents, modTs, err := readRegularFileInRoot(root, rel, MaxAppFileReadSize)
+	if err != nil {
+		return nil, err
+	}
 	return &FileData{
 		Contents: contents,
-		ModTs:    fileInfo.ModTime().UnixMilli(),
+		ModTs:    modTs,
 	}, nil
 }
 
@@ -332,47 +396,23 @@ func DeleteAppFile(appId string, fileName string) error {
 		return err
 	}
 
-	if err := os.Remove(filePath); err != nil {
+	if err := CheckNoSymlinks(filepath.Dir(filePath)); err != nil {
+		return err
+	}
+	root, err := openAppRoot(appDir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	rel, err := filepath.Rel(appDir, filePath)
+	if err != nil {
+		return err
+	}
+	if err := root.Remove(rel); err != nil {
 		return fmt.Errorf("failed to delete file: %w", err)
 	}
 
 	return nil
-}
-
-func ReplaceInAppFile(appId string, fileName string, edits []fileutil.EditSpec) error {
-	if err := ValidateAppId(appId); err != nil {
-		return fmt.Errorf("invalid appId: %w", err)
-	}
-
-	appDir, err := GetAppDir(appId)
-	if err != nil {
-		return err
-	}
-
-	filePath, err := validateAndResolveFilePath(appDir, fileName)
-	if err != nil {
-		return err
-	}
-
-	return fileutil.ReplaceInFile(filePath, edits)
-}
-
-func ReplaceInAppFilePartial(appId string, fileName string, edits []fileutil.EditSpec) ([]fileutil.EditResult, error) {
-	if err := ValidateAppId(appId); err != nil {
-		return nil, fmt.Errorf("invalid appId: %w", err)
-	}
-
-	appDir, err := GetAppDir(appId)
-	if err != nil {
-		return nil, err
-	}
-
-	filePath, err := validateAndResolveFilePath(appDir, fileName)
-	if err != nil {
-		return nil, err
-	}
-
-	return fileutil.ReplaceInFilePartial(filePath, edits)
 }
 
 func RenameAppFile(appId string, fromFileName string, toFileName string) error {
@@ -395,44 +435,31 @@ func RenameAppFile(appId string, fromFileName string, toFileName string) error {
 		return fmt.Errorf("invalid destination path: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(toPath), 0755); err != nil {
+	if err := CheckNoSymlinks(fromPath); err != nil {
+		return err
+	}
+	if err := CheckNoSymlinks(toPath); err != nil {
+		return err
+	}
+	root, err := openAppRoot(appDir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	fromRel, err := filepath.Rel(appDir, fromPath)
+	if err != nil {
+		return err
+	}
+	toRel, err := filepath.Rel(appDir, toPath)
+	if err != nil {
+		return err
+	}
+	if err := root.MkdirAll(filepath.Dir(toRel), 0755); err != nil {
 		return fmt.Errorf("failed to create destination directory: %w", err)
 	}
 
-	if err := os.Rename(fromPath, toPath); err != nil {
+	if err := root.Rename(fromRel, toRel); err != nil {
 		return fmt.Errorf("failed to rename file: %w", err)
-	}
-
-	return nil
-}
-
-func FormatGoFile(appId string, fileName string) error {
-	if err := ValidateAppId(appId); err != nil {
-		return fmt.Errorf("invalid appId: %w", err)
-	}
-
-	appDir, err := GetAppDir(appId)
-	if err != nil {
-		return err
-	}
-
-	filePath, err := validateAndResolveFilePath(appDir, fileName)
-	if err != nil {
-		return err
-	}
-
-	if filepath.Ext(filePath) != ".go" {
-		return fmt.Errorf("file is not a Go file: %s", fileName)
-	}
-
-	gofmtPath, err := remotetermapputil.ResolveGoFmtPath()
-	if err != nil {
-		return fmt.Errorf("failed to resolve gofmt path: %w", err)
-	}
-
-	cmd := exec.Command(gofmtPath, "-w", filePath)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("gofmt failed: %w\nOutput: %s", err, string(output))
 	}
 
 	return nil
@@ -448,6 +475,9 @@ func ListAllAppFiles(appId string) (*fileutil.ReadDirResult, error) {
 		return nil, err
 	}
 
+	if err := CheckNoSymlinks(appDir); err != nil {
+		return nil, err
+	}
 	if _, err := os.Stat(appDir); os.IsNotExist(err) {
 		return nil, fmt.Errorf("app directory does not exist: %s", appDir)
 	}
@@ -696,10 +726,29 @@ func RenameLocalApp(appName string, newAppName string) error {
 		return fmt.Errorf("failed to check if new draft app exists: %w", err)
 	}
 
+	oldDraftAppId := MakeAppId(AppNSDraft, appName)
+	newDraftAppId := MakeAppId(AppNSDraft, newAppName)
+	if err := requireSecretBindingsStorage(oldLocalAppId, newLocalAppId, oldDraftAppId, newDraftAppId); err != nil {
+		return err
+	}
+
+	// Bindings move before the folders so a failure here changes nothing, and a folder
+	// failure below can put them back.
+	var bindingsMoves []secretBindingsMove
+	if localExists {
+		bindingsMoves = append(bindingsMoves, secretBindingsMove{from: oldLocalAppId, to: newLocalAppId})
+	}
+	if draftExists {
+		bindingsMoves = append(bindingsMoves, secretBindingsMove{from: oldDraftAppId, to: newDraftAppId})
+	}
+	if err := moveSecretBindingsAll(bindingsMoves); err != nil {
+		return fmt.Errorf("failed to move secret bindings: %w", err)
+	}
+
 	// Rename local app if it exists
 	if localExists {
 		if err := os.Rename(oldLocalDir, newLocalDir); err != nil {
-			return fmt.Errorf("failed to rename local app: %w", err)
+			return errors.Join(fmt.Errorf("failed to rename local app: %w", err), reverseSecretBindingsMoves(bindingsMoves))
 		}
 	}
 
@@ -712,7 +761,7 @@ func RenameLocalApp(appName string, newAppName string) error {
 					return fmt.Errorf("failed to rename draft app (and failed to rollback local rename: %v): %w", rollbackErr, err)
 				}
 			}
-			return fmt.Errorf("failed to rename draft app: %w", err)
+			return errors.Join(fmt.Errorf("failed to rename draft app: %w", err), reverseSecretBindingsMoves(bindingsMoves))
 		}
 	}
 
@@ -729,8 +778,10 @@ func ReadAppManifest(appId string) (*wshrpc.AppManifest, error) {
 		return nil, err
 	}
 
-	manifestPath := filepath.Join(appDir, ManifestFileName)
-	data, err := os.ReadFile(manifestPath)
+	if err := CheckNoSymlinks(filepath.Join(appDir, ManifestFileName)); err != nil {
+		return nil, err
+	}
+	data, _, err := readRegularFileCapped(filepath.Join(appDir, ManifestFileName), MaxAppFileReadSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", ManifestFileName, err)
 	}
@@ -741,64 +792,6 @@ func ReadAppManifest(appId string) (*wshrpc.AppManifest, error) {
 	}
 
 	return &manifest, nil
-}
-
-func ReadAppSecretBindings(appId string) (map[string]string, error) {
-	if err := ValidateAppId(appId); err != nil {
-		return nil, fmt.Errorf("invalid appId: %w", err)
-	}
-
-	appDir, err := GetAppDir(appId)
-	if err != nil {
-		return nil, err
-	}
-
-	bindingsPath := filepath.Join(appDir, SecretBindingsFileName)
-	data, err := os.ReadFile(bindingsPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return make(map[string]string), nil
-		}
-		return nil, fmt.Errorf("failed to read %s: %w", SecretBindingsFileName, err)
-	}
-
-	var bindings map[string]string
-	if err := json.Unmarshal(data, &bindings); err != nil {
-		return nil, fmt.Errorf("failed to parse %s: %w", SecretBindingsFileName, err)
-	}
-
-	if bindings == nil {
-		bindings = make(map[string]string)
-	}
-
-	return bindings, nil
-}
-
-func WriteAppSecretBindings(appId string, bindings map[string]string) error {
-	if err := ValidateAppId(appId); err != nil {
-		return fmt.Errorf("invalid appId: %w", err)
-	}
-
-	appDir, err := GetAppDir(appId)
-	if err != nil {
-		return err
-	}
-
-	if bindings == nil {
-		bindings = make(map[string]string)
-	}
-
-	data, err := json.MarshalIndent(bindings, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal bindings: %w", err)
-	}
-
-	bindingsPath := filepath.Join(appDir, SecretBindingsFileName)
-	if err := os.WriteFile(bindingsPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write %s: %w", SecretBindingsFileName, err)
-	}
-
-	return nil
 }
 
 func BuildAppSecretEnv(appId string, manifest *wshrpc.AppManifest, bindings map[string]string) (map[string]string, error) {

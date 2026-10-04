@@ -15,13 +15,31 @@ import * as keyutil from "../frontend/util/keyutil";
 import { fireAndForget, parseDataUrl } from "../frontend/util/util";
 import {    setWasActive,
 } from "./emain-activity";
-import { createBuilderWindow, getAllBuilderWindows, getBuilderWindowByWebContentsId } from "./emain-builder";
+import {
+    type BuilderWindowType,
+    createBuilderWindow,
+    getAllBuilderWindows,
+    getBuilderWindowByWebContentsId,
+} from "./emain-builder";
+import {
+    bringWindowToFront,
+    findBuilderWindowForApp,
+    openPathDetached,
+    pickTerminalWindow,
+} from "./emain-builder-select";
 import { callWithOriginalXdgCurrentDesktopAsync, unamePlatform } from "./emain-platform";
 import { handleTabLoadSucceeded } from "./emain-tab-lifecycle";
 import { getRemoteTermTabViewByWebContentsId } from "./emain-tabview";
 import { handleCtrlShiftState } from "./emain-util";
 import { getRemoteTermVersion } from "./emain-remotetermsrv";
-import { createNewRemoteTermWindow, getRemoteTermWindowByWebContentsId } from "./emain-window";
+import {
+    createNewRemoteTermWindow,
+    focusedRemoteTermWindow,
+    getAllRemoteTermWindows,
+    getQuakeWindow,
+    getRemoteTermWindowByWebContentsId,
+    revealQuakeWindow,
+} from "./emain-window";
 import { ElectronWshClient } from "./emain-wsh";
 
 const electronApp = electron.app;
@@ -203,6 +221,33 @@ function saveImageFileWithNativeDialog(
         .catch((err) => {
             console.log("error trying to save file", err);
         });
+}
+
+async function destroyBuilderWindow(bw: BuilderWindowType) {
+    const builderId = bw.builderId;
+    if (builderId) {
+        try {
+            await RpcApi.SetRTInfoCommand(ElectronWshClient, {
+                oref: `builder:${builderId}`,
+                data: {} as ObjRTInfo,
+                delete: true,
+            });
+        } catch (e) {
+            console.error("Error deleting builder rtinfo:", e);
+        }
+    }
+    const wc = bw.webContents;
+    if (wc.isDevToolsOpened()) {
+        wc.closeDevTools();
+    }
+    for (const guest of electron.webContents.getAllWebContents()) {
+        if (guest.getType() === "webview" && guest.hostWebContents?.id === wc.id) {
+            if (guest.isDevToolsOpened()) {
+                guest.closeDevTools();
+            }
+        }
+    }
+    bw.destroy();
 }
 
 export function initIpcHandlers() {
@@ -470,13 +515,23 @@ export function initIpcHandlers() {
         openBuilderWindow(appId);
     });
 
-    electron.ipcMain.on("set-builder-window-appid", (event, appId: string) => {
+    electron.ipcMain.handle("set-builder-window-appid", async (event, appId: string): Promise<boolean> => {
         const bw = getBuilderWindowByWebContentsId(event.sender.id);
         if (bw == null) {
-            return;
+            return false;
+        }
+        const other = findBuilderWindowForApp(getAllBuilderWindows(), appId, bw.builderId);
+        if (other != null) {
+            if (other.isMinimized()) {
+                other.restore();
+            }
+            other.focus();
+            await destroyBuilderWindow(bw);
+            return false;
         }
         bw.builderAppId = appId;
         console.log("set-builder-window-appid", bw.builderId, appId);
+        return true;
     });
 
     electron.ipcMain.on("open-new-window", () => fireAndForget(createNewRemoteTermWindow));
@@ -486,30 +541,54 @@ export function initIpcHandlers() {
         if (bw == null) {
             return;
         }
-        const builderId = bw.builderId;
-        if (builderId) {
-            try {
-                await RpcApi.SetRTInfoCommand(ElectronWshClient, {
-                    oref: `builder:${builderId}`,
-                    data: {} as ObjRTInfo,
-                    delete: true,
-                });
-            } catch (e) {
-                console.error("Error deleting builder rtinfo:", e);
+        await destroyBuilderWindow(bw);
+    });
+
+    electron.ipcMain.handle("open-builder-terminal", async (event): Promise<string> => {
+        const bw = getBuilderWindowByWebContentsId(event.sender.id);
+        if (bw == null) {
+            return "This action is only available in a builder window.";
+        }
+        const ww = pickTerminalWindow(focusedRemoteTermWindow, getAllRemoteTermWindows());
+        if (ww == null) {
+            return "No RemoteTerm window is open. Open one, then try again.";
+        }
+        const tabId = ww.activeTabView?.remoteTermTabId;
+        if (!tabId) {
+            return "The RemoteTerm window has no active tab.";
+        }
+        try {
+            await RpcApi.OpenBuilderTerminalCommand(ElectronWshClient, { builderid: bw.builderId, tabid: tabId });
+        } catch (e) {
+            return `Could not open a terminal: ${e instanceof Error ? e.message : String(e)}`;
+        }
+        if (ww === getQuakeWindow() && !ww.isVisible()) {
+            await revealQuakeWindow();
+            return "";
+        }
+        bringWindowToFront(ww);
+        return "";
+    });
+
+    electron.ipcMain.handle("open-builder-folder", async (event): Promise<string> => {
+        const bw = getBuilderWindowByWebContentsId(event.sender.id);
+        if (bw == null) {
+            return "This action is only available in a builder window.";
+        }
+        let appDir: string;
+        try {
+            appDir = await RpcApi.GetBuilderAppDirCommand(ElectronWshClient, { builderid: bw.builderId });
+        } catch (e) {
+            return `Could not find the app folder: ${e instanceof Error ? e.message : String(e)}`;
+        }
+        try {
+            if (!fs.lstatSync(appDir).isDirectory()) {
+                return "The app folder is not a directory.";
             }
+        } catch {
+            return "The app folder does not exist.";
         }
-        const wc = bw.webContents;
-        if (wc.isDevToolsOpened()) {
-            wc.closeDevTools();
-        }
-        for (const guest of electron.webContents.getAllWebContents()) {
-            if (guest.getType() === "webview" && guest.hostWebContents?.id === wc.id) {
-                if (guest.isDevToolsOpened()) {
-                    guest.closeDevTools();
-                }
-            }
-        }
-        bw.destroy();
+        return openPathDetached((target) => electron.shell.openPath(target), appDir, (msg) => console.error(msg));
     });
 
     electron.ipcMain.on("do-refresh", (event) => {

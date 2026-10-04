@@ -288,6 +288,12 @@
         "debug:webglstatus": {
           "type": "boolean"
         },
+        "builder:*": {
+          "type": "boolean"
+        },
+        "builder:liverebuild": {
+          "type": "boolean"
+        },
         "tsunami:*": {
           "type": "boolean"
         },

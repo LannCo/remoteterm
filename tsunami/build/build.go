@@ -6,6 +6,8 @@ package build
 import (
 	"archive/zip"
 	"bufio"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -25,10 +27,21 @@ import (
 	"time"
 
 	"github.com/LannCo/remoteterm/tsunami/util"
-	"golang.org/x/mod/modfile"
 )
 
-const MinSupportedGoMinorVersion = 22
+const (
+	DefaultMinGoVersion = "1.22"
+	goVersionTimeout    = 10 * time.Second
+	// Killing go leaves its compile and link children holding the output pipe; without a
+	// bound, Wait would sit on them after the context is cancelled.
+	buildCmdWaitDelay = 1 * time.Second
+
+	GoStatus_Ok         = "ok"
+	GoStatus_NotFound   = "notfound"
+	GoStatus_BadVersion = "badversion"
+	GoStatus_Error      = "error"
+)
+
 const TsunamiUIImportPath = "github.com/LannCo/remoteterm/tsunami/ui"
 const MainAppFileName = "app.go"
 
@@ -101,8 +114,24 @@ type BuildOpts struct {
 	SdkVersion     string
 	NodePath       string
 	GoPath         string
+	MinGoVersion   string
 	MoveFileBack   bool
 	OutputCapture  *OutputCapture
+	// Ctx bounds every command the build runs; nil means no bound (the CLI).
+	Ctx context.Context
+}
+
+func (opts BuildOpts) context() context.Context {
+	if opts.Ctx == nil {
+		return context.Background()
+	}
+	return opts.Ctx
+}
+
+func (opts BuildOpts) command(name string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(opts.context(), name, args...)
+	cmd.WaitDelay = buildCmdWaitDelay
+	return cmd
 }
 
 func GetAppName(appPath string) string {
@@ -128,125 +157,69 @@ type GoVersionCheckResult struct {
 	GoStatus    string
 	GoPath      string
 	GoVersion   string
+	Version     string
 	ErrorString string
 }
 
-func FindGoExecutable() (string, error) {
-	// First try the standard PATH lookup
-	if goPath, err := exec.LookPath("go"); err == nil {
-		return goPath, nil
+func CheckGoVersion(customGoPath string, minGoVersion string) GoVersionCheckResult {
+	if minGoVersion == "" {
+		minGoVersion = DefaultMinGoVersion
 	}
-
-	// Define platform-specific paths to check
-	var pathsToCheck []string
-
-	if runtime.GOOS == "windows" {
-		pathsToCheck = []string{
-			`c:\go\bin\go.exe`,
-			`c:\program files\go\bin\go.exe`,
+	goPath := customGoPath
+	if goPath != "" {
+		if _, err := os.Stat(goPath); err != nil {
+			return GoVersionCheckResult{GoStatus: GoStatus_NotFound, GoPath: goPath}
 		}
 	} else {
-		// Unix-like systems (macOS, Linux, etc.)
-		pathsToCheck = []string{
-			"/opt/homebrew/bin/go", // Homebrew on Apple Silicon
-			"/usr/local/bin/go",    // Traditional Homebrew or manual install
-			"/usr/local/go/bin/go", // Official Go installation
-			"/usr/bin/go",          // System package manager
-		}
-	}
-
-	// Check each path
-	for _, path := range pathsToCheck {
-		if _, err := os.Stat(path); err == nil {
-			// File exists, check if it's executable
-			if info, err := os.Stat(path); err == nil && !info.IsDir() {
-				return path, nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("go command not found in PATH or common installation locations")
-}
-
-func CheckGoVersion(customGoPath string) GoVersionCheckResult {
-	var goPath string
-	var err error
-
-	if customGoPath != "" {
-		goPath = customGoPath
-	} else {
-		goPath, err = FindGoExecutable()
-		if err != nil {
+		found, err := FindGoExecutable(minGoVersion)
+		var tooOld *GoTooOldError
+		if errors.As(err, &tooOld) {
 			return GoVersionCheckResult{
-				GoStatus:    "notfound",
-				GoPath:      "",
-				GoVersion:   "",
-				ErrorString: "",
+				GoStatus:  GoStatus_BadVersion,
+				GoPath:    tooOld.GoPath,
+				GoVersion: "go" + tooOld.Version,
+				Version:   tooOld.Version,
 			}
 		}
+		if err != nil {
+			return GoVersionCheckResult{GoStatus: GoStatus_NotFound}
+		}
+		goPath = found
 	}
 
-	cmd := exec.Command(goPath, "version")
+	ctx, cancel := context.WithTimeout(context.Background(), goVersionTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, goPath, "version")
+	cmd.Env = goCmdEnv()
 	output, err := cmd.Output()
 	if err != nil {
 		return GoVersionCheckResult{
-			GoStatus:    "error",
+			GoStatus:    GoStatus_Error,
 			GoPath:      goPath,
-			GoVersion:   "",
-			ErrorString: fmt.Sprintf("failed to run 'go version': %v", err),
+			ErrorString: fmt.Sprintf("failed to run '%s version': %v", goPath, err),
 		}
 	}
 
 	versionStr := strings.TrimSpace(string(output))
-
-	versionRegex := regexp.MustCompile(`go(1\.\d+)`)
-	matches := versionRegex.FindStringSubmatch(versionStr)
-	if len(matches) < 2 {
+	goVer, ok := ParseGoVersionOutput(versionStr)
+	if !ok {
 		return GoVersionCheckResult{
-			GoStatus:    "error",
+			GoStatus:    GoStatus_Error,
 			GoPath:      goPath,
 			GoVersion:   versionStr,
 			ErrorString: fmt.Sprintf("unable to parse go version from: %s", versionStr),
 		}
 	}
 
-	goVersion := matches[1]
-
-	minorRegex := regexp.MustCompile(`1\.(\d+)`)
-	minorMatches := minorRegex.FindStringSubmatch(goVersion)
-	if len(minorMatches) < 2 {
-		return GoVersionCheckResult{
-			GoStatus:    "error",
-			GoPath:      goPath,
-			GoVersion:   versionStr,
-			ErrorString: fmt.Sprintf("unable to parse minor version from: %s", goVersion),
-		}
+	status := GoStatus_Ok
+	if CompareGoVersions(goVer, minGoVersion) < 0 {
+		status = GoStatus_BadVersion
 	}
-
-	minor, err := strconv.Atoi(minorMatches[1])
-	if err != nil {
-		return GoVersionCheckResult{
-			GoStatus:    "error",
-			GoPath:      goPath,
-			GoVersion:   versionStr,
-			ErrorString: fmt.Sprintf("failed to parse minor version: %v", err),
-		}
-	}
-
-	if minor < MinSupportedGoMinorVersion {
-		return GoVersionCheckResult{
-			GoStatus:    "badversion",
-			GoPath:      goPath,
-			GoVersion:   versionStr,
-			ErrorString: "",
-		}
-	}
-
 	return GoVersionCheckResult{
-		GoStatus:    "ok",
-		GoPath:      goPath,
-		GoVersion:   versionStr,
-		ErrorString: "",
+		GoStatus:  status,
+		GoPath:    goPath,
+		GoVersion: versionStr,
+		Version:   goVer,
 	}
 }
 
@@ -264,16 +237,20 @@ func verifyEnvironment(verbose bool, opts BuildOpts) (*BuildEnv, error) {
 		}
 	}
 
-	result := CheckGoVersion(opts.GoPath)
+	minGoVersion := opts.MinGoVersion
+	if minGoVersion == "" {
+		minGoVersion = DefaultMinGoVersion
+	}
+	result := CheckGoVersion(opts.GoPath, minGoVersion)
 
 	switch result.GoStatus {
-	case "notfound":
+	case GoStatus_NotFound:
 		return nil, fmt.Errorf("go command not found")
-	case "badversion":
-		return nil, fmt.Errorf("go version 1.%d or higher required, found: %s", MinSupportedGoMinorVersion, result.GoVersion)
-	case "error":
+	case GoStatus_BadVersion:
+		return nil, fmt.Errorf("go version %s or higher required, found: %s", minGoVersion, result.GoVersion)
+	case GoStatus_Error:
 		return nil, fmt.Errorf("%s", result.ErrorString)
-	case "ok":
+	case GoStatus_Ok:
 		if verbose {
 			if opts.GoPath != "" {
 				oc.Printf("[debug] Using custom go path: %s", result.GoPath)
@@ -286,12 +263,7 @@ func verifyEnvironment(verbose bool, opts BuildOpts) (*BuildEnv, error) {
 		return nil, fmt.Errorf("unexpected go status: %s", result.GoStatus)
 	}
 
-	versionRegex := regexp.MustCompile(`go(1\.\d+)`)
-	matches := versionRegex.FindStringSubmatch(result.GoVersion)
-	if len(matches) < 2 {
-		return nil, fmt.Errorf("unable to parse go version from: %s", result.GoVersion)
-	}
-	goVersion := matches[1]
+	goVersion := result.Version
 
 	var err error
 
@@ -345,80 +317,49 @@ func createGoMod(tempDir, appNS, appName string, buildEnv *BuildEnv, opts BuildO
 	}
 	modulePath := fmt.Sprintf("tsunami/%s/%s", appNS, appName)
 
-	// Check if go.mod already exists in temp directory (copied from app path)
 	tempGoModPath := filepath.Join(tempDir, "go.mod")
-	var modFile *modfile.File
-	var err error
-
-	if _, err := os.Stat(tempGoModPath); err == nil {
-		// go.mod exists in temp dir, parse it
-		if verbose {
-			oc.Printf("[debug] Found existing go.mod in temp directory, parsing it")
-		}
-
-		// Parse the existing go.mod
-		goModContent, err := os.ReadFile(tempGoModPath)
-		if err != nil {
-			return fmt.Errorf("failed to read go.mod: %w", err)
-		}
-
-		modFile, err = modfile.Parse("go.mod", goModContent, nil)
-		if err != nil {
-			return fmt.Errorf("failed to parse existing go.mod: %w", err)
-		}
-	} else if os.IsNotExist(err) {
-		// go.mod doesn't exist, create new one
-		if verbose {
-			oc.Printf("[debug] No existing go.mod found, creating new one")
-		}
-
-		modFile = &modfile.File{}
-		if err := modFile.AddModuleStmt(modulePath); err != nil {
-			return fmt.Errorf("failed to add module statement: %w", err)
-		}
-
-		if err := modFile.AddGoStmt(buildEnv.GoVersion); err != nil {
-			return fmt.Errorf("failed to add go version: %w", err)
-		}
-
-		// Add requirement for tsunami SDK
-		if err := modFile.AddRequire("github.com/LannCo/remoteterm/tsunami", opts.SdkVersion); err != nil {
-			return fmt.Errorf("failed to add require directive: %w", err)
-		}
-	} else {
+	existing, err := os.ReadFile(tempGoModPath)
+	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("error checking for go.mod in temp directory: %w", err)
 	}
-
-	// Add replace directive for tsunami SDK if path is provided
-	if opts.SdkReplacePath != "" {
-		if err := modFile.AddReplace("github.com/LannCo/remoteterm/tsunami", "", opts.SdkReplacePath, ""); err != nil {
-			return fmt.Errorf("failed to add replace directive: %w", err)
+	if verbose {
+		if existing != nil {
+			oc.Printf("[debug] Found existing go.mod in temp directory, parsing it")
+		} else {
+			oc.Printf("[debug] No existing go.mod found, creating new one")
 		}
 	}
 
-	// Format and write the file
-	modFile.Cleanup()
-	goModContent, err := modFile.Format()
-	if err != nil {
-		return fmt.Errorf("failed to format go.mod: %w", err)
+	goLine := opts.MinGoVersion
+	if goLine == "" {
+		goLine = buildEnv.GoVersion
 	}
-
-	goModPath := filepath.Join(tempDir, "go.mod")
-	if err := os.WriteFile(goModPath, goModContent, 0644); err != nil {
+	goModContent, err := makeGoModContent(existing, goModParams{
+		ModulePath:     modulePath,
+		GoVersion:      goLine,
+		MinGoVersion:   opts.MinGoVersion,
+		SdkVersion:     opts.SdkVersion,
+		SdkReplacePath: opts.SdkReplacePath,
+	})
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(tempGoModPath, goModContent, 0644); err != nil {
 		return fmt.Errorf("failed to write go.mod file: %w", err)
 	}
 
 	if verbose {
 		oc.Printf("[debug] Created go.mod with module path: %s", modulePath)
-		oc.Printf("[debug] Added require: github.com/LannCo/remoteterm/tsunami %s", opts.SdkVersion)
+		oc.Printf("[debug] Added require: %s %s", TsunamiSdkModulePath, opts.SdkVersion)
 		if opts.SdkReplacePath != "" {
-			oc.Printf("[debug] Added replace directive: github.com/LannCo/remoteterm/tsunami => %s", opts.SdkReplacePath)
+			oc.Printf("[debug] Added replace directive: %s => %s", TsunamiSdkModulePath, opts.SdkReplacePath)
 		}
 	}
 
 	// Run go mod tidy to clean up dependencies
-	tidyCmd := exec.Command(buildEnv.GoPath, "mod", "tidy")
+	tidyCmd := opts.command(buildEnv.GoPath, "mod", "tidy")
 	tidyCmd.Dir = tempDir
+	tidyCmd.Env = goCmdEnv()
 
 	if verbose {
 		oc.Printf("[debug] Running go mod tidy")
@@ -562,6 +503,15 @@ func TsunamiBuild(opts BuildOpts) error {
 	}
 	setupSignalCleanup(buildEnv, opts.KeepTemp, opts.Verbose)
 	return nil
+}
+
+// TsunamiBuildOutput is for long-lived callers such as the builder server. TsunamiBuildInternal
+// leaves the temp directory to its caller, and a caller that drops the returned BuildEnv leaks it.
+// Unlike TsunamiBuild this installs no signal handler, which would exit the host process.
+func TsunamiBuildOutput(opts BuildOpts) error {
+	buildEnv, err := TsunamiBuildInternal(opts)
+	buildEnv.cleanupTempDir(opts.KeepTemp, opts.Verbose)
+	return err
 }
 
 func TsunamiBuildInternal(opts BuildOpts) (*BuildEnv, error) {
@@ -758,8 +708,9 @@ func runGoBuild(tempDir string, buildEnv *BuildEnv, opts BuildOpts) (string, err
 
 	// Build command with explicit go files
 	args := append([]string{"build", "-o", outputPath}, ".")
-	buildCmd := exec.Command(buildEnv.GoPath, args...)
+	buildCmd := opts.command(buildEnv.GoPath, args...)
 	buildCmd.Dir = tempDir
+	buildCmd.Env = goCmdEnv()
 
 	if oc != nil || opts.Verbose {
 		oc.Printf("[debug] Running: %s", strings.Join(buildCmd.Args, " "))
@@ -791,7 +742,7 @@ func runGoBuild(tempDir string, buildEnv *BuildEnv, opts BuildOpts) (string, err
 func generateManifest(tempDir, exePath string, opts BuildOpts) error {
 	oc := opts.OutputCapture
 
-	manifestCmd := exec.Command(exePath, "--manifest")
+	manifestCmd := opts.command(exePath, "--manifest")
 	manifestCmd.Dir = tempDir
 
 	if opts.Verbose {
@@ -835,7 +786,7 @@ func generateAppTailwindCss(tempDir string, verbose bool, opts BuildOpts) error 
 	oc := opts.OutputCapture
 	// tailwind.css is already in tempDir from scaffold copy
 	tailwindOutput := filepath.Join(tempDir, "static", "tw.css")
-	tailwindCmd := exec.Command(opts.getNodePath(), "--preserve-symlinks-main", "--preserve-symlinks",
+	tailwindCmd := opts.command(opts.getNodePath(), "--preserve-symlinks-main", "--preserve-symlinks",
 		"node_modules/@tailwindcss/cli/dist/index.mjs",
 		"-i", "./tailwind.css",
 		"-o", tailwindOutput)

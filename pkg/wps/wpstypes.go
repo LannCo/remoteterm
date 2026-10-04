@@ -29,6 +29,7 @@ const (
 	Event_RouteUp             = "route:up"           // type: none
 	Event_WorkspaceUpdate     = "workspace:update"   // type: none
 	Event_WaveAppAppGoUpdated = "rtapp:appgoupdated" // type: none
+	Event_BuilderWatchStatus  = "rtapp:watchstatus"  // type: wshrpc.BuilderWatchStatusData
 	Event_TsunamiUpdateMeta   = "tsunami:updatemeta" // type: wshrpc.AppMeta
 	Event_BlockJobStatus      = "block:jobstatus"    // type: wshrpc.BlockJobStatusData
 	Event_Badge               = "badge"              // type: baseds.BadgeEvent
@@ -49,6 +50,7 @@ var AllEvents []string = []string{
 	Event_RouteUp,
 	Event_WorkspaceUpdate,
 	Event_WaveAppAppGoUpdated,
+	Event_BuilderWatchStatus,
 	Event_TsunamiUpdateMeta,
 	Event_BlockJobStatus,
 	Event_Badge,

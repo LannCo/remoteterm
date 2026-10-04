@@ -15,13 +15,17 @@ type WshRpcBuilderInterface interface {
 	ReadAppFileCommand(ctx context.Context, data CommandReadAppFileData) (*CommandReadAppFileRtnData, error)
 	WriteAppFileCommand(ctx context.Context, data CommandWriteAppFileData) error
 	WriteAppGoFileCommand(ctx context.Context, data CommandWriteAppGoFileData) (*CommandWriteAppGoFileRtnData, error)
+	SeedBuilderAppCommand(ctx context.Context, data CommandSeedBuilderAppData) (*CommandSeedBuilderAppRtnData, error)
 	DeleteAppFileCommand(ctx context.Context, data CommandDeleteAppFileData) error
 	RenameAppFileCommand(ctx context.Context, data CommandRenameAppFileData) error
 	WriteAppSecretBindingsCommand(ctx context.Context, data CommandWriteAppSecretBindingsData) error
 	DeleteBuilderCommand(ctx context.Context, builderId string) error
 	StartBuilderCommand(ctx context.Context, data CommandStartBuilderData) error
+	RequestBuilderRebuildCommand(ctx context.Context, data CommandRequestBuilderRebuildData) error
+	WatchBuilderAppCommand(ctx context.Context, data CommandWatchBuilderAppData) (*BuilderWatchStatusData, error)
+	OpenBuilderTerminalCommand(ctx context.Context, data CommandOpenBuilderTerminalData) error
+	GetBuilderAppDirCommand(ctx context.Context, data CommandGetBuilderAppDirData) (string, error)
 	StopBuilderCommand(ctx context.Context, builderId string) error
-	RestartBuilderAndWaitCommand(ctx context.Context, data CommandRestartBuilderAndWaitData) (*RestartBuilderAndWaitResult, error)
 	GetBuilderStatusCommand(ctx context.Context, builderId string) (*BuilderStatusData, error)
 	GetBuilderOutputCommand(ctx context.Context, builderId string) ([]string, error)
 	CheckGoVersionCommand(ctx context.Context) (*CommandCheckGoVersionRtnData, error)
@@ -77,8 +81,9 @@ type CommandWriteAppFileData struct {
 }
 
 type CommandWriteAppGoFileData struct {
-	AppId  string `json:"appid"`
-	Data64 string `json:"data64"`
+	AppId     string `json:"appid"`
+	Data64    string `json:"data64"`
+	BuilderId string `json:"builderid,omitempty"`
 }
 
 type CommandWriteAppGoFileRtnData struct {
@@ -105,14 +110,17 @@ type CommandStartBuilderData struct {
 	BuilderId string `json:"builderid"`
 }
 
-type CommandRestartBuilderAndWaitData struct {
+type CommandRequestBuilderRebuildData struct {
 	BuilderId string `json:"builderid"`
 }
 
-type RestartBuilderAndWaitResult struct {
-	Success      bool   `json:"success"`
-	ErrorMessage string `json:"errormessage,omitempty"`
-	BuildOutput  string `json:"buildoutput"`
+type CommandWatchBuilderAppData struct {
+	BuilderId string `json:"builderid"`
+}
+
+type BuilderWatchStatusData struct {
+	Status string `json:"status"`
+	Reason string `json:"reason,omitempty"`
 }
 
 type AppMeta struct {
@@ -166,4 +174,21 @@ type CommandMakeDraftFromLocalData struct {
 
 type CommandMakeDraftFromLocalRtnData struct {
 	DraftAppId string `json:"draftappid"`
+}
+
+type CommandSeedBuilderAppData struct {
+	AppId string `json:"appid"`
+}
+
+type CommandSeedBuilderAppRtnData struct {
+	Files []string `json:"files"`
+}
+
+type CommandOpenBuilderTerminalData struct {
+	BuilderId string `json:"builderid"`
+	TabId     string `json:"tabid"`
+}
+
+type CommandGetBuilderAppDirData struct {
+	BuilderId string `json:"builderid"`
 }

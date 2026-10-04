@@ -135,6 +135,12 @@ declare global {
         secretbindingscomplete: boolean;
     };
 
+    // wshrpc.BuilderWatchStatusData
+    type BuilderWatchStatusData = {
+        status: string;
+        reason?: string;
+    };
+
     // remotetermobj.Client
     type Client = WaveObj & {
         windowids: string[];
@@ -323,6 +329,11 @@ declare global {
         streammeta: StreamMeta;
     };
 
+    // wshrpc.CommandGetBuilderAppDirData
+    type CommandGetBuilderAppDirData = {
+        builderid: string;
+    };
+
     // wshrpc.CommandGetMetaData
     type CommandGetMetaData = {
         oref: ORef;
@@ -500,6 +511,12 @@ declare global {
         message: string;
     };
 
+    // wshrpc.CommandOpenBuilderTerminalData
+    type CommandOpenBuilderTerminalData = {
+        builderid: string;
+        tabid: string;
+    };
+
     // wshrpc.CommandPublishAppData
     type CommandPublishAppData = {
         appid: string;
@@ -620,6 +637,11 @@ declare global {
         tofilename: string;
     };
 
+    // wshrpc.CommandRequestBuilderRebuildData
+    type CommandRequestBuilderRebuildData = {
+        builderid: string;
+    };
+
     // wshrpc.CommandResolveIdsData
     type CommandResolveIdsData = {
         blockid: string;
@@ -631,9 +653,14 @@ declare global {
         resolvedids: {[key: string]: ORef};
     };
 
-    // wshrpc.CommandRestartBuilderAndWaitData
-    type CommandRestartBuilderAndWaitData = {
-        builderid: string;
+    // wshrpc.CommandSeedBuilderAppData
+    type CommandSeedBuilderAppData = {
+        appid: string;
+    };
+
+    // wshrpc.CommandSeedBuilderAppRtnData
+    type CommandSeedBuilderAppRtnData = {
+        files: string[];
     };
 
     // wshrpc.CommandSetMetaData
@@ -738,6 +765,11 @@ declare global {
         waitms: number;
     };
 
+    // wshrpc.CommandWatchBuilderAppData
+    type CommandWatchBuilderAppData = {
+        builderid: string;
+    };
+
     // wshrpc.CommandWaveFileReadStreamData
     type CommandWaveFileReadStreamData = {
         zoneid: string;
@@ -765,6 +797,7 @@ declare global {
     type CommandWriteAppGoFileData = {
         appid: string;
         data64: string;
+        builderid?: string;
     };
 
     // wshrpc.CommandWriteAppGoFileRtnData
@@ -1375,13 +1408,6 @@ declare global {
         homedir: string;
     };
 
-    // wshrpc.RestartBuilderAndWaitResult
-    type RestartBuilderAndWaitResult = {
-        success: boolean;
-        errormessage?: string;
-        buildoutput: string;
-    };
-
     // wshrpc.RpcContext
     type RpcContext = {
         sockname?: string;
@@ -1514,6 +1540,8 @@ declare global {
         "debug:pprofport"?: number;
         "debug:pprofmemprofilerate"?: number;
         "debug:webglstatus"?: boolean;
+        "builder:*"?: boolean;
+        "builder:liverebuild"?: boolean;
         "tsunami:*"?: boolean;
         "tsunami:scaffoldpath"?: string;
         "tsunami:sdkreplacepath"?: string;

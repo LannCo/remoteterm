@@ -1034,6 +1034,44 @@ function waitForFullscreenEnter(window: RemoteTermBrowserWindow): Promise<void> 
     });
 }
 
+async function showQuakeWindow(window: RemoteTermBrowserWindow) {
+    const targetDisplay = getDisplayForQuakeToggle();
+    moveWindowToDisplay(window, targetDisplay);
+    window.show();
+    if (quakeRestoreFullscreenOnShow) {
+        const enterPromise = waitForFullscreenEnter(window);
+        window.setFullScreen(true);
+        try {
+            await enterPromise;
+        } catch {
+            // timeout: proceed anyway
+        }
+    }
+    quakeRestoreFullscreenOnShow = false;
+    window.focus();
+    if (window.activeTabView?.webContents) {
+        window.activeTabView.webContents.focus();
+    }
+}
+
+// Same path as the quake hotkey, so a hidden quake window comes back on the cursor's
+// display and restores fullscreen exactly as the hotkey would.
+export async function revealQuakeWindow() {
+    if (quakeToggleInProgress) {
+        return;
+    }
+    quakeToggleInProgress = true;
+    try {
+        const window = quakeWindow;
+        if (window == null || window.isDestroyed() || window.isVisible()) {
+            return;
+        }
+        await showQuakeWindow(window);
+    } finally {
+        quakeToggleInProgress = false;
+    }
+}
+
 async function quakeToggle() {
     if (quakeToggleInProgress) {
         return;
@@ -1067,23 +1105,7 @@ async function quakeToggle() {
         if (window.isVisible()) {
             window.hide();
         } else {
-            const targetDisplay = getDisplayForQuakeToggle();
-            moveWindowToDisplay(window, targetDisplay);
-            window.show();
-            if (quakeRestoreFullscreenOnShow) {
-                const enterPromise = waitForFullscreenEnter(window);
-                window.setFullScreen(true);
-                try {
-                    await enterPromise;
-                } catch {
-                    // timeout — proceed anyway
-                }
-            }
-            quakeRestoreFullscreenOnShow = false;
-            window.focus();
-            if (window.activeTabView?.webContents) {
-                window.activeTabView.webContents.focus();
-            }
+            await showQuakeWindow(window);
         }
     } finally {
         quakeToggleInProgress = false;

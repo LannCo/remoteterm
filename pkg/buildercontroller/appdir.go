@@ -1,0 +1,47 @@
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+package buildercontroller
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/LannCo/remoteterm/pkg/remotetermappstore"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
+)
+
+// The folder always comes from the builder's rtinfo, never from the renderer, so a
+// compromised page cannot point a terminal or a file manager somewhere else.
+func ResolveBuilderAppDir(builderId string) (string, error) {
+	appId, _, err := GetBuilderRebuildInputs(builderId)
+	if err != nil {
+		return "", err
+	}
+	appDir, err := remotetermappstore.GetAppDir(appId)
+	if err != nil {
+		return "", err
+	}
+	if err := remotetermappstore.CheckNoSymlinks(appDir); err != nil {
+		return "", err
+	}
+	info, err := os.Lstat(appDir)
+	if err != nil {
+		return "", fmt.Errorf("app folder %s is not available: %w", appDir, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("app folder %s is not a directory", appDir)
+	}
+	return appDir, nil
+}
+
+func MakeBuilderTerminalBlockDef(appDir string) *remotetermobj.BlockDef {
+	return &remotetermobj.BlockDef{
+		Meta: remotetermobj.MetaMapType{
+			remotetermobj.MetaKey_View:       "term",
+			remotetermobj.MetaKey_Controller: "shell",
+			remotetermobj.MetaKey_Connection: "local",
+			remotetermobj.MetaKey_CmdCwd:     appDir,
+		},
+	}
+}

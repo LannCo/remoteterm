@@ -1121,9 +1121,23 @@ func (ws *WshServer) WriteAppGoFileCommand(ctx context.Context, data wshrpc.Comm
 	if err != nil {
 		return nil, err
 	}
+	if err := buildercontroller.RequestRebuildAfterSave(data.BuilderId, data.AppId); err != nil {
+		log.Printf("WriteAppGoFileCommand: saved %s but not rebuilding: %v\n", data.AppId, err)
+	}
 
 	encoded := base64.StdEncoding.EncodeToString(formattedOutput)
 	return &wshrpc.CommandWriteAppGoFileRtnData{Data64: encoded}, nil
+}
+
+func (ws *WshServer) SeedBuilderAppCommand(ctx context.Context, data wshrpc.CommandSeedBuilderAppData) (*wshrpc.CommandSeedBuilderAppRtnData, error) {
+	if data.AppId == "" {
+		return nil, fmt.Errorf("must provide an appId to SeedBuilderAppCommand")
+	}
+	files, err := remotetermappstore.SeedApp(data.AppId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create starter files: %w", err)
+	}
+	return &wshrpc.CommandSeedBuilderAppRtnData{Files: files}, nil
 }
 
 func (ws *WshServer) DeleteAppFileCommand(ctx context.Context, data wshrpc.CommandDeleteAppFileData) error {
@@ -1160,15 +1174,58 @@ func (ws *WshServer) StartBuilderCommand(ctx context.Context, data wshrpc.Comman
 		return fmt.Errorf("must provide a builderId to StartBuilderCommand")
 	}
 	bc := buildercontroller.GetOrCreateController(data.BuilderId)
-	rtInfo := rtstore.GetRTInfo(remotetermobj.MakeORef("builder", data.BuilderId))
-	if rtInfo == nil {
-		return fmt.Errorf("builder rtinfo not found for builderid: %s", data.BuilderId)
+	appId, builderEnv, err := buildercontroller.GetBuilderRebuildInputs(data.BuilderId)
+	if err != nil {
+		return err
 	}
-	appId := rtInfo.BuilderAppId
-	if appId == "" {
-		return fmt.Errorf("builder appid not set for builderid: %s", data.BuilderId)
+	return bc.Start(ctx, appId, builderEnv)
+}
+
+func (ws *WshServer) RequestBuilderRebuildCommand(ctx context.Context, data wshrpc.CommandRequestBuilderRebuildData) error {
+	if data.BuilderId == "" {
+		return fmt.Errorf("must provide a builderId to RequestBuilderRebuildCommand")
 	}
-	return bc.Start(ctx, appId, rtInfo.BuilderEnv)
+	appId, builderEnv, err := buildercontroller.GetBuilderRebuildInputs(data.BuilderId)
+	if err != nil {
+		return err
+	}
+	buildercontroller.GetOrCreateController(data.BuilderId).RequestRebuild(appId, builderEnv)
+	return nil
+}
+
+func (ws *WshServer) WatchBuilderAppCommand(ctx context.Context, data wshrpc.CommandWatchBuilderAppData) (*wshrpc.BuilderWatchStatusData, error) {
+	if data.BuilderId == "" {
+		return nil, fmt.Errorf("must provide a builderId to WatchBuilderAppCommand")
+	}
+	appId, _, err := buildercontroller.GetBuilderRebuildInputs(data.BuilderId)
+	if err != nil {
+		return nil, err
+	}
+	status := buildercontroller.GetOrCreateController(data.BuilderId).StartWatching(appId)
+	return &status, nil
+}
+
+func (ws *WshServer) OpenBuilderTerminalCommand(ctx context.Context, data wshrpc.CommandOpenBuilderTerminalData) error {
+	if data.BuilderId == "" || data.TabId == "" {
+		return fmt.Errorf("must provide a builderId and a tabId to OpenBuilderTerminalCommand")
+	}
+	appDir, err := buildercontroller.ResolveBuilderAppDir(data.BuilderId)
+	if err != nil {
+		return err
+	}
+	_, err = ws.CreateBlockCommand(ctx, wshrpc.CommandCreateBlockData{
+		TabId:    data.TabId,
+		BlockDef: buildercontroller.MakeBuilderTerminalBlockDef(appDir),
+		Focused:  true,
+	})
+	return err
+}
+
+func (ws *WshServer) GetBuilderAppDirCommand(ctx context.Context, data wshrpc.CommandGetBuilderAppDirData) (string, error) {
+	if data.BuilderId == "" {
+		return "", fmt.Errorf("must provide a builderId to GetBuilderAppDirCommand")
+	}
+	return buildercontroller.ResolveBuilderAppDir(data.BuilderId)
 }
 
 func (ws *WshServer) StopBuilderCommand(ctx context.Context, builderId string) error {
@@ -1180,34 +1237,6 @@ func (ws *WshServer) StopBuilderCommand(ctx context.Context, builderId string) e
 		return nil
 	}
 	return bc.Stop()
-}
-
-func (ws *WshServer) RestartBuilderAndWaitCommand(ctx context.Context, data wshrpc.CommandRestartBuilderAndWaitData) (*wshrpc.RestartBuilderAndWaitResult, error) {
-	if data.BuilderId == "" {
-		return nil, fmt.Errorf("must provide a builderId to RestartBuilderAndWaitCommand")
-	}
-
-	bc := buildercontroller.GetOrCreateController(data.BuilderId)
-	rtInfo := rtstore.GetRTInfo(remotetermobj.MakeORef("builder", data.BuilderId))
-	if rtInfo == nil {
-		return nil, fmt.Errorf("builder rtinfo not found for builderid: %s", data.BuilderId)
-	}
-
-	appId := rtInfo.BuilderAppId
-	if appId == "" {
-		return nil, fmt.Errorf("builder appid not set for builderid: %s", data.BuilderId)
-	}
-
-	result, err := bc.RestartAndWaitForBuild(ctx, appId, rtInfo.BuilderEnv)
-	if err != nil {
-		return nil, err
-	}
-
-	return &wshrpc.RestartBuilderAndWaitResult{
-		Success:      result.Success,
-		ErrorMessage: result.ErrorMessage,
-		BuildOutput:  result.BuildOutput,
-	}, nil
 }
 
 func (ws *WshServer) GetBuilderStatusCommand(ctx context.Context, builderId string) (*wshrpc.BuilderStatusData, error) {
@@ -1232,7 +1261,11 @@ func (ws *WshServer) CheckGoVersionCommand(ctx context.Context) (*wshrpc.Command
 	fullConfig := watcher.GetFullConfig()
 	goPath := fullConfig.Settings.TsunamiGoPath
 
-	result := build.CheckGoVersion(goPath)
+	minGoVersion := ""
+	if sdkPath, err := remotetermapputil.ResolveTsunamiSdkPath(fullConfig.Settings.TsunamiSdkReplacePath); err == nil {
+		minGoVersion, _ = build.ReadSdkGoVersion(sdkPath)
+	}
+	result := build.CheckGoVersion(goPath, minGoVersion)
 
 	return &wshrpc.CommandCheckGoVersionRtnData{
 		GoStatus:    result.GoStatus,

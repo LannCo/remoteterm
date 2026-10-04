@@ -6,7 +6,9 @@ import { atoms } from "@/store/global";
 import { useAtomValue } from "jotai";
 import { memo, useState } from "react";
 
-const EmptyStateView = memo(() => {
+const EmptyStateView = memo(({ showCreate }: { showCreate: boolean }) => {
+    const model = BuilderAppPanelModel.getInstance();
+    const isSeeding = useAtomValue(model.isSeedingAtom);
     return (
         <div className="w-full h-full flex items-center justify-center bg-background">
             <div className="flex flex-col items-center gap-6 max-w-[500px] text-center px-8">
@@ -17,9 +19,21 @@ const EmptyStateView = memo(() => {
                         Create an <span className="font-mono">app.go</span> file to get started.
                     </p>
                 </div>
-                <div className="text-base text-secondary mt-2">
-                    Your app will appear here once <span className="font-mono">app.go</span> is created
-                </div>
+                {showCreate ? (
+                    <button
+                        onClick={() => model.seedStarterApp()}
+                        disabled={isSeeding}
+                        className={`px-6 py-2 font-semibold bg-accent/80 text-onaccent rounded transition-colors ${
+                            isSeeding ? "opacity-50" : "hover:bg-accent cursor-pointer"
+                        }`}
+                    >
+                        Create starter app
+                    </button>
+                ) : (
+                    <div className="text-base text-secondary mt-2">
+                        Your app will appear here once <span className="font-mono">app.go</span> is created
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -131,12 +145,42 @@ const StoppedStateView = memo(({ onStart }: { onStart: () => void }) => {
 
 StoppedStateView.displayName = "StoppedStateView";
 
+const MissingAppGoView = memo(() => {
+    const model = BuilderAppPanelModel.getInstance();
+    const isSeeding = useAtomValue(model.isSeedingAtom);
+    return (
+        <div className="w-full h-full flex items-center justify-center bg-background">
+            <div className="flex flex-col items-center gap-6 max-w-[500px] text-center px-8">
+                <div className="flex flex-col gap-3">
+                    <h2 className="text-2xl font-semibold text-primary">app.go is missing</h2>
+                    <p className="text-base text-secondary leading-relaxed">
+                        The app folder has no <span className="font-mono">app.go</span>. Create the starter app, or
+                        add one from your editor.
+                    </p>
+                </div>
+                <button
+                    onClick={() => model.seedStarterApp()}
+                    disabled={isSeeding}
+                    className={`px-6 py-2 font-semibold bg-accent/80 text-onaccent rounded transition-colors ${
+                        isSeeding ? "opacity-50" : "hover:bg-accent cursor-pointer"
+                    }`}
+                >
+                    Create starter app
+                </button>
+            </div>
+        </div>
+    );
+});
+
+MissingAppGoView.displayName = "MissingAppGoView";
+
 const BuilderPreviewTab = memo(() => {
     const model = BuilderAppPanelModel.getInstance();
     const isLoading = useAtomValue(model.isLoadingAtom);
     const originalContent = useAtomValue(model.originalContentAtom);
     const builderStatus = useAtomValue(model.builderStatusAtom);
     const builderId = useAtomValue(atoms.builderId);
+    const appGoMissing = useAtomValue(model.appGoMissingAtom);
     const fileExists = originalContent.length > 0;
     const [lastKnownUrl, setLastKnownUrl] = useState<string>(null);
 
@@ -151,11 +195,13 @@ const BuilderPreviewTab = memo(() => {
     }
 
     let overlay = null;
-    if (!isLoading && !isWebViewActive) {
+    if (appGoMissing) {
+        overlay = <MissingAppGoView />;
+    } else if (!isLoading && !isWebViewActive) {
         if (builderStatus?.status === "error") {
             overlay = <ErrorStateView errorMsg={builderStatus?.errormsg || ""} />;
         } else if (!fileExists || status === "init") {
-            overlay = <EmptyStateView />;
+            overlay = <EmptyStateView showCreate={!fileExists} />;
         } else if (status === "building") {
             overlay = <BuildingStateView />;
         } else if (status === "stopped") {

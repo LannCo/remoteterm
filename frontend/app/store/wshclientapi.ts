@@ -408,6 +408,12 @@ export class RpcApiType {
         return client.wshRpcCall("getallvars", data, opts);
     }
 
+    // command "getbuilderappdir" [call]
+    GetBuilderAppDirCommand(client: WshClient, data: CommandGetBuilderAppDirData, opts?: RpcOpts): Promise<string> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getbuilderappdir", data, opts);
+        return client.wshRpcCall("getbuilderappdir", data, opts);
+    }
+
     // command "getbuilderoutput" [call]
     GetBuilderOutputCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<string[]> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getbuilderoutput", data, opts);
@@ -696,6 +702,12 @@ export class RpcApiType {
         return client.wshRpcCall("notifysystemresume", null, opts);
     }
 
+    // command "openbuilderterminal" [call]
+    OpenBuilderTerminalCommand(client: WshClient, data: CommandOpenBuilderTerminalData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "openbuilderterminal", data, opts);
+        return client.wshRpcCall("openbuilderterminal", data, opts);
+    }
+
     // command "path" [call]
     PathCommand(client: WshClient, data: PathCommandData, opts?: RpcOpts): Promise<string> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "path", data, opts);
@@ -846,16 +858,16 @@ export class RpcApiType {
         return client.wshRpcCall("renameappfile", data, opts);
     }
 
+    // command "requestbuilderrebuild" [call]
+    RequestBuilderRebuildCommand(client: WshClient, data: CommandRequestBuilderRebuildData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "requestbuilderrebuild", data, opts);
+        return client.wshRpcCall("requestbuilderrebuild", data, opts);
+    }
+
     // command "resolveids" [call]
     ResolveIdsCommand(client: WshClient, data: CommandResolveIdsData, opts?: RpcOpts): Promise<CommandResolveIdsRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "resolveids", data, opts);
         return client.wshRpcCall("resolveids", data, opts);
-    }
-
-    // command "restartbuilderandwait" [call]
-    RestartBuilderAndWaitCommand(client: WshClient, data: CommandRestartBuilderAndWaitData, opts?: RpcOpts): Promise<RestartBuilderAndWaitResult> {
-        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "restartbuilderandwait", data, opts);
-        return client.wshRpcCall("restartbuilderandwait", data, opts);
     }
 
     // command "routeannounce" [call]
@@ -868,6 +880,12 @@ export class RpcApiType {
     RouteUnannounceCommand(client: WshClient, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "routeunannounce", null, opts);
         return client.wshRpcCall("routeunannounce", null, opts);
+    }
+
+    // command "seedbuilderapp" [call]
+    SeedBuilderAppCommand(client: WshClient, data: CommandSeedBuilderAppData, opts?: RpcOpts): Promise<CommandSeedBuilderAppRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "seedbuilderapp", data, opts);
+        return client.wshRpcCall("seedbuilderapp", data, opts);
     }
 
     // command "setblockfocus" [call]
@@ -1024,6 +1042,12 @@ export class RpcApiType {
     WaitForRouteCommand(client: WshClient, data: CommandWaitForRouteData, opts?: RpcOpts): Promise<boolean> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "waitforroute", data, opts);
         return client.wshRpcCall("waitforroute", data, opts);
+    }
+
+    // command "watchbuilderapp" [call]
+    WatchBuilderAppCommand(client: WshClient, data: CommandWatchBuilderAppData, opts?: RpcOpts): Promise<BuilderWatchStatusData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "watchbuilderapp", data, opts);
+        return client.wshRpcCall("watchbuilderapp", data, opts);
     }
 
     // command "wavefilereadstream" [call]
