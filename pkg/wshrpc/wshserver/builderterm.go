@@ -6,11 +6,17 @@ package wshserver
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
+	"github.com/LannCo/remoteterm/pkg/buildercontroller"
+	"github.com/LannCo/remoteterm/pkg/remotetermappstore"
 	"github.com/LannCo/remoteterm/pkg/remotetermobj"
 	"github.com/LannCo/remoteterm/pkg/rtcore"
+	"github.com/LannCo/remoteterm/pkg/rtstore"
+	"github.com/LannCo/remoteterm/pkg/wps"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
 	"github.com/LannCo/remoteterm/pkg/wshutil"
 	"github.com/google/uuid"
 )
@@ -29,6 +35,9 @@ var (
 	builderLocksLock sync.Mutex
 	builderLocks     = make(map[string]*sync.Mutex)
 )
+
+// Tests replace it to make queueing fail; nothing in production does, but the rollback paths depend on it.
+var queueBuilderLayoutAction = rtcore.QueueLayoutActionForTab
 
 // Panes reach the server through wsh on leaf links, whose source the router stamps as proc:<id>, so
 // they cannot pass. Electron and the builder's own renderer are trusted links that assert their route.
@@ -104,4 +113,90 @@ func makeBuilderLayoutAction(blockId string, targetBlockId string, targetAction 
 	}
 	action.TargetBlockId = targetBlockId
 	return action
+}
+
+// Sent once per write phase, after success and after a rollback. Without it the renderer never sees new
+// panes' layout actions or the tab's deletion. Updates are kept per object, last one wins, for every
+// committed store call; a store transaction that fails adds none. So when a write phase undoes its own
+// earlier writes (deleting a half-created tab or block), the broadcast carries the deletes for them.
+func sendBuilderUpdates(writeCtx context.Context) {
+	wps.Broker.SendUpdateEvents(remotetermobj.ContextGetUpdatesRtn(writeCtx))
+}
+
+// Electron fills both fields from the calling window (its builder id and its app id), never from the page.
+func (ws *WshServer) EnsureBuilderTabCommand(ctx context.Context, data wshrpc.CommandEnsureBuilderTabData) (*wshrpc.CommandEnsureBuilderTabRtnData, error) {
+	if err := checkBuilderCaller(wshutil.GetRpcSourceFromContext(ctx), data.BuilderId, false); err != nil {
+		return nil, err
+	}
+	if err := remotetermappstore.ValidateAppId(data.AppId); err != nil {
+		return nil, fmt.Errorf("invalid app id %q: %w", data.AppId, err)
+	}
+	var rtn *wshrpc.CommandEnsureBuilderTabRtnData
+	err := withBuilderLock(data.BuilderId, func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		writeCtx, cancelFn := makeBuilderWriteContext()
+		defer cancelFn()
+		defer sendBuilderUpdates(writeCtx)
+		var err error
+		rtn, err = ensureBuilderTab(writeCtx, data.BuilderId, data.AppId)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return rtn, nil
+}
+
+func ensureBuilderTab(ctx context.Context, builderId string, appId string) (*wshrpc.CommandEnsureBuilderTabRtnData, error) {
+	tabs, err := rtcore.FindBuilderTabs(ctx, builderId)
+	if err != nil {
+		return nil, err
+	}
+	var current *remotetermobj.Tab
+	for _, tab := range tabs {
+		if current == nil && tab.Meta.GetString(rtstore.MetaKey_BuilderAppId, "") == appId {
+			current = tab
+			continue
+		}
+		if err := rtcore.DeleteBuilderTab(ctx, tab.OID, builderId); err != nil {
+			return nil, fmt.Errorf("error removing the terminals of a previous app: %w", err)
+		}
+	}
+	if current != nil {
+		return &wshrpc.CommandEnsureBuilderTabRtnData{TabId: current.OID, AppId: appId}, nil
+	}
+	appDir, err := buildercontroller.ResolveAppDirForAppId(appId)
+	if err != nil {
+		return nil, err
+	}
+	tab, err := rtcore.CreateBuilderTab(ctx, builderId, appId)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := addBuilderTermBlock(ctx, tab.OID, appDir, "", ""); err != nil {
+		if delErr := rtcore.DeleteBuilderTab(ctx, tab.OID, builderId); delErr != nil {
+			log.Printf("EnsureBuilderTabCommand: could not roll back tab %s: %v\n", tab.OID, delErr)
+		}
+		return nil, err
+	}
+	return &wshrpc.CommandEnsureBuilderTabRtnData{TabId: tab.OID, AppId: appId}, nil
+}
+
+// rtcore.CreateBlock and the queue are called directly, not through CreateBlockCommand, which
+// broadcasts only on success and cannot roll back.
+func addBuilderTermBlock(ctx context.Context, tabId string, appDir string, targetBlockId string, targetAction string) (string, error) {
+	blockData, err := rtcore.CreateBlock(ctx, tabId, buildercontroller.MakeBuilderTerminalBlockDef(appDir), nil)
+	if err != nil {
+		return "", fmt.Errorf("error creating terminal: %w", err)
+	}
+	err = queueBuilderLayoutAction(ctx, tabId, makeBuilderLayoutAction(blockData.OID, targetBlockId, targetAction))
+	if err != nil {
+		if delErr := rtcore.DeleteBlock(ctx, blockData.OID, false); delErr != nil {
+			log.Printf("builder terminal: could not roll back block %s: %v\n", blockData.OID, delErr)
+		}
+		return "", fmt.Errorf("error queuing layout action: %w", err)
+	}
+	return blockData.OID, nil
 }

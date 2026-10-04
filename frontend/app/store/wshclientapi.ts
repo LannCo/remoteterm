@@ -258,6 +258,12 @@ export class RpcApiType {
         return client.wshRpcCall("electronsystembell", null, opts);
     }
 
+    // command "ensurebuildertab" [call]
+    EnsureBuilderTabCommand(client: WshClient, data: CommandEnsureBuilderTabData, opts?: RpcOpts): Promise<CommandEnsureBuilderTabRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "ensurebuildertab", data, opts);
+        return client.wshRpcCall("ensurebuildertab", data, opts);
+    }
+
     // command "eventpublish" [call]
     EventPublishCommand(client: WshClient, data: WaveEvent, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "eventpublish", data, opts);
