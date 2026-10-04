@@ -773,7 +773,6 @@ function registerBuilderGlobalKeys() {
     getApi().registerGlobalWebviewKeys(tables.webviewKeys);
 }
 
-
 function getAllGlobalKeyBindings(): string[] {
     const allKeys = Array.from(globalKeyMap.keys());
     return allKeys;

@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { NavigateDirection } from "@/layout/lib/types";
 import { describe, expect, it, vi } from "vitest";
 import { BuilderWebviewKeys, makeBuilderKeyTables } from "./builder-keys";
 
@@ -95,9 +96,21 @@ describe("builder key tables", () => {
 
     it("runs focus moves, magnify, block numbers, search and Escape as a tab does", () => {
         const { state, deps, tables } = setup("terminal");
-        press(tables.keyMap.get("Ctrl:Shift:ArrowLeft"));
-        press(tables.keyMap.get("Ctrl:Shift:l"));
-        expect(deps.switchBlockInDirection.mock.calls).toEqual([[3], [1]]);
+        const moves: [string, NavigateDirection][] = [
+            ["Ctrl:Shift:ArrowUp", NavigateDirection.Up],
+            ["Ctrl:Shift:ArrowDown", NavigateDirection.Down],
+            ["Ctrl:Shift:ArrowLeft", NavigateDirection.Left],
+            ["Ctrl:Shift:ArrowRight", NavigateDirection.Right],
+            ["Ctrl:Shift:k", NavigateDirection.Up],
+            ["Ctrl:Shift:j", NavigateDirection.Down],
+            ["Ctrl:Shift:h", NavigateDirection.Left],
+            ["Ctrl:Shift:l", NavigateDirection.Right],
+        ];
+        for (const [key, direction] of moves) {
+            expect(press(tables.keyMap.get(key)), key).toBe(true);
+            expect(deps.switchBlockInDirection, key).toHaveBeenLastCalledWith(direction);
+        }
+        expect(deps.switchBlockInDirection).toHaveBeenCalledTimes(moves.length);
         press(tables.keyMap.get("Cmd:m"));
         expect(deps.magnifyFocused).toHaveBeenCalledTimes(1);
         press(tables.keyMap.get("Ctrl:Shift:c{Digit3}"));
@@ -105,13 +118,28 @@ describe("builder key tables", () => {
         expect(deps.switchBlockByBlockNum.mock.calls).toEqual([[3], [9]]);
         expect(press(tables.keyMap.get("Cmd:f"))).toBe(true);
         expect(press(tables.keyMap.get("Escape"))).toBe(true);
+        expect(deps.activateSearch).toHaveBeenCalledTimes(1);
+        expect(deps.handleEscape).toHaveBeenCalledTimes(1);
         state.moveDisabled = true;
         expect(press(tables.keyMap.get("Ctrl:Shift:ArrowUp"))).toBe(false);
     });
 
     it("leaves the tab-window keys unbound", () => {
         const { tables } = setup("terminal");
-        const unbound = ["Cmd:t", "Cmd:Shift:w", "Cmd:[", "Shift:Cmd:[", "Cmd:]", "Shift:Cmd:]", "F2", "Ctrl:Shift:i", "Ctrl:Shift:x", "Cmd:g", "Cmd:i", "Ctrl:w"];
+        const unbound = [
+            "Cmd:t",
+            "Cmd:Shift:w",
+            "Cmd:[",
+            "Shift:Cmd:[",
+            "Cmd:]",
+            "Shift:Cmd:]",
+            "F2",
+            "Ctrl:Shift:i",
+            "Ctrl:Shift:x",
+            "Cmd:g",
+            "Cmd:i",
+            "Ctrl:w",
+        ];
         for (let idx = 1; idx <= 9; idx++) {
             unbound.push(`Cmd:${idx}`);
         }
