@@ -1,6 +1,7 @@
 // Copyright 2025, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { BuilderNoticeAtom, openBuilderTerminal } from "@/app/store/builder-terminal";
 import { globalStore } from "@/app/store/jotaiStore";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
@@ -37,7 +38,7 @@ export class BuilderAppPanelModel {
     externalChangeAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
     watchStatusAtom = atom<BuilderWatchStatusData>(null) as PrimitiveAtom<BuilderWatchStatusData>;
     appDirAtom = atom<string>(null) as PrimitiveAtom<string>;
-    noticeAtom: PrimitiveAtom<string> = atom<string>("");
+    noticeAtom: PrimitiveAtom<string> = BuilderNoticeAtom;
     builderStatusAtom = atom<BuilderStatusData>(null) as PrimitiveAtom<BuilderStatusData>;
     hasSecretsAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
     saveNeededAtom!: Atom<boolean>;
@@ -187,8 +188,7 @@ export class BuilderAppPanelModel {
     }
 
     async openTerminal() {
-        const err = await getApi().openBuilderTerminal();
-        globalStore.set(this.noticeAtom, err ?? "");
+        await openBuilderTerminal("", null);
     }
 
     async openFolder() {

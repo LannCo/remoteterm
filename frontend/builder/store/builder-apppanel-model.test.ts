@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { BuilderNoticeAtom } from "@/app/store/builder-terminal";
 import { globalStore } from "@/app/store/jotaiStore";
 import { stringToBase64 } from "@/util/util";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -165,5 +166,11 @@ describe("BuilderAppPanelModel reload glue", () => {
         await model.saveAppFile("draft/app");
         expect(globalStore.get(model.codeContentAtom)).toBe("v1 formatted");
         expect(globalStore.get(model.saveNeededAtom)).toBe(false);
+    });
+});
+
+describe("BuilderAppPanelModel notice", () => {
+    it("shares the builder notice atom, so Open terminal errors from any path show in the header", () => {
+        expect(BuilderAppPanelModel.getInstance().noticeAtom).toBe(BuilderNoticeAtom);
     });
 });
