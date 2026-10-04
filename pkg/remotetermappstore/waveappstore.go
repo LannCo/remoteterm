@@ -275,12 +275,14 @@ func WriteAppFile(appId string, fileName string, contents []byte) error {
 		return err
 	}
 
+	if err := CheckNoSymlinks(filepath.Dir(filePath)); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
-
-	if err := os.WriteFile(filePath, contents, 0644); err != nil {
-		return fmt.Errorf("failed to write file: %w", err)
+	if err := writeAppFileSafe(filePath, contents); err != nil {
+		return err
 	}
 
 	return nil
@@ -301,19 +303,16 @@ func ReadAppFile(appId string, fileName string) (*FileData, error) {
 		return nil, err
 	}
 
-	fileInfo, err := os.Stat(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to stat file: %w", err)
+	if err := CheckNoSymlinks(filePath); err != nil {
+		return nil, err
 	}
-
-	contents, err := os.ReadFile(filePath)
+	contents, modTs, err := readRegularFileCapped(filePath, MaxAppFileReadSize)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %w", err)
+		return nil, err
 	}
-
 	return &FileData{
 		Contents: contents,
-		ModTs:    fileInfo.ModTime().UnixMilli(),
+		ModTs:    modTs,
 	}, nil
 }
 
@@ -332,6 +331,9 @@ func DeleteAppFile(appId string, fileName string) error {
 		return err
 	}
 
+	if err := CheckNoSymlinks(filepath.Dir(filePath)); err != nil {
+		return err
+	}
 	if err := os.Remove(filePath); err != nil {
 		return fmt.Errorf("failed to delete file: %w", err)
 	}
@@ -395,6 +397,12 @@ func RenameAppFile(appId string, fromFileName string, toFileName string) error {
 		return fmt.Errorf("invalid destination path: %w", err)
 	}
 
+	if err := CheckNoSymlinks(filepath.Dir(fromPath)); err != nil {
+		return err
+	}
+	if err := CheckNoSymlinks(filepath.Dir(toPath)); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(toPath), 0755); err != nil {
 		return fmt.Errorf("failed to create destination directory: %w", err)
 	}
