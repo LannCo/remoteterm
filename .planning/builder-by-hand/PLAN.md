@@ -21,7 +21,7 @@ Every task's requirements include this section.
 - New files carry `// Copyright 2026, Command Line Inc.` and `// SPDX-License-Identifier: Apache-2.0`.
 - Generated files (`frontend/types/gotypes.d.ts`, `frontend/types/remotetermevent.d.ts`, `frontend/app/store/wshclientapi.ts`, `pkg/wshrpc/wshclient/wshclient.go`, `pkg/rtconfig/metaconsts.go`, `schema/settings.json`) are never hand-edited. After changing RPC types, settings or WPS events, run `npx task generate` from the repo root (`task` is not on PATH; `npx task` uses `node_modules/.bin/task`, which uses the repo's `golang-1.26.2/bin/go`).
 - Go floor: read from the effective SDK `go.mod` `go` directive (today `go 1.25.6`, `tsunami/go.mod:3`). Every builder `go` invocation gets `GOTOOLCHAIN=local`.
-- Go discovery bounds (spec D2): shells `bash`, `zsh`, `fish` run with `-l -i -c`; `sh`, `dash`, `ksh` with `-l -c`; anything else skipped; script `command -v go`; stdin `/dev/null`; own process group (`Setpgid`); 3 s timeout kills the group; `cmd.WaitDelay` 1 s; stdout capped at 64 KiB; accept only the last non-empty line, an absolute path to an existing regular executable file; success cached for the process lifetime; failure cached 30 s; GOROOT canonicalisation via `<go> env GOROOT` with a 2 s timeout and `GOTOOLCHAIN=local`.
+- Go discovery bounds (spec D2): shells `bash`, `zsh`, `fish` run with `-l -i -c`; `sh`, `dash`, `ksh` with `-l -c`; anything else skipped; script `command -v go`; stdin `/dev/null`; own session (`Setsid`; the spec says `Setpgid`, see Spec deviations), so the process group id equals the shell's pid; 3 s timeout kills the group; `cmd.WaitDelay` 1 s; stdout capped at 64 KiB; accept only the last non-empty line, an absolute path to an existing regular executable file; success cached for the process lifetime; failure cached 30 s; GOROOT canonicalisation via `<go> env GOROOT` with a 2 s timeout and `GOTOOLCHAIN=local`.
 - Watcher bounds (spec D4): at most 8 watchers in total, at most 1000 watched directories, 300 ms trailing debounce, root poll every 1 s, "unavailable" after 10 s.
 - Read cap for app files: 2 MiB.
 - Secret bindings path: `<data dir>/builder/secret-bindings/<ns>/<name>.json`.
@@ -900,7 +900,9 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: `CompareGoVersions`, `goCmdEnv` (Task 2); `writeTestFile` (Task 1).
 - Produces:
-  - `build.FindGoExecutable() (string, error)`: same signature as today; returns the canonical `$GOROOT/bin/go`
+  - `build.FindGoExecutable(minGoVersion string) (string, error)`: takes the floor; each candidate (PATH, search paths, probe) is version-checked and skipped if older; returns the canonical `$GOROOT/bin/go` of the first that qualifies, or a `*GoTooOldError` naming the newest too-old Go when none qualifies; results are cached per floor
+  - `build.GoTooOldError struct { GoPath, Version, MinVersion string }`
+  - `CheckGoVersion` with no custom path passes its floor to discovery and maps `*GoTooOldError` to `GoStatus_BadVersion` (with that Go's path and version)
   - `build.GetCachedGoFmtPath() string`: `""` until a discovery succeeded; never starts a probe
   - unexported test seams in package `build`: `var goSearchPaths func(home string) []string`, `var goProbeTimeout time.Duration`, `func resetGoDiscoveryCache()`, `var goCache *goDiscoveryCache` with fields `failedAt time.Time` and `lock sync.Mutex`
   - `remotetermapputil.ResolveGoFmtPath() (string, error)`: unchanged signature; with `tsunami:gopath` unset it reads only `build.GetCachedGoFmtPath()`
@@ -916,6 +918,7 @@ Create `tsunami/build/godiscovery_test.go`:
 package build
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -954,14 +957,18 @@ func writeExecutable(t *testing.T, path string, script string) {
 	}
 }
 
-const plainFakeGo = "#!/bin/sh\nexit 1\n"
+func fakeGoScript(version string) string {
+	return "#!/bin/sh\nif [ \"$1\" = version ]; then echo 'go version go" + version + " linux/amd64'; exit 0; fi\nexit 1\n"
+}
+
+var plainFakeGo = fakeGoScript("1.26.0")
 
 func TestFindGoUsesPath(t *testing.T) {
 	isolateGoDiscovery(t)
 	binDir := t.TempDir()
 	writeExecutable(t, filepath.Join(binDir, "go"), plainFakeGo)
 	t.Setenv("PATH", binDir)
-	got, err := FindGoExecutable()
+	got, err := FindGoExecutable("")
 	if err != nil || got != filepath.Join(binDir, "go") {
 		t.Fatalf("FindGoExecutable = %q, %v", got, err)
 	}
@@ -979,7 +986,7 @@ func TestFindGoUsesFirstExecutableSearchPath(t *testing.T) {
 	goSearchPaths = func(string) []string {
 		return []string{filepath.Join(dir, "a", "go"), notExec, first, second}
 	}
-	got, err := FindGoExecutable()
+	got, err := FindGoExecutable("")
 	if err != nil || got != first {
 		t.Fatalf("FindGoExecutable = %q, %v; want %q", got, err, first)
 	}
@@ -1019,7 +1026,7 @@ func TestProbeTakesLastLineAndPassesLoginFlags(t *testing.T) {
 	shell := filepath.Join(dir, "shells", "bash")
 	writeExecutable(t, shell, "#!/bin/sh\nprintf '%s ' \"$@\" > '"+argsFile+"'\necho 'welcome to the machine'\necho\necho '"+fakeGo+"'\n")
 	t.Setenv("SHELL", shell)
-	got, err := FindGoExecutable()
+	got, err := FindGoExecutable("")
 	if err != nil || got != fakeGo {
 		t.Fatalf("FindGoExecutable = %q, %v; want %q", got, err, fakeGo)
 	}
@@ -1032,7 +1039,7 @@ func TestProbeTakesLastLineAndPassesLoginFlags(t *testing.T) {
 	shShell := filepath.Join(dir, "shells2", "sh")
 	writeExecutable(t, shShell, "#!/bin/sh\nprintf '%s ' \"$@\" > '"+argsFile+"'\necho '"+fakeGo+"'\n")
 	t.Setenv("SHELL", shShell)
-	if _, err := FindGoExecutable(); err != nil {
+	if _, err := FindGoExecutable(""); err != nil {
 		t.Fatal(err)
 	}
 	args, _ = os.ReadFile(argsFile)
@@ -1081,7 +1088,7 @@ func TestProbeSkipsUnsetMissingAndUnknownShells(t *testing.T) {
 		resetGoDiscoveryCache()
 		t.Setenv("SHELL", shell)
 		start := time.Now()
-		if _, err := FindGoExecutable(); err == nil {
+		if _, err := FindGoExecutable(""); err == nil {
 			t.Fatalf("SHELL=%q: expected not found", shell)
 		}
 		if time.Since(start) > time.Second {
@@ -1104,15 +1111,15 @@ func TestFindGoCachesFailureFor30Seconds(t *testing.T) {
 		data, _ := os.ReadFile(counter)
 		return strings.Count(string(data), "x")
 	}
-	FindGoExecutable()
-	FindGoExecutable()
+	FindGoExecutable("")
+	FindGoExecutable("")
 	if n := countRuns(); n != 1 {
 		t.Fatalf("probe ran %d times within the failure TTL, want 1", n)
 	}
 	goCache.lock.Lock()
 	goCache.failedAt = time.Now().Add(-31 * time.Second)
 	goCache.lock.Unlock()
-	FindGoExecutable()
+	FindGoExecutable("")
 	if n := countRuns(); n != 2 {
 		t.Fatalf("probe ran %d times after the TTL expired, want 2", n)
 	}
@@ -1125,17 +1132,55 @@ func TestFindGoCanonicalisesGoroot(t *testing.T) {
 	writeExecutable(t, filepath.Join(goroot, "bin", "go"), plainFakeGo)
 	writeExecutable(t, filepath.Join(goroot, "bin", "gofmt"), plainFakeGo)
 	shimDir := filepath.Join(dir, "shims")
-	writeExecutable(t, filepath.Join(shimDir, "go"), "#!/bin/sh\nif [ \"$1\" = env ] && [ \"$2\" = GOROOT ]; then echo '"+goroot+"'; exit 0; fi\nexit 1\n")
+	writeExecutable(t, filepath.Join(shimDir, "go"), "#!/bin/sh\nif [ \"$1\" = env ] && [ \"$2\" = GOROOT ]; then echo '"+goroot+"'; exit 0; fi\nif [ \"$1\" = version ]; then echo 'go version go1.26.0 linux/amd64'; exit 0; fi\nexit 1\n")
 	t.Setenv("PATH", shimDir)
 	if got := GetCachedGoFmtPath(); got != "" {
 		t.Fatalf("GetCachedGoFmtPath before discovery = %q, want empty", got)
 	}
-	got, err := FindGoExecutable()
+	got, err := FindGoExecutable("")
 	if err != nil || got != filepath.Join(goroot, "bin", "go") {
 		t.Fatalf("FindGoExecutable = %q, %v", got, err)
 	}
 	if fmtPath := GetCachedGoFmtPath(); fmtPath != filepath.Join(goroot, "bin", "gofmt") {
 		t.Fatalf("GetCachedGoFmtPath = %q", fmtPath)
+	}
+}
+
+func TestFindGoSkipsTooOldCandidate(t *testing.T) {
+	isolateGoDiscovery(t)
+	dir := t.TempDir()
+	binDir := filepath.Join(dir, "path")
+	writeExecutable(t, filepath.Join(binDir, "go"), fakeGoScript("1.24.0"))
+	t.Setenv("PATH", binDir)
+	newer := filepath.Join(dir, "newer", "go")
+	writeExecutable(t, newer, fakeGoScript("1.26.1"))
+	goSearchPaths = func(string) []string { return []string{newer} }
+	got, err := FindGoExecutable("1.25.6")
+	if err != nil || got != newer {
+		t.Fatalf("FindGoExecutable = %q, %v; want the newer %q", got, err, newer)
+	}
+}
+
+func TestFindGoReportsNewestTooOld(t *testing.T) {
+	isolateGoDiscovery(t)
+	dir := t.TempDir()
+	binDir := filepath.Join(dir, "path")
+	writeExecutable(t, filepath.Join(binDir, "go"), fakeGoScript("1.24.0"))
+	t.Setenv("PATH", binDir)
+	older := filepath.Join(dir, "older", "go")
+	writeExecutable(t, older, fakeGoScript("1.25.1"))
+	goSearchPaths = func(string) []string { return []string{older} }
+
+	_, err := FindGoExecutable("1.25.6")
+	var tooOld *GoTooOldError
+	if !errors.As(err, &tooOld) || tooOld.Version != "1.25.1" || tooOld.GoPath != older {
+		t.Fatalf("err = %v; want GoTooOldError naming 1.25.1 at %s", err, older)
+	}
+
+	resetGoDiscoveryCache()
+	res := CheckGoVersion("", "1.25.6")
+	if res.GoStatus != GoStatus_BadVersion || res.Version != "1.25.1" || res.GoPath != older {
+		t.Fatalf("CheckGoVersion = %+v; want badversion 1.25.1", res)
 	}
 }
 ```
@@ -1167,7 +1212,7 @@ func TestResolveGoFmtPathNeverProbes(t *testing.T) {
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `cd tsunami && go test ./build/... -run 'FindGo|Probe|DefaultGoSearchPaths' -v`
-Expected: FAIL to compile: `undefined: goSearchPaths`, `undefined: resetGoDiscoveryCache`, `undefined: GetCachedGoFmtPath`, `undefined: defaultGoSearchPaths`, `undefined: goProbeTimeout`.
+Expected: FAIL to compile: `undefined: goSearchPaths`, `undefined: resetGoDiscoveryCache`, `undefined: GetCachedGoFmtPath`, `undefined: defaultGoSearchPaths`, `undefined: goProbeTimeout`, `undefined: GoTooOldError`, `too many arguments in call to FindGoExecutable`.
 
 - [ ] **Step 3: Implement discovery**
 
@@ -1182,6 +1227,7 @@ package build
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -1209,10 +1255,23 @@ var goSearchPaths = defaultGoSearchPaths
 type goDiscoveryCache struct {
 	findLock  sync.Mutex
 	lock      sync.Mutex
+	floor     string
 	goPath    string
 	gofmtPath string
 	failErr   error
 	failedAt  time.Time
+}
+
+// GoTooOldError is returned only when every Go found is older than the floor; it names
+// the newest one so the message can say what was found.
+type GoTooOldError struct {
+	GoPath     string
+	Version    string
+	MinVersion string
+}
+
+func (e *GoTooOldError) Error() string {
+	return fmt.Sprintf("the newest Go found (%s at %s) is older than %s", e.Version, e.GoPath, e.MinVersion)
 }
 
 var goCache = &goDiscoveryCache{}
@@ -1236,20 +1295,21 @@ func (w *cappedWriter) Write(p []byte) (int, error) {
 }
 
 // FindGoExecutable holds findLock for the whole discovery so concurrent callers share
-// one login-shell probe instead of each starting their own.
-func FindGoExecutable() (string, error) {
+// one login-shell probe instead of each starting their own. Results are cached per
+// floor; in practice the floor is the SDK's go line and never changes.
+func FindGoExecutable(minGoVersion string) (string, error) {
 	goCache.findLock.Lock()
 	defer goCache.findLock.Unlock()
-	if hit, goPath, failErr := goCache.lookup(); hit {
+	if hit, goPath, failErr := goCache.lookup(minGoVersion); hit {
 		return goPath, failErr
 	}
-	found, err := discoverGo()
+	found, err := discoverGo(minGoVersion)
 	if err != nil {
-		goCache.setFailure(err)
+		goCache.setFailure(minGoVersion, err)
 		return "", err
 	}
 	goPath, gofmtPath := canonicalizeGoPath(found)
-	goCache.setSuccess(goPath, gofmtPath)
+	goCache.setSuccess(minGoVersion, goPath, gofmtPath)
 	return goPath, nil
 }
 
@@ -1260,9 +1320,12 @@ func GetCachedGoFmtPath() string {
 	return goCache.gofmtPath
 }
 
-func (c *goDiscoveryCache) lookup() (bool, string, error) {
+func (c *goDiscoveryCache) lookup(floor string) (bool, string, error) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+	if c.floor != floor {
+		return false, "", nil
+	}
 	if c.goPath != "" {
 		return true, c.goPath, nil
 	}
@@ -1272,16 +1335,19 @@ func (c *goDiscoveryCache) lookup() (bool, string, error) {
 	return false, "", nil
 }
 
-func (c *goDiscoveryCache) setFailure(err error) {
+func (c *goDiscoveryCache) setFailure(floor string, err error) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+	c.floor = floor
+	c.goPath = ""
 	c.failErr = err
 	c.failedAt = time.Now()
 }
 
-func (c *goDiscoveryCache) setSuccess(goPath string, gofmtPath string) {
+func (c *goDiscoveryCache) setSuccess(floor string, goPath string, gofmtPath string) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+	c.floor = floor
 	c.goPath = goPath
 	c.gofmtPath = gofmtPath
 	c.failErr = nil
@@ -1290,6 +1356,7 @@ func (c *goDiscoveryCache) setSuccess(goPath string, gofmtPath string) {
 func resetGoDiscoveryCache() {
 	goCache.lock.Lock()
 	defer goCache.lock.Unlock()
+	goCache.floor = ""
 	goCache.goPath = ""
 	goCache.gofmtPath = ""
 	goCache.failErr = nil
@@ -1310,26 +1377,63 @@ func gofmtExeName() string {
 	return "gofmt"
 }
 
-func discoverGo() (string, error) {
+// Candidates are tried in order and each must meet the floor; a too-old Go early in
+// PATH must not hide a newer one installed elsewhere.
+func discoverGo(minGoVersion string) (string, error) {
+	var newestTooOld *GoTooOldError
+	accept := func(candidate string) bool {
+		goVer, err := readGoVersion(candidate)
+		if err != nil {
+			return false
+		}
+		if minGoVersion == "" || CompareGoVersions(goVer, minGoVersion) >= 0 {
+			return true
+		}
+		if newestTooOld == nil || CompareGoVersions(goVer, newestTooOld.Version) > 0 {
+			newestTooOld = &GoTooOldError{GoPath: candidate, Version: goVer, MinVersion: minGoVersion}
+		}
+		return false
+	}
 	if goPath, err := exec.LookPath(goExeName()); err == nil {
-		if absPath, err := filepath.Abs(goPath); err == nil {
+		if absPath, err := filepath.Abs(goPath); err == nil && accept(absPath) {
 			return absPath, nil
 		}
 	}
 	home, _ := os.UserHomeDir()
 	for _, candidate := range goSearchPaths(home) {
-		if isExecutableFile(candidate) {
+		if isExecutableFile(candidate) && accept(candidate) {
 			return candidate, nil
 		}
 	}
 	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
 		goPath, err := probeLoginShellForGo(os.Getenv("SHELL"))
-		if err == nil {
+		if err == nil && accept(goPath) {
 			return goPath, nil
 		}
-		log.Printf("go discovery: %v", err)
+		if err != nil {
+			log.Printf("go discovery: %v", err)
+		}
+	}
+	if newestTooOld != nil {
+		return "", newestTooOld
 	}
 	return "", fmt.Errorf("go command not found in PATH, common installation locations, or the login shell")
+}
+
+func readGoVersion(goPath string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), goVersionTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, goPath, "version")
+	cmd.Env = goCmdEnv()
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	goVer, ok := ParseGoVersionOutput(string(out))
+	if !ok {
+		return "", errors.New("unparseable go version output")
+	}
+	return goVer, nil
 }
 
 func defaultGoSearchPaths(home string) []string {
@@ -1493,10 +1597,11 @@ import (
 	"syscall"
 )
 
-// rc files can leave background jobs holding stdout; killing the whole group is the
-// only way the timeout actually ends the probe.
+// A new session detaches the probe from any controlling tty, so an interactive shell
+// cannot stop itself on SIGTTIN; its group id equals its pid, and rc files can leave
+// background jobs holding stdout, so killing the whole group is what ends the probe.
 func setProbeProcessGroup(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
 			return nil
@@ -1521,7 +1626,40 @@ import "os/exec"
 func setProbeProcessGroup(cmd *exec.Cmd) {}
 ```
 
-- [ ] **Step 4: Make `ResolveGoFmtPath` cache-only**
+- [ ] **Step 4: Pass the floor from `CheckGoVersion` into discovery**
+
+In `tsunami/build/build.go` `CheckGoVersion` (the Task 2 version), replace the discovery branch:
+
+```go
+		found, err := FindGoExecutable()
+		if err != nil {
+			return GoVersionCheckResult{GoStatus: GoStatus_NotFound}
+		}
+		goPath = found
+```
+
+with:
+
+```go
+		found, err := FindGoExecutable(minGoVersion)
+		var tooOld *GoTooOldError
+		if errors.As(err, &tooOld) {
+			return GoVersionCheckResult{
+				GoStatus:  GoStatus_BadVersion,
+				GoPath:    tooOld.GoPath,
+				GoVersion: "go" + tooOld.Version,
+				Version:   tooOld.Version,
+			}
+		}
+		if err != nil {
+			return GoVersionCheckResult{GoStatus: GoStatus_NotFound}
+		}
+		goPath = found
+```
+
+and add `"errors"` to `build.go`'s imports. `readGoVersion` in `godiscovery.go` uses `goVersionTimeout` from Task 2.
+
+- [ ] **Step 4b: Make `ResolveGoFmtPath` cache-only**
 
 In `pkg/remotetermapputil/waveapputil.go`, replace lines 34-40 (the `if goPath == "" { ... build.FindGoExecutable() ... }` block) so the function body reads:
 
@@ -1546,7 +1684,7 @@ and keep the rest of the existing function (from `gofmtName := "gofmt"` to the e
 - [ ] **Step 5: Run the tests and vet**
 
 Run: `cd tsunami && go test ./build/... -v && go vet ./build/...`
-Expected: PASS for all tests (the timeout test takes about 0.3 to 1.3 s); vet silent.
+Expected: PASS for all tests (the timeout test takes about 0.3 to 1.3 s), including `TestFindGoSkipsTooOldCandidate` and `TestFindGoReportsNewestTooOld`; vet silent.
 
 Run: `go test ./pkg/remotetermapputil/... -v && go vet ./pkg/remotetermapputil/...`
 Expected: PASS.
@@ -2148,7 +2286,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Produces (package `remotetermappstore`):
   - `MaxAppFileReadSize = 2 * 1024 * 1024`
   - `GetWaveAppsRoot() string` (`<home>/waveapps`)
-  - `CheckNoSymlinks(target string) error`: every existing component from `~/waveapps` down to `target` (inclusive) is `Lstat`ed and must not be a symlink; missing trailing components are allowed; a target outside `~/waveapps` is an error
+  - `CheckNoSymlinks(target string) error`: every existing component from `~/waveapps/<ns>` down to `target` (inclusive) is `Lstat`ed and must not be a symlink; `~/waveapps` itself may be a symlink; missing trailing components are allowed; a target outside `~/waveapps` is an error
   - unexported `readRegularFileCapped(path string, maxSize int64) ([]byte, int64, error)` (data, mod time in ms)
   - unexported `writeAppFileSafe(path string, contents []byte) error` (new file: `O_EXCL`; existing: must be a regular file, checked with `Lstat` right before writing)
   - unexported `createFileExclusive(path string, contents []byte) error` (`O_CREATE|O_EXCL|O_WRONLY`, 0644; an existing path, including a dangling symlink, returns an error satisfying `errors.Is(err, fs.ErrExist)`)
@@ -2337,6 +2475,46 @@ func TestWriteAppFileCreatesAndOverwrites(t *testing.T) {
 		t.Fatalf("read back %q, %v", data, err)
 	}
 }
+
+func TestSymlinkedWaveappsRootAllowed(t *testing.T) {
+	skipWithoutSymlinks(t)
+	home := setupAppStoreTest(t)
+	realRoot := t.TempDir()
+	if err := os.Symlink(realRoot, filepath.Join(home, "waveapps")); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteAppFile("draft/demo", "app.go", []byte("package main\n")); err != nil {
+		t.Fatalf("write through a symlinked ~/waveapps: %v", err)
+	}
+	data, err := ReadAppFile("draft/demo", "app.go")
+	if err != nil || string(data.Contents) != "package main\n" {
+		t.Fatalf("read through a symlinked ~/waveapps: %q, %v", data, err)
+	}
+	if _, err := os.Stat(filepath.Join(realRoot, "draft", "demo", "app.go")); err != nil {
+		t.Fatalf("app.go not under the real root: %v", err)
+	}
+}
+
+func TestSymlinkedNamespaceRejected(t *testing.T) {
+	skipWithoutSymlinks(t)
+	home := setupAppStoreTest(t)
+	realNs := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, "waveapps"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realNs, filepath.Join(home, "waveapps", "draft")); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteAppFile("draft/demo", "app.go", []byte("x")); err == nil {
+		t.Error("write through a symlinked namespace succeeded")
+	}
+	if _, err := ReadAppFile("draft/demo", "app.go"); err == nil {
+		t.Error("read through a symlinked namespace succeeded")
+	}
+	if entries, _ := os.ReadDir(realNs); len(entries) != 0 {
+		t.Fatalf("files created in the symlink target: %v", entries)
+	}
+}
 ```
 
 - [ ] **Step 2: Run them to verify they fail**
@@ -2374,13 +2552,15 @@ func GetWaveAppsRoot() string {
 
 // A process that can write the app folder (an agent, an editor plugin) can plant
 // symlinks; refusing every symlinked component keeps our reads and writes inside it.
+// The check starts at ~/waveapps/<ns>: ~/waveapps itself is the user's choice (it may
+// live on another disk) and is out of reach of anything confined to an app folder.
 func CheckNoSymlinks(target string) error {
 	root := GetWaveAppsRoot()
 	rel, err := filepath.Rel(root, filepath.Clean(target))
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		return fmt.Errorf("path %s is outside %s", target, root)
 	}
-	components := []string{root}
+	var components []string
 	if rel != "." {
 		cur := root
 		for _, part := range strings.Split(rel, string(filepath.Separator)) {
@@ -3047,7 +3227,11 @@ func TestGuideHasNoStaleApiOrChatFraming(t *testing.T) {
 func TestStarterAppCompilesAgainstBundledSdk(t *testing.T) {
 	goBin, err := exec.LookPath("go")
 	if err != nil {
-		t.Skip("go is not on PATH; this test needs a Go toolchain")
+		// go test runs with the toolchain that built it, even when PATH lacks go.
+		goBin = filepath.Join(runtime.GOROOT(), "bin", "go")
+		if _, statErr := os.Stat(goBin); statErr != nil {
+			t.Skip("go not found: not on PATH and not at runtime.GOROOT()/bin/go")
+		}
 	}
 	root := repoRoot(t)
 	sdkSrc := filepath.Join(root, "tsunami")
@@ -3317,7 +3501,7 @@ If the result is still recognisably the original guide with the corrections abov
 - [ ] **Step 5: Run the starter tests**
 
 Run: `go test ./pkg/remotetermappstore/starter/... -v`
-Expected: PASS for all six tests. `TestStarterAppCompilesAgainstBundledSdk` either passes or skips with a stated reason (no `go`, Go older than the SDK, or a cold module cache); report a skip and its reason. If `TestStarterDocsReferenceOnlyExistingSdkSymbols` fails, fix the document, never the test's identifier list.
+Expected: PASS for all six tests. `TestStarterAppCompilesAgainstBundledSdk` finds `go` on PATH or, failing that, at `runtime.GOROOT()/bin/go` (the toolchain running the test). It may skip only for a Go older than the SDK or a cold module cache; report any skip and its reason. If `TestStarterDocsReferenceOnlyExistingSdkSymbols` fails, fix the document, never the test's identifier list.
 
 Run: `go vet ./pkg/remotetermappstore/...`
 Expected: no output.
@@ -3350,9 +3534,9 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `frontend/builder/tabs/builder-previewtab.tsx:9-28` (`EmptyStateView`), `:157-158` (pass prop)
 
 **Interfaces:**
-- Consumes: `CheckNoSymlinks`, `createFileExclusive`, and the test helpers `setupAppStoreTest`, `makeAppDir`, `skipWithoutSymlinks` (Task 5); `starter.GetStarterFiles` (Task 7).
+- Consumes: `CheckNoSymlinks`, `createFileExclusive`, and the test helpers `setupAppStoreTest`, `makeAppDir`, `skipWithoutSymlinks` (Task 5); `deleteSecretBindings`, `WriteAppSecretBindings`, `ReadAppSecretBindings` and the test helper `setDataDir` (Task 6); `starter.GetStarterFiles`, `starter.AppGoFileName` (Task 7).
 - Produces:
-  - `remotetermappstore.SeedApp(appId string) ([]string, error)`: names of files written; existing files (including dangling symlinks) are skipped, never written through
+  - `remotetermappstore.SeedApp(appId string) ([]string, error)`: names of files written; existing files (including dangling symlinks) are skipped, never written through, except that an existing regular, empty `app.go` is filled (opened `O_WRONLY|O_TRUNC` after an `Lstat` confirms it is a regular file); when the app folder did not exist before the call, any secret bindings stored for that app id are deleted first
   - RPC `SeedBuilderAppCommand(ctx, CommandSeedBuilderAppData{AppId}) (*CommandSeedBuilderAppRtnData{Files []string}, error)`; TS: `RpcApi.SeedBuilderAppCommand(TabRpcClient, { appid })` returns `{ files: string[] }`
   - `BuilderAppPanelModel.seedStarterApp(): Promise<void>`
 
@@ -3369,6 +3553,7 @@ Create `pkg/remotetermappstore/seed_test.go`:
 package remotetermappstore
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -3379,6 +3564,7 @@ import (
 
 func TestSeedAppWritesStarterFiles(t *testing.T) {
 	home := setupAppStoreTest(t)
+	setDataDir(t)
 	written, err := SeedApp("draft/fresh")
 	if err != nil {
 		t.Fatal(err)
@@ -3398,6 +3584,7 @@ func TestSeedAppWritesStarterFiles(t *testing.T) {
 
 func TestSeedAppNeverOverwrites(t *testing.T) {
 	home := setupAppStoreTest(t)
+	setDataDir(t)
 	dir := makeAppDir(t, home, "draft", "mine")
 	if err := os.WriteFile(filepath.Join(dir, "app.go"), []byte("package main // mine\n"), 0644); err != nil {
 		t.Fatal(err)
@@ -3418,6 +3605,7 @@ func TestSeedAppNeverOverwrites(t *testing.T) {
 func TestSeedAppSkipsDanglingSymlink(t *testing.T) {
 	skipWithoutSymlinks(t)
 	home := setupAppStoreTest(t)
+	setDataDir(t)
 	dir := makeAppDir(t, home, "draft", "linked")
 	target := filepath.Join(t.TempDir(), "outside.go")
 	if err := os.Symlink(target, filepath.Join(dir, "app.go")); err != nil {
@@ -3438,6 +3626,7 @@ func TestSeedAppSkipsDanglingSymlink(t *testing.T) {
 func TestSeedAppRefusesSymlinkedAppDir(t *testing.T) {
 	skipWithoutSymlinks(t)
 	home := setupAppStoreTest(t)
+	setDataDir(t)
 	real := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, "waveapps", "draft"), 0755); err != nil {
 		t.Fatal(err)
@@ -3455,10 +3644,114 @@ func TestSeedAppRefusesSymlinkedAppDir(t *testing.T) {
 
 func TestSeedAppRejectsInvalidIds(t *testing.T) {
 	setupAppStoreTest(t)
+	setDataDir(t)
 	for _, id := range []string{"", "nonamespace", "draft/../escape", "draft/has space", "draft/a/b"} {
 		if _, err := SeedApp(id); err == nil {
 			t.Errorf("SeedApp(%q) succeeded", id)
 		}
+	}
+}
+
+func TestSeedAppFillsEmptyAppGo(t *testing.T) {
+	home := setupAppStoreTest(t)
+	setDataDir(t)
+	dir := makeAppDir(t, home, "draft", "empty")
+	if err := os.WriteFile(filepath.Join(dir, "app.go"), nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	written, err := SeedApp("draft/empty")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(written, "app.go") {
+		t.Fatalf("written = %v; an empty app.go should be filled", written)
+	}
+	files, _ := starter.GetStarterFiles()
+	data, _ := os.ReadFile(filepath.Join(dir, "app.go"))
+	if string(data) != string(files[0].Data) {
+		t.Fatal("empty app.go was not replaced with the starter app")
+	}
+}
+
+func TestSeedAppLeavesSymlinkToEmptyFile(t *testing.T) {
+	skipWithoutSymlinks(t)
+	home := setupAppStoreTest(t)
+	setDataDir(t)
+	dir := makeAppDir(t, home, "draft", "emptylink")
+	target := filepath.Join(t.TempDir(), "empty.go")
+	if err := os.WriteFile(target, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(dir, "app.go")); err != nil {
+		t.Fatal(err)
+	}
+	written, err := SeedApp("draft/emptylink")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(written, "app.go") {
+		t.Fatal("wrote through a symlink to an empty file")
+	}
+	if data, _ := os.ReadFile(target); len(data) != 0 {
+		t.Fatal("the symlink target was modified")
+	}
+}
+
+func TestSeedAppClearsStaleBindingsForNewApp(t *testing.T) {
+	setupAppStoreTest(t)
+	setDataDir(t)
+	if err := WriteAppSecretBindings("draft/reborn", map[string]string{"API_KEY": "old-binding"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SeedApp("draft/reborn"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadAppSecretBindings("draft/reborn")
+	if err != nil || len(got) != 0 {
+		t.Fatalf("bindings after seeding a new app = %v, %v; want none", got, err)
+	}
+}
+
+func TestSeedAppKeepsBindingsForExistingApp(t *testing.T) {
+	home := setupAppStoreTest(t)
+	setDataDir(t)
+	makeAppDir(t, home, "draft", "kept")
+	bindings := map[string]string{"API_KEY": "my-binding"}
+	if err := WriteAppSecretBindings("draft/kept", bindings); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SeedApp("draft/kept"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadAppSecretBindings("draft/kept")
+	if err != nil || !maps.Equal(got, bindings) {
+		t.Fatalf("bindings of an existing app changed: %v, %v", got, err)
+	}
+}
+
+func TestSeedAppThroughSymlinkedRootButNotNamespace(t *testing.T) {
+	skipWithoutSymlinks(t)
+	home := setupAppStoreTest(t)
+	setDataDir(t)
+	realRoot := t.TempDir()
+	if err := os.Symlink(realRoot, filepath.Join(home, "waveapps")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SeedApp("draft/seeded"); err != nil {
+		t.Fatalf("seed through a symlinked ~/waveapps: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(realRoot, "draft", "seeded", "app.go")); err != nil {
+		t.Fatalf("seeded app.go not under the real root: %v", err)
+	}
+	realNs := t.TempDir()
+	if err := os.Symlink(realNs, filepath.Join(realRoot, "local")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SeedApp("local/seeded"); err == nil {
+		t.Fatal("seed through a symlinked namespace succeeded")
+	}
+	if entries, _ := os.ReadDir(realNs); len(entries) != 0 {
+		t.Fatalf("files created in the symlink target: %v", entries)
 	}
 }
 ```
@@ -3489,7 +3782,8 @@ import (
 )
 
 // O_EXCL means an existing file, or a symlink planted where a starter file would go,
-// is left alone rather than written through.
+// is left alone rather than written through. The one exception is an empty regular
+// app.go (an editor or agent touched it), which counts as missing.
 func SeedApp(appId string) ([]string, error) {
 	if err := ValidateAppId(appId); err != nil {
 		return nil, fmt.Errorf("invalid appId: %w", err)
@@ -3501,6 +3795,8 @@ func SeedApp(appId string) ([]string, error) {
 	if err := CheckNoSymlinks(appDir); err != nil {
 		return nil, err
 	}
+	_, statErr := os.Lstat(appDir)
+	isNewApp := errors.Is(statErr, fs.ErrNotExist)
 	if err := os.MkdirAll(appDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create app directory: %w", err)
 	}
@@ -3508,13 +3804,31 @@ func SeedApp(appId string) ([]string, error) {
 	if err := CheckNoSymlinks(appDir); err != nil {
 		return nil, err
 	}
+	// Bindings are keyed by app id and outlive a deleted folder; a new app with an old
+	// name must not inherit them.
+	if isNewApp {
+		if err := deleteSecretBindings(appId); err != nil {
+			return nil, err
+		}
+	}
 	files, err := starter.GetStarterFiles()
 	if err != nil {
 		return nil, err
 	}
 	written := make([]string, 0, len(files))
 	for _, f := range files {
-		err := createFileExclusive(filepath.Join(appDir, f.Name), f.Data)
+		path := filepath.Join(appDir, f.Name)
+		err := createFileExclusive(path, f.Data)
+		if errors.Is(err, fs.ErrExist) && f.Name == starter.AppGoFileName {
+			filled, fillErr := fillEmptyRegularFile(path, f.Data)
+			if fillErr != nil {
+				return written, fmt.Errorf("failed to write %s: %w", f.Name, fillErr)
+			}
+			if filled {
+				written = append(written, f.Name)
+			}
+			continue
+		}
 		if errors.Is(err, fs.ErrExist) {
 			continue
 		}
@@ -3524,6 +3838,25 @@ func SeedApp(appId string) ([]string, error) {
 		written = append(written, f.Name)
 	}
 	return written, nil
+}
+
+func fillEmptyRegularFile(path string, contents []byte) (bool, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return false, err
+	}
+	if !info.Mode().IsRegular() || info.Size() != 0 {
+		return false, nil
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0)
+	if err != nil {
+		return false, err
+	}
+	if _, err := f.Write(contents); err != nil {
+		f.Close()
+		return false, err
+	}
+	return true, f.Close()
 }
 ```
 
@@ -3654,6 +3987,8 @@ const EmptyStateView = memo(({ showCreate }: { showCreate: boolean }) => {
 
 and at line 158 change `overlay = <EmptyStateView />;` to `overlay = <EmptyStateView showCreate={!fileExists} />;`.
 
+`fileExists` is `originalContent.length > 0` (line 140), so an empty `app.go` also shows the button, and `SeedApp` now fills an empty `app.go`, so the button works in that case too.
+
 - [ ] **Step 8: Type-check**
 
 Run: `npx tsc --noEmit`
@@ -3677,8 +4012,9 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Create: `pkg/buildercontroller/rebuild_test.go`
 - Modify: `pkg/buildercontroller/buildercontroller.go:32-38` (const), `:54-66` (struct), `:73-90` (`GetOrCreateController`), `:159-191` (`Start`), `:270-273` (success path log), `:415-435` (`handleBuildError` log), `:480-490` (`Stop`), `:508-554` (`GetStatus` race fix)
 - Modify: `pkg/buildercontroller/buildercontroller_test.go` (two build-log tests)
-- Modify: `pkg/wshrpc/wshrpctypes_builder.go` (interface + `CommandRequestBuilderRebuildData`)
-- Modify: `pkg/wshrpc/wshserver/wshserver.go` (add `RequestBuilderRebuildCommand` after `StartBuilderCommand`, line 1172)
+- Modify: `pkg/buildercontroller/buildercontroller.go:98-137` (`DeleteController`, `Shutdown` mark closed), `:139-157` (`waitForBuildDone`), `:437-478` (delete `RestartAndWaitForBuild`)
+- Modify: `pkg/wshrpc/wshrpctypes_builder.go` (interface + `CommandRequestBuilderRebuildData`; remove `RestartBuilderAndWaitCommand` and its two types)
+- Modify: `pkg/wshrpc/wshserver/wshserver.go` (add `RequestBuilderRebuildCommand` after `StartBuilderCommand`, line 1172; delete `RestartBuilderAndWaitCommand`, lines 1185-1211; record the input hash in `WriteAppGoFileCommand`, line 1109)
 - Generated: `frontend/types/gotypes.d.ts`, `frontend/app/store/wshclientapi.ts`, `pkg/wshrpc/wshclient/wshclient.go`
 
 **Interfaces:**
@@ -3686,7 +4022,10 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Produces (package `buildercontroller`):
   - `BuildLogFileName = ".tsunami/build.log"`
   - `IsRelevantAppPath(rel string) bool` (slash-separated path relative to the app dir; root `*.go`, `static/**` except `static/tw.css`; ignores dotfiles/dot-dirs, `node_modules`, names ending `~`, `.swp`, `.swx`, `.tmp`, all-digit names)
-  - `ComputeAppInputHash(appDir string) (string, error)` (sha256 over relevant regular files, path and content)
+  - `ComputeAppInputHash(appDir string) (string, error)`: sha256 over relevant regular files; root `*.go` files contribute path and content, files under `static/` contribute path, size and modification time in nanoseconds (their contents are never read)
+  - `RecordAppInputHash(appId string)`: records the current input hash on every controller whose app is `appId`; called by `WriteAppGoFileCommand` after a Code-tab save
+  - `(*BuilderController).markClosed()` / `isClosed() bool`: a closed controller never queues or starts another build; `DeleteController` and `Shutdown` call `markClosed()` before `Stop()`, and `Stop()` waits until the build loop has finished (`!isBuilding()`)
+  - `RestartAndWaitForBuild` and the `RestartBuilderAndWaitCommand` RPC are deleted (no non-generated callers)
   - `(*BuilderController).RequestRebuild(appId string, builderEnv map[string]string)`: never blocks; a request during a build sets `rebuildPending` and exactly one follow-up build runs
   - `(*BuilderController).getLastBuildInputHash() string`, `setLastBuildInputHash(hash string)`, `isBuilding() bool`, `hasProcess() bool`
   - unexported `makeBuilderController(builderId string) *BuilderController`; field `runBuildFn func(ctx context.Context, appId string, builderEnv map[string]string)` (test seam, defaults to `buildAndRun`)
@@ -3707,7 +4046,9 @@ package buildercontroller
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
+	"time"
 )
 
 func TestIsRelevantAppPath(t *testing.T) {
@@ -3765,6 +4106,80 @@ func TestComputeAppInputHash(t *testing.T) {
 	write("static/site.css", "body{color:red}")
 	if hash() == edited {
 		t.Fatal("editing a static file did not change the input hash")
+	}
+}
+
+func TestComputeAppInputHashDoesNotReadStaticContents(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs an unreadable file, which root and Windows ignore")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "app.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	media := filepath.Join(dir, "static", "video.mp4")
+	if err := os.MkdirAll(filepath.Dir(media), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(media, []byte("frames"), 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(media, 0644) })
+	before, err := ComputeAppInputHash(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(media, time.Now(), time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	after, err := ComputeAppInputHash(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before == after {
+		t.Fatal("an unreadable static file's mtime change did not change the hash; it must be hashed from metadata")
+	}
+}
+
+func TestComputeAppInputHashStaticSameSizeNewMtime(t *testing.T) {
+	dir := t.TempDir()
+	css := filepath.Join(dir, "static", "site.css")
+	if err := os.MkdirAll(filepath.Dir(css), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(css, []byte("aaaa"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(css, past, past); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := ComputeAppInputHash(dir)
+	if err := os.WriteFile(css, []byte("bbbb"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := ComputeAppInputHash(dir)
+	if before == after {
+		t.Fatal("a same-size rewrite of a static file did not change the hash")
+	}
+}
+
+func TestComputeAppInputHashAppGoSameBytesUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	appGo := filepath.Join(dir, "app.go")
+	if err := os.WriteFile(appGo, []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := ComputeAppInputHash(dir)
+	if err := os.Chtimes(appGo, time.Now(), time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(appGo, []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := ComputeAppInputHash(dir)
+	if before != after {
+		t.Fatal("rewriting app.go with identical bytes changed the hash")
 	}
 }
 ```
@@ -3890,6 +4305,96 @@ func TestRebuildStopsPreviousProcess(t *testing.T) {
 		t.Fatal("the build did not start")
 	}
 	waitSignal(t, exited, "the previous app process to exit")
+}
+
+func TestDeleteControllerDuringBuildLeavesNoProcess(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses the sleep command")
+	}
+	home, _ := setupBuilderTest(t)
+	makeTestApp(t, home, "teardown-build")
+	bc := GetOrCreateController("test-teardown-build")
+	started := make(chan struct{}, 4)
+	release := make(chan struct{})
+	var calls atomic.Int32
+	var appProcess *exec.Cmd
+	bc.runBuildFn = func(ctx context.Context, appId string, builderEnv map[string]string) {
+		calls.Add(1)
+		started <- struct{}{}
+		<-release
+		// what a successful buildAndRun leaves behind: a running app attached to the controller
+		appProcess = exec.Command("sleep", "30")
+		if err := appProcess.Start(); err != nil {
+			t.Error(err)
+			return
+		}
+		attachTestProcess(bc, appProcess)
+	}
+	bc.RequestRebuild("draft/teardown-build", nil)
+	waitSignal(t, started, "the first build")
+	bc.RequestRebuild("draft/teardown-build", nil)
+
+	deleted := make(chan struct{})
+	go func() {
+		DeleteController("test-teardown-build")
+		close(deleted)
+	}()
+	waitUntil(t, 2*time.Second, func() bool { return bc.isClosed() }, "the controller to be marked closed")
+	bc.RequestRebuild("draft/teardown-build", nil)
+	release <- struct{}{}
+	waitSignal(t, deleted, "DeleteController to return")
+
+	time.Sleep(200 * time.Millisecond)
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("%d builds ran, want 1: a queued build ran after teardown", n)
+	}
+	if bc.hasProcess() {
+		t.Fatal("an app process is still attached after teardown")
+	}
+	exited := make(chan struct{})
+	go func() {
+		appProcess.Wait()
+		close(exited)
+	}()
+	waitSignal(t, exited, "the app process to be killed")
+}
+
+func attachTestProcess(bc *BuilderController, cmd *exec.Cmd) {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	bc.process = &BuilderProcess{Cmd: cmd}
+}
+
+func TestRecordAppInputHashUpdatesMatchingControllers(t *testing.T) {
+	home, _ := setupBuilderTest(t)
+	appDir := makeTestApp(t, home, "recorded")
+	match := GetOrCreateController("test-record-match")
+	other := GetOrCreateController("test-record-other")
+	t.Cleanup(func() {
+		DeleteController("test-record-match")
+		DeleteController("test-record-other")
+	})
+	setTestAppId(match, "draft/recorded")
+	setTestAppId(other, "draft/elsewhere")
+	other.setLastBuildInputHash("untouched")
+
+	RecordAppInputHash("draft/recorded")
+	want, err := ComputeAppInputHash(appDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := match.getLastBuildInputHash(); got != want {
+		t.Fatalf("matching controller hash %q, want %q", got, want)
+	}
+	if got := other.getLastBuildInputHash(); got != "untouched" {
+		t.Fatalf("a controller for another app was updated: %q", got)
+	}
+}
+
+func setTestAppId(bc *BuilderController, appId string) {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	bc.appId = appId
 }
 ```
 
@@ -4030,8 +4535,11 @@ func shouldSkipAppDir(rel string) bool {
 	return !strings.Contains(rel, "/") && rel != "static"
 }
 
+// Root .go files are hashed by content: they are small, and a save that rewrites the
+// same bytes must not look like a change. Files under static/ can be large media, so
+// they are hashed by path, size and modification time and their contents never read.
 func ComputeAppInputHash(appDir string) (string, error) {
-	var relPaths []string
+	hasher := sha256.New()
 	err := filepath.WalkDir(appDir, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			if p == appDir {
@@ -4053,22 +4561,27 @@ func ComputeAppInputHash(appDir string) (string, error) {
 			}
 			return nil
 		}
-		if d.Type().IsRegular() && IsRelevantAppPath(rel) {
-			relPaths = append(relPaths, rel)
+		if !d.Type().IsRegular() || !IsRelevantAppPath(rel) {
+			return nil
 		}
+		if strings.HasPrefix(rel, "static/") {
+			info, err := d.Info()
+			if err != nil {
+				return nil
+			}
+			fmt.Fprintf(hasher, "%s\x00%d\x00%d\x00", rel, info.Size(), info.ModTime().UnixNano())
+			return nil
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return nil
+		}
+		fmt.Fprintf(hasher, "%s\x00%d\x00", rel, len(data))
+		hasher.Write(data)
 		return nil
 	})
 	if err != nil {
 		return "", fmt.Errorf("cannot scan app folder %s: %w", appDir, err)
-	}
-	hasher := sha256.New()
-	for _, rel := range relPaths {
-		data, err := os.ReadFile(filepath.Join(appDir, filepath.FromSlash(rel)))
-		if err != nil {
-			continue
-		}
-		fmt.Fprintf(hasher, "%s\x00%d\x00", rel, len(data))
-		hasher.Write(data)
 	}
 	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
@@ -4089,6 +4602,7 @@ Add to the const block (lines 32-38):
 Add to the `BuilderController` struct (after `errorMsg string`, line 65):
 
 ```go
+	closed             bool
 	building           bool
 	rebuildPending     bool
 	pendingAppId       string
@@ -4139,6 +4653,9 @@ func (bc *BuilderController) RequestRebuild(appId string, builderEnv map[string]
 func (bc *BuilderController) queueBuild(appId string, builderEnv map[string]string) bool {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
+	if bc.closed {
+		return false
+	}
 	bc.pendingAppId = appId
 	bc.pendingEnv = builderEnv
 	if bc.building {
@@ -4151,7 +4668,10 @@ func (bc *BuilderController) queueBuild(appId string, builderEnv map[string]stri
 
 func (bc *BuilderController) buildLoop() {
 	for {
-		appId, builderEnv := bc.beginBuild()
+		appId, builderEnv, ok := bc.beginBuild()
+		if !ok {
+			return
+		}
 		bc.recordInputHash(appId)
 		buildCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		bc.runBuildFn(buildCtx, appId, builderEnv)
@@ -4162,9 +4682,13 @@ func (bc *BuilderController) buildLoop() {
 	}
 }
 
-func (bc *BuilderController) beginBuild() (string, map[string]string) {
+func (bc *BuilderController) beginBuild() (string, map[string]string, bool) {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
+	if bc.closed {
+		bc.building = false
+		return "", nil, false
+	}
 	bc.rebuildPending = false
 	if bc.process != nil {
 		log.Printf("BuilderController: stopping previous app %s for builder %s", bc.appId, bc.builderId)
@@ -4177,17 +4701,32 @@ func (bc *BuilderController) beginBuild() (string, map[string]string) {
 	bc.outputBuffer.SetLineCallback(func(line string) {
 		bc.publishOutputLine(line, false)
 	})
-	return bc.pendingAppId, bc.pendingEnv
+	return bc.pendingAppId, bc.pendingEnv, true
 }
 
 func (bc *BuilderController) endBuild() bool {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
-	if bc.rebuildPending {
+	if bc.rebuildPending && !bc.closed {
 		return true
 	}
 	bc.building = false
 	return false
+}
+
+// Closing is permanent: a controller being torn down must not start a queued build
+// or act on a late watcher callback, either of which would leave an orphan app process.
+func (bc *BuilderController) markClosed() {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	bc.closed = true
+	bc.rebuildPending = false
+}
+
+func (bc *BuilderController) isClosed() bool {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	return bc.closed
 }
 
 func (bc *BuilderController) clearPendingRebuild() {
@@ -4220,6 +4759,38 @@ func (bc *BuilderController) recordInputHash(appId string) {
 		return
 	}
 	bc.setLastBuildInputHash(hash)
+}
+
+// RecordAppInputHash is called after the builder itself writes app files (a Code-tab
+// save), so the watcher treats that write as ours whichever RPC reaches us first.
+func RecordAppInputHash(appId string) {
+	controllers := getControllersForApp(appId)
+	if len(controllers) == 0 {
+		return
+	}
+	appDir, err := remotetermappstore.GetAppDir(appId)
+	if err != nil {
+		return
+	}
+	hash, err := ComputeAppInputHash(appDir)
+	if err != nil {
+		return
+	}
+	for _, bc := range controllers {
+		bc.setLastBuildInputHash(hash)
+	}
+}
+
+func getControllersForApp(appId string) []*BuilderController {
+	mapLock.Lock()
+	defer mapLock.Unlock()
+	var controllers []*BuilderController
+	for _, bc := range controllerMap {
+		if bc.getAppId() == appId {
+			controllers = append(controllers, bc)
+		}
+	}
+	return controllers
 }
 
 func (bc *BuilderController) setLastBuildInputHash(hash string) {
@@ -4269,9 +4840,41 @@ In `handleBuildError`, after the `[error]` output line added in Task 4, add:
 	writeBuildLog(bc.appId, lines, "status: error")
 ```
 
-In `Stop` (line 480), add `bc.clearPendingRebuild()` as the first statement.
+In `Stop` (line 480), add `bc.clearPendingRebuild()` as the first statement. In `waitForBuildDone` (lines 139-157), replace the status read (`bc.statusLock.Lock()` through the `if status != BuilderStatus_Building { return nil }` block) with:
 
-`RestartAndWaitForBuild` (lines 437-478) stays as it is; nothing in the frontend calls it.
+```go
+		if !bc.isBuilding() {
+			return nil
+		}
+```
+
+so `Stop` waits for the build loop itself (including a coalesced follow-up), not for a status value that a follow-up build may not have set yet.
+
+In `DeleteController` (lines 98-107) and `Shutdown` (lines 126-137), call `bc.markClosed()` before `bc.Stop()`:
+
+```go
+	if bc != nil {
+		bc.markClosed()
+		bc.Stop()
+	}
+```
+
+```go
+	for _, bc := range controllers {
+		bc.markClosed()
+		bc.Stop()
+	}
+```
+
+Delete `RestartAndWaitForBuild` (lines 437-478). Its only caller is `RestartBuilderAndWaitCommand` (`pkg/wshrpc/wshserver/wshserver.go:1185-1211`), and nothing outside generated code calls that RPC (`grep -rn RestartBuilderAndWait frontend emain cmd` finds only `frontend/app/store/wshclientapi.ts` and `frontend/types/gotypes.d.ts`, both generated). Remove the RPC as well: the `RestartBuilderAndWaitCommand` line from `WshRpcBuilderInterface` (`wshrpctypes_builder.go:24`), the types `CommandRestartBuilderAndWaitData` and `RestartBuilderAndWaitResult` (lines 108-116), and the server method. `BuildResult` stays: `buildAndRun` and the tests use it. `npx task generate` in Step 5 drops the generated client functions.
+
+In `pkg/wshrpc/wshserver/wshserver.go` `WriteAppGoFileCommand` (line 1109), after the `WriteAppFile` error check, add:
+
+```go
+	buildercontroller.RecordAppInputHash(data.AppId)
+```
+
+The Code-tab save then records its input hash on the server before it returns, so the watcher recognises the write as ours whether the save or the rebuild request arrives first.
 
 `GetStatus` (line 508) reads `bc.appId` under `statusLock` while `Start` (today) and `beginBuild` (now) write it under `bc.lock`; the new tests expose that existing race under `-race`. Take a snapshot through `bc.lock` before taking `statusLock`, and use the local `appId` for every later read in the function (`ReadAppManifest`, `ReadAppSecretBindings`, `BuildAppSecretEnv`):
 
@@ -4338,6 +4941,9 @@ Expected: PASS; vet silent.
 Run: `go test -race -count=2 ./pkg/buildercontroller/...`
 Expected: `ok`, no `DATA RACE` report.
 
+Run: `grep -rn 'RestartAndWaitForBuild\|RestartBuilderAndWait' pkg frontend emain cmd`
+Expected: no output.
+
 Run: `npx tsc --noEmit`
 Expected: exits 0.
 
@@ -4369,7 +4975,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Generated: `frontend/types/gotypes.d.ts`, `frontend/types/remotetermevent.d.ts`, `frontend/app/store/wshclientapi.ts`, `pkg/wshrpc/wshclient/wshclient.go`, `pkg/rtconfig/metaconsts.go`, `schema/settings.json`
 
 **Interfaces:**
-- Consumes: `IsRelevantAppPath`, `ComputeAppInputHash`, `RequestRebuild`, `getLastBuildInputHash`, `setLastBuildInputHash`, `makeBuilderController`, `runBuildFn`, `waitUntil` (Task 9); `setupBuilderTest`, `makeTestApp` (Task 4); `remotetermappstore.CheckNoSymlinks` (Task 5).
+- Consumes: `IsRelevantAppPath`, `ComputeAppInputHash`, `RequestRebuild`, `getLastBuildInputHash`, `setLastBuildInputHash`, `makeBuilderController`, `runBuildFn`, `markClosed`, `isClosed`, `waitUntil` (Task 9); `setupBuilderTest`, `makeTestApp` (Task 4); `remotetermappstore.CheckNoSymlinks` (Task 5).
 - Produces:
   - consts `WatchStatus_Active = "active"`, `WatchStatus_Unavailable = "unavailable"`, `MaxAppWatchers = 8`
   - `MakeAppWatcher(appDir string, onChange func(), onStatus func(status string, reason string)) (*AppWatcher, error)` and `(*AppWatcher).Close()`
@@ -4506,6 +5112,10 @@ func TestWatcherAtomicRenameSaveFiresOnce(t *testing.T) {
 	appDir := makeTestApp(t, home, "rename")
 	rec := startTestWatcher(t, appDir)
 	writeAppFileForTest(t, appDir, "app.go.tmp.4242", "package main // new\n")
+	time.Sleep(3 * watchDebounce)
+	if n := rec.changeCount(); n != 0 {
+		t.Fatalf("%d change notifications for the temp file alone, want 0", n)
+	}
 	if err := os.Rename(filepath.Join(appDir, "app.go.tmp.4242"), filepath.Join(appDir, "app.go")); err != nil {
 		t.Fatal(err)
 	}
@@ -4618,6 +5228,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func overrideWatchSeams(t *testing.T, live bool) *atomic.Int32 {
@@ -4714,8 +5325,6 @@ func TestDeleteControllerStopsWatcher(t *testing.T) {
 	}
 }
 ```
-
-Add `"time"` to `watch_test.go`'s imports.
 
 - [ ] **Step 2: Run them to verify they fail**
 
@@ -5152,6 +5761,9 @@ func (bc *BuilderController) stopWatcher_nolock() {
 // Off by default: an agent sandboxed to the app folder must not be able to run code
 // outside the sandbox just by writing a file. The frontend offers a Rebuild button.
 func (bc *BuilderController) handleAppFilesChanged(appId string) {
+	if bc.isClosed() {
+		return
+	}
 	appDir, err := remotetermappstore.GetAppDir(appId)
 	if err != nil {
 		return
@@ -5180,10 +5792,11 @@ func (bc *BuilderController) publishWatchStatus(status string, reason string) {
 }
 ```
 
-In `buildercontroller.go`, add `watcher *AppWatcher` to the struct. In `DeleteController` (lines 98-107) and `Shutdown` (lines 126-137), call `bc.StopWatching()` before `bc.Stop()`:
+In `buildercontroller.go`, add `watcher *AppWatcher` to the struct. In `DeleteController` and `Shutdown`, call `bc.StopWatching()` between `bc.markClosed()` (Task 9) and `bc.Stop()`:
 
 ```go
 	if bc != nil {
+		bc.markClosed()
 		bc.StopWatching()
 		bc.Stop()
 	}
@@ -5191,10 +5804,13 @@ In `buildercontroller.go`, add `watcher *AppWatcher` to the struct. In `DeleteCo
 
 ```go
 	for _, bc := range controllers {
+		bc.markClosed()
 		bc.StopWatching()
 		bc.Stop()
 	}
 ```
+
+`handleAppFilesChanged` checks `isClosed()` first: a debounce timer can fire after `Close()` has returned and would otherwise queue a build on a controller being torn down.
 
 - [ ] **Step 5: Add the setting, the event and the RPC**
 
@@ -5307,6 +5923,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `decideReload(editor: string, original: string, disk: string, lastWritten: string): ReloadDecision` with `ReloadDecision` kinds `missing`, `sync-original` (`content`), `none`, `replace` (`content`), `conflict` (`disk`); `disk == null` means app.go is missing
   - model atoms `appGoMissingAtom: PrimitiveAtom<boolean>`, `diskChangedAtom: PrimitiveAtom<string>` (null when no conflict), `externalChangeAtom: PrimitiveAtom<boolean>`, `watchStatusAtom: PrimitiveAtom<BuilderWatchStatusData>`; field `lastWrittenContent: string`
   - model methods `requestRebuild()`, `handleAppGoUpdated(appId)`, `applyReloadDecision(decision)`, `loadDiskVersion()`, `keepMyEdits()`; `startBuilder()` now delegates to `requestRebuild()`; `debouncedRestart` is removed
+  - the model subscribes to the `config` event and keeps `atoms.fullConfigAtom` current (field `configUnsubFn`), which the builder window otherwise never does
   - `BuilderAppHeader` component (named export) in `frontend/builder/builder-appheader.tsx`, containing `LiveRebuildToggle`, `ExternalChangeStrip`, `WatchStatusStrip`; Task 12 extends it
 
 Rule order inside `decideReload` matters: a clean editor always follows the disk (so a stale `lastWritten` can never pin old content), and only a dirty editor can produce `none` or `conflict`.
@@ -5414,6 +6031,7 @@ Replace the field `debouncedRestart: (() => void) & { cancel: () => void };` (li
     externalChangeAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
     watchStatusAtom = atom<BuilderWatchStatusData>(null) as PrimitiveAtom<BuilderWatchStatusData>;
     watchStatusUnsubFn: (() => void) | null = null;
+    configUnsubFn: (() => void) | null = null;
     lastWrittenContent: string = null;
 ```
 
@@ -5454,6 +6072,16 @@ In `initialize()`:
             console.error("Failed to watch the app folder:", err);
             globalStore.set(this.watchStatusAtom, { status: "unavailable", reason: err.message || "unknown error" });
         }
+
+        // The builder window loads the config once at startup (initBuilder in
+        // frontend/remoteterm.ts) and, unlike main windows, never runs
+        // initGlobalWaveEventSubs; without this the live-rebuild toggle could not change.
+        this.configUnsubFn = waveEventSubscribeSingle({
+            eventType: "config",
+            handler: (event) => {
+                globalStore.set(atoms.fullConfigAtom, event.data.fullconfig);
+            },
+        });
 ```
 
 In `saveEnvVars`, replace `this.debouncedRestart();` with `this.requestRebuild();`.
@@ -5566,6 +6194,10 @@ In `dispose()`, delete `this.debouncedRestart.cancel();` and add:
         if (this.watchStatusUnsubFn) {
             this.watchStatusUnsubFn();
             this.watchStatusUnsubFn = null;
+        }
+        if (this.configUnsubFn) {
+            this.configUnsubFn();
+            this.configUnsubFn = null;
         }
 ```
 
@@ -5708,7 +6340,7 @@ and replace the final `return (...)` of `BuilderCodeTab` (lines 79-101) with:
                     className={cn(
                         "absolute top-1 right-4 z-50 px-3 py-1 text-sm font-medium rounded transition-colors shadow-lg",
                         saveNeeded
-                            ? "bg-accent/80 text-primary hover:bg-accent cursor-pointer"
+                            ? "bg-accent/80 text-onaccent hover:bg-accent cursor-pointer"
                             : "bg-gray-600 text-gray-400 cursor-default"
                     )}
                     onClick={saveNeeded ? handleSave : undefined}
@@ -5782,6 +6414,11 @@ Expected: PASS (`decide-reload.test.ts`, `tsunamisdk-packaging.test.ts`).
 Run: `grep -n 'debouncedRestart' frontend/builder -r`
 Expected: no output.
 
+Check that the builder window now receives config updates; it had no `config` subscription before (`grep -rn 'eventType: "config"' frontend` lists only `frontend/app/store/global.ts`, which only main windows run):
+
+Run: `grep -n 'eventType: "config"' frontend/builder/store/builder-apppanel-model.ts && grep -n 'configUnsubFn()' frontend/builder/store/builder-apppanel-model.ts`
+Expected: one match each. A unit test is not practical here: the model imports the live RPC client. The orchestrator's isolated end-to-end run checks the toggle visibly flips after a click.
+
 - [ ] **Step 10: Commit**
 
 ```bash
@@ -5801,6 +6438,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `frontend/builder/store/builder-apppanel-model.ts` (`appDirAtom`, `noticeAtom`, `loadAppDir`, `openTerminal`, `openFolder`, `clearNotice`; call `loadAppDir` in `initialize`)
 - Create: `emain/emain-builder-select.ts`
 - Create: `emain/emain-builder-select.test.ts`
+- Modify: `emain/emain-window.ts:1037-1087` (extract `showQuakeWindow`, export `revealQuakeWindow`)
 - Modify: `emain/emain-ipc.ts:18-25` (imports), after `close-builder-window` handler (ends line 513)
 - Modify: `emain/preload.ts:67`, `frontend/types/custom.d.ts:125`, `frontend/preview/mock/preview-electron-api.ts:54`
 - Create: `pkg/buildercontroller/appdir.go`
@@ -6060,7 +6698,7 @@ Create `emain/emain-builder-select.ts`:
 type DestroyableWindow = { isDestroyed(): boolean };
 
 // The quake window is the primary main window in this app (emain-window.ts), so it is
-// a valid target; a hidden one is shown by the caller before focusing.
+// a valid target; the caller reveals a hidden one through the quake show path.
 export function pickTerminalWindow<T extends DestroyableWindow>(lastFocused: T, all: T[]): T {
     if (lastFocused != null && !lastFocused.isDestroyed()) {
         return lastFocused;
@@ -6069,7 +6707,59 @@ export function pickTerminalWindow<T extends DestroyableWindow>(lastFocused: T, 
 }
 ```
 
-In `emain/emain-ipc.ts`, add to the imports: `pickTerminalWindow` from `./emain-builder-select`, and `focusedRemoteTermWindow`, `getAllRemoteTermWindows` to the existing `./emain-window` import (line 24). Inside `initIpcHandlers()`, after the `close-builder-window` handler (ends line 513), add:
+In `emain/emain-window.ts`, the quake hotkey's show logic is inline in the `else` branch of `quakeToggle` (lines 1069-1087). Move it into a function and export a guarded entry point next to it. Add above `async function quakeToggle()` (line 1037):
+
+```ts
+async function showQuakeWindow(window: RemoteTermBrowserWindow) {
+    const targetDisplay = getDisplayForQuakeToggle();
+    moveWindowToDisplay(window, targetDisplay);
+    window.show();
+    if (quakeRestoreFullscreenOnShow) {
+        const enterPromise = waitForFullscreenEnter(window);
+        window.setFullScreen(true);
+        try {
+            await enterPromise;
+        } catch {
+            // timeout: proceed anyway
+        }
+    }
+    quakeRestoreFullscreenOnShow = false;
+    window.focus();
+    if (window.activeTabView?.webContents) {
+        window.activeTabView.webContents.focus();
+    }
+}
+
+// Same path as the quake hotkey, so a hidden quake window comes back on the cursor's
+// display and restores fullscreen exactly as the hotkey would.
+export async function revealQuakeWindow() {
+    if (quakeToggleInProgress) {
+        return;
+    }
+    quakeToggleInProgress = true;
+    try {
+        const window = quakeWindow;
+        if (window == null || window.isDestroyed() || window.isVisible()) {
+            return;
+        }
+        await showQuakeWindow(window);
+    } finally {
+        quakeToggleInProgress = false;
+    }
+}
+```
+
+and replace that `else` branch (lines 1069-1087) with:
+
+```ts
+        } else {
+            await showQuakeWindow(window);
+        }
+```
+
+The moved comment's em-dash becomes a colon (`// timeout: proceed anyway`), per the repo's no-em-dash rule; the comment is otherwise kept. Run `grep -n 'showQuakeWindow\|revealQuakeWindow' emain/emain-window.ts` to confirm one definition each and one call from `quakeToggle`.
+
+In `emain/emain-ipc.ts`, add to the imports: `pickTerminalWindow` from `./emain-builder-select`, and `focusedRemoteTermWindow`, `getAllRemoteTermWindows`, `getQuakeWindow`, `revealQuakeWindow` to the existing `./emain-window` import (line 24). Inside `initIpcHandlers()`, after the `close-builder-window` handler (ends line 513), add:
 
 ```ts
     electron.ipcMain.handle("open-builder-terminal", async (event): Promise<string> => {
@@ -6089,6 +6779,10 @@ In `emain/emain-ipc.ts`, add to the imports: `pickTerminalWindow` from `./emain-
             await RpcApi.OpenBuilderTerminalCommand(ElectronWshClient, { builderid: bw.builderId, tabid: tabId });
         } catch (e) {
             return `Could not open a terminal: ${e instanceof Error ? e.message : String(e)}`;
+        }
+        if (ww === getQuakeWindow() && !ww.isVisible()) {
+            await revealQuakeWindow();
+            return "";
         }
         if (!ww.isVisible()) {
             ww.show();
@@ -6330,7 +7024,7 @@ Expected: no output.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add pkg/buildercontroller/appdir.go pkg/buildercontroller/appdir_test.go pkg/wshrpc/wshrpctypes_builder.go pkg/wshrpc/wshserver/wshserver.go pkg/wshrpc/wshclient/wshclient.go frontend/types/gotypes.d.ts frontend/app/store/wshclientapi.ts emain/emain-builder-select.ts emain/emain-builder-select.test.ts emain/emain-ipc.ts emain/preload.ts frontend/types/custom.d.ts frontend/preview/mock/preview-electron-api.ts frontend/builder/builder-workspace.tsx frontend/builder/builder-appheader.tsx frontend/builder/store/builder-apppanel-model.ts
+git add pkg/buildercontroller/appdir.go pkg/buildercontroller/appdir_test.go pkg/wshrpc/wshrpctypes_builder.go pkg/wshrpc/wshserver/wshserver.go pkg/wshrpc/wshclient/wshclient.go frontend/types/gotypes.d.ts frontend/app/store/wshclientapi.ts emain/emain-builder-select.ts emain/emain-builder-select.test.ts emain/emain-window.ts emain/emain-ipc.ts emain/preload.ts frontend/types/custom.d.ts frontend/preview/mock/preview-electron-api.ts frontend/builder/builder-workspace.tsx frontend/builder/builder-appheader.tsx frontend/builder/store/builder-apppanel-model.ts
 git commit -m "feat(builder): open a terminal or file manager at the app folder
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -6408,6 +7102,8 @@ export function findBuilderWindowForApp<T extends BuilderWindowLike>(
 ```
 
 - [ ] **Step 4: Switch the IPC to request/response and redirect duplicates**
+
+Task 12 inserted handlers and imports into `emain/emain-ipc.ts`, so the line numbers below are from the original file and will be off. Locate each edit by its content (the handler's channel name, the import's module path) rather than by line number.
 
 In `emain/emain-ipc.ts`:
 
@@ -6579,7 +7275,7 @@ Run: `go test -race ./pkg/buildercontroller/... ./pkg/remotetermappstore/... && 
 Expected: `ok` for each, no `DATA RACE` report.
 
 Run: `go test ./pkg/remotetermappstore/starter/... -run StarterAppCompiles -v 2>&1 | tail -5`
-Expected: `PASS`, or `SKIP` with a stated reason; report which.
+Expected: `PASS`. A `SKIP` whose reason starts with `go not found` counts as a verification failure (the test's own toolchain should always be reachable); any other skip (Go older than the SDK, cold module cache) is reported with its reason.
 
 - [ ] **Step 2: Frontend suites**
 
@@ -6601,8 +7297,8 @@ Expected: `BUNDLE-OK`.
 
 - [ ] **Step 5: House rules on the branch diff**
 
-Run: `git diff --name-only 3e126798..HEAD | grep -v '^\.planning/' | xargs grep -nP '\x{2014}' 2>/dev/null`
-Expected: no output (no em-dashes in changed files).
+Run: `git diff 3e126798..HEAD -- . ':!.planning' | grep '^+' | grep -nP '\x{2014}'`
+Expected: no output (no em-dash in any added line; some touched files, such as `wshserver.go`, already contain em-dashes in lines this branch does not change).
 
 Run: `git status --short | grep -E 'golang-|zig-'`
 Expected: the two untracked directories are listed as `??` and nothing from them is staged or committed (`git log --stat 3e126798..HEAD | grep -E 'golang-|zig-'` prints nothing).
@@ -6620,7 +7316,7 @@ Report each step's result, every skip with its reason, and any failure with its 
 
 Where the code disagrees with the spec, the plan follows the code. Each item names what differs and why.
 
-1. **Quake window is the primary main window (D5).** The spec excludes the quake window when picking where "Open terminal" goes. In the code the quake window is simply the first main window (`emain/emain-window.ts:880-882`, `:896-898`, `:940-943`), so excluding it would make Open terminal fail in the common single-window case. The plan uses `focusedRemoteTermWindow` (last focused, survives blur, `emain-window.ts:106-108`), falls back to the first live window, and shows the window if it is hidden before focusing it (Task 12).
+1. **Quake window is the primary main window (D5).** The spec excludes the quake window when picking where "Open terminal" goes. In the code the quake window is simply the first main window (`emain/emain-window.ts:880-882`, `:896-898`, `:940-943`), so excluding it would make Open terminal fail in the common single-window case. The plan uses `focusedRemoteTermWindow` (last focused, survives blur, `emain-window.ts:106-108`), falls back to the first live window, and, when that window is the hidden quake window, reveals it through the quake hotkey's own show path (`revealQuakeWindow`, extracted from `quakeToggle`) so it returns on the cursor's display with fullscreen restored (Task 12).
 2. **New RPC `GetBuilderAppDirCommand` (D5).** "Open folder" must resolve the folder server-side, but the Electron main process cannot call Go functions directly. The plan adds `GetBuilderAppDirCommand{builderid}`, used by the `open-builder-folder` IPC and by the header to display the path. The path still never travels from renderer to main.
 3. **Input hash also recorded at request time (D4).** The spec records `lastBuildInputHash` at the start of each build. A save made while a build is running is only built after that build ends, so the watcher (300 ms) would see an unknown hash and report our own save as an outside change. `RequestRebuild` records the hash when the request arrives as well as when the build starts (Task 9).
 4. **`decideReload` gains a `none` case (D4).** The spec's signature includes `lastWritten` but no rule uses it. The plan adds: a dirty editor with `disk == original` (another file changed) or `disk == lastWritten` (our save, response not yet applied) changes nothing. A clean editor is checked first, so a stale `lastWritten` cannot pin old content (Task 11).
@@ -6636,4 +7332,30 @@ Where the code disagrees with the spec, the plan follows the code. Each item nam
 14. **`WatchBuilderAppCommand` returns the initial status.** The spec defines the event only; returning the status gives the frontend its starting state and exposes the type to TypeScript generation.
 15. **Reading the GOROOT from a shim is feasible.** mise and asdf shims and `/snap/bin/go` all run the real toolchain, so `<found> env GOROOT` works; if it fails, the plan falls back to the found path and a `gofmt` beside it (Task 3).
 16. **Pre-existing data race fixed.** `GetStatus` read `bc.appId` without the lock that writers hold. Task 9's tests expose it under `-race`, so Task 9 snapshots the id through `bc.lock` first.
-17. **Flag, not deviation: a symlinked `~/waveapps` is rejected.** D7 says every component from `~/waveapps` down is checked, so a user whose `~/waveapps` is a symlink to another disk loses access to all apps. The plan follows the spec. If that matters, start the check below `~/waveapps/<ns>` instead; the threat (an agent planting links inside an app folder) does not reach those directories.
+17. **Decision: symlink checks run from `~/waveapps/<ns>` down.** D7 says every component from `~/waveapps` down; that would lock out every app for a user whose `~/waveapps` is a symlink to another disk. `~/waveapps` itself is the user's choice and out of reach of anything confined to an app folder, so `CheckNoSymlinks` starts at the namespace directory (Task 5; tests `TestSymlinkedWaveappsRootAllowed`, `TestSymlinkedNamespaceRejected`, and `TestSeedAppThroughSymlinkedRootButNotNamespace` in Task 8).
+18. **Probe uses `Setsid`, not `Setpgid` (D2).** A new session detaches the probe from any controlling tty, so an interactive login shell cannot stop on SIGTTIN; the group id still equals the shell's pid, so the timeout's group kill is unchanged (Task 3).
+19. **Discovery checks each candidate against the floor (D2).** The spec takes the first Go found. A too-old Go early in PATH would then hide a newer one elsewhere, so every candidate is version-checked and skipped if older; the "too old" message appears only when none qualifies and names the newest one found (Task 3).
+20. **Static files are hashed by metadata (D4).** The spec hashes path and content of every relevant file. Root `*.go` files keep content hashing; files under `static/` (possibly large media) contribute path, size and mtime only (Task 9).
+21. **Save echo recorded on the server.** Extending item 3: `WriteAppGoFileCommand` records the input hash itself after writing, so recognising our own save no longer depends on which RPC arrives first (Task 9).
+22. **`RestartBuilderAndWaitCommand` and `RestartAndWaitForBuild` are deleted.** Nothing outside generated code calls them, and they bypassed the coalescing and leaked the previous process (Task 9).
+23. **Teardown is final.** `DeleteController` and `Shutdown` mark the controller closed, so neither a queued rebuild nor a late watcher callback can start an app after teardown (Tasks 9 and 10).
+24. **`SeedApp` fills an empty `app.go` and clears stale bindings for a new app (D3, D8).** An empty regular `app.go` counts as missing; when the app folder did not exist before seeding, secret bindings left under that app id by a deleted app are removed (Task 8).
+
+## Audit disposition
+
+| # | Finding | Disposition | Where |
+|---|---|---|---|
+| 1 | Builder window never receives `config` events, so the live-rebuild toggle cannot show "on" | Accepted: model subscribes to `config` and sets `atoms.fullConfigAtom`; unsubscribed in `dispose`; explicit grep check (a unit test would need the live RPC client) | Task 11 Steps 5, 9 |
+| 2 | Orphan process after teardown (queued build after `Stop`; late `fireChange`) | Accepted: controller `closed` flag set by `DeleteController`/`Shutdown`; `queueBuild`, `beginBuild`, `endBuild`, `handleAppFilesChanged` honour it; `Stop` waits on `!isBuilding()`; `TestDeleteControllerDuringBuildLeavesNoProcess` (verified to fail with the checks removed) | Tasks 9, 10 |
+| 3 | Atomic-rename test did not prove the temp file is ignored | Accepted: temp write, wait 3x debounce, assert 0; rename, assert exactly 1 | Task 10 |
+| 4 | Re-created app inherits stale secret bindings | Accepted: `SeedApp` deletes bindings when the folder did not exist; two tests | Task 8 |
+| 5 | Interactive probe shell can SIGTTIN on an inherited tty | Accepted: `Setsid` replaces `Setpgid`; group kill unchanged | Task 3; Spec deviation 18 |
+| 6 | Save echo depends on RPC arrival order | Accepted: `RecordAppInputHash` called from `WriteAppGoFileCommand`; still recorded in `RequestRebuild`; test | Task 9 |
+| 7 | Hashing reads large static files | Accepted: `static/` hashed by path, size, mtime_ns; tests for unreadable media and same-size rewrite | Task 9 |
+| 8 | Starter compile test skips when `go` is not on PATH | Accepted: falls back to `runtime.GOROOT()/bin/go`; a "go not found" skip fails Task 14 | Tasks 7, 14 |
+| 9 | Hidden quake window shown with plain `show()` | Accepted: `showQuakeWindow` extracted from `quakeToggle`, `revealQuakeWindow` exported and used | Task 12 |
+| 10 | `RestartAndWaitForBuild` bypasses coalescing | Accepted: deleted with its RPC and types (no non-generated callers) | Task 9 |
+| 11 | Too-old Go first in PATH hides a newer one | Accepted: per-candidate floor check, `GoTooOldError` names the newest; two tests | Task 3 |
+| 12 | Save button colour; stale line numbers in Task 13 | Accepted: `text-onaccent`; Task 13 matches `emain-ipc.ts` edits by content | Tasks 11, 13 |
+| 13 | Symlinked `~/waveapps` locks users out | Accepted: checks start at `<ns>`; root-allowed and namespace-rejected tests | Tasks 5, 8; Spec deviation 17 |
+| 14 | "Create starter app" useless for an empty `app.go` | Accepted: empty regular `app.go` filled via `O_WRONLY\|O_TRUNC` after `Lstat`; symlinked empty file left alone; tests | Task 8 |
