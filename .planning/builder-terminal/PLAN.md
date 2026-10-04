@@ -5373,7 +5373,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `BuilderTermModel` singleton (`getInstance()`, `resetInstance()`): atoms `stateAtom: PrimitiveAtom<BuilderTermState>` (`"idle" | "loading" | "ready" | "error" | "mismatch" | "vanished" | "switching"`), `errorAtom`, `tabIdAtom`, `ensureOkAtom` (true exactly while `stateAtom` is `"ready"`; every state change goes through `setState`); methods `bootstrap()`, `retry()`, `markSwitching()`, `setState(state)`, `setError(message)`, `onTabValue(tabId, tab)`, `handlePaneCount(count)`, `hasPanes()`; const `BuilderTermMismatchMessage = "Terminal app and builder app differ; reopen the builder"`
   - `BuilderLayout = { terminal: number; app: number; build: number }`, `DefaultBuilderLayout = { terminal: 40, app: 80, build: 20 }`, `MinTerminalPercent = 20`, `mergeBuilderLayout(saved: Record<string, number>): BuilderLayout`
   - `makeBuilderTileContents(tabId: string, gapSizePx: number): TileLayoutContents` (`onNodeDelete` = `ObjectService.DeleteBlock(blockId)`, as `frontend/app/tab/tabcontent.tsx:38-40`)
-  - `switchBuilderApp` marks the panel "switching" before `DeleteBuilderCommand`, awaits `setBuilderWindowAppId(null)` before reloading, and on any failure moves the panel to `"vanished"` (Retry reloads) instead of leaving it on "Switching app…"
+  - `switchBuilderApp` marks the panel "switching" before `DeleteBuilderCommand`, awaits `setBuilderWindowAppId(null)` before reloading, and on any failure leaves "Switching app…": back to `"ready"` if the builder tab object still exists, otherwise `"vanished"` (Retry reloads)
 
 Bootstrap order (spec D5): Ensure through IPC, then pin the tab and its LayoutState, then set `staticTabId`. The order matters because `getLayoutModelForTab` subscribes a new model to its LayoutState only when the tab is the static tab at creation time (`frontend/layout/lib/layoutModelHooks.ts:25-33`); the model never calls `getLayoutModelForStaticTab()` (the panel does, in Task 15, only once the state is `ready`).
 
@@ -5631,6 +5631,8 @@ const h = vi.hoisted(() => ({
     api: { setBuilderWindowAppId: vi.fn(), doRefresh: vi.fn() },
     markSwitching: vi.fn(),
     setState: vi.fn(),
+    tabAtom: null as any,
+    getWaveObjectAtom: vi.fn(),
 }));
 
 vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: h.rpc }));
@@ -5642,12 +5644,23 @@ vi.mock("@/store/global", async () => {
         atoms: { builderId: atom("builder-1"), builderAppId: atom("draft/app") },
         getApi: () => h.api,
         getSettingsKeyAtom: vi.fn(() => atom(false)),
-        WOS: { makeORef: (otype: string, oid: string) => `${otype}:${oid}` },
+        WOS: {
+            makeORef: (otype: string, oid: string) => `${otype}:${oid}`,
+            getWaveObjectAtom: h.getWaveObjectAtom,
+        },
     };
 });
-vi.mock("@/builder/store/builder-term-model", () => ({
-    BuilderTermModel: { getInstance: () => ({ markSwitching: h.markSwitching, setState: h.setState }) },
-}));
+vi.mock("@/builder/store/builder-term-model", async () => {
+    const { atom } = await import("jotai");
+    const tabIdAtom = atom("tab-1");
+    h.tabAtom = atom(null);
+    h.getWaveObjectAtom.mockImplementation(() => h.tabAtom);
+    return {
+        BuilderTermModel: {
+            getInstance: () => ({ markSwitching: h.markSwitching, setState: h.setState, tabIdAtom }),
+        },
+    };
+});
 
 import { globalStore } from "@/app/store/jotaiStore";
 import { BuilderAppPanelModel } from "./builder-apppanel-model";
@@ -5684,15 +5697,27 @@ describe("switchBuilderApp", () => {
         expect(h.setState).not.toHaveBeenCalled();
     });
 
-    it("offers Retry instead of staying on Switching when the teardown fails", async () => {
+    it("returns to the terminals when the teardown fails and the tab still exists", async () => {
         vi.spyOn(console, "error").mockImplementation(() => {});
         h.rpc.DeleteBuilderCommand.mockRejectedValueOnce(new Error("server gone"));
         h.api.doRefresh.mockClear();
+        h.setState.mockClear();
+        globalStore.set(h.tabAtom, { otype: "tab", oid: "tab-1", blockids: ["b1"] });
         const model = BuilderAppPanelModel.getInstance();
         await model.switchBuilderApp();
-        expect(h.setState).toHaveBeenCalledWith("vanished");
+        expect(h.getWaveObjectAtom).toHaveBeenCalledWith("tab:tab-1");
+        expect(h.setState).toHaveBeenCalledWith("ready");
         expect(globalStore.get(model.errorAtom)).toContain("server gone");
         expect(h.api.doRefresh).not.toHaveBeenCalled();
+    });
+
+    it("offers Retry when the teardown fails and the tab is gone", async () => {
+        vi.spyOn(console, "error").mockImplementation(() => {});
+        h.rpc.DeleteBuilderCommand.mockRejectedValueOnce(new Error("server gone"));
+        h.setState.mockClear();
+        globalStore.set(h.tabAtom, null);
+        await BuilderAppPanelModel.getInstance().switchBuilderApp();
+        expect(h.setState).toHaveBeenCalledWith("vanished");
     });
 });
 ```
@@ -6021,8 +6046,11 @@ In `frontend/builder/store/builder-apppanel-model.ts`, add `import { BuilderTerm
         } catch (err) {
             console.error("Failed to switch builder app:", err);
             globalStore.set(this.errorAtom, `Failed to switch builder app: ${err.message || "Unknown error"}`);
-            // Leave "Switching app…" for a state with Retry (a renderer reload re-runs the bootstrap).
-            BuilderTermModel.getInstance().setState("vanished");
+            // Leave "Switching app…": back to the terminals if the tab survived, otherwise to Retry (a reload).
+            const termModel = BuilderTermModel.getInstance();
+            const tabId = globalStore.get(termModel.tabIdAtom);
+            const tab = tabId == null ? null : globalStore.get(WOS.getWaveObjectAtom<Tab>(WOS.makeORef("tab", tabId)));
+            termModel.setState(tab != null ? "ready" : "vanished");
         }
     }
 ```
@@ -7315,15 +7343,16 @@ The recipe is the one that held for the builder-by-hand run, with its addendum a
 - `REMOTETERM_ISOLATED_PROFILE=1` is set as the recipe requires. Note in the report that nothing in this worktree reads it (`grep -rn ISOLATED_PROFILE emain frontend pkg cmd` finds nothing here); isolation rests on the config and data homes, `--user-data-dir`, and the scratch `HOME`, XDG and `TMPDIR` dirs.
 - No window manager runs under Xvfb, so there is no title bar; the "title-bar close" check uses the renderer's `window.close()`, which takes the same BrowserWindow `close`/`closed` path. "Switch App" lives in a native context menu that cannot be clicked there; the check replays `switchBuilderApp`'s calls from the builder renderer (same RPCs, same `builder:<id>` route). `BuilderTermModel` is a module singleton that the page does not expose on `window`, so the replay cannot call `markSwitching()` first; the report must say that the "Switching app…" state is covered by unit tests only (Tasks 14 and 15). Say both substitutions in the report.
 
-**Shell state (every step):**
-- Shell variables do not survive between tool calls. Step 1 prints the scratch root; every later shell call, including each fenced block below, starts with `SCR=<that literal path>; source "$SCR/lib.sh"` (written below as `SCR=/tmp/rtbt.XXXX`; substitute the real path).
-- `lib.sh` restores `REPO`, `SCR`, `PORT`, `START`, `NODEBIN` from `$SCR/logs/env.txt` and, once a launch has been recorded, `SID`, `EL`, `SRV`, `XDISP` from `$SCR/logs/run.env`. Nothing else is carried between calls: each block recomputes what it needs (block ids, tab ids, focused pane) from the DB or the page.
-- Before every `kill`, `ps -s` or `pgrep -s`, run `need SID SRV || exit 1` (the blocks below already do). An unset `SID` would make `ps -s ""` or `kill -- -` act on the wrong processes.
+**Shell state and process ownership (every step):**
+- Shell variables do not survive between tool calls. Step 1 prints the scratch root; every later shell call, including each fenced block below, starts with `SCR=<that literal path>; source "$SCR/lib.sh" || exit 1` (written below as `SCR=/tmp/rtbt.XXXX`; substitute the real path). `lib.sh` refuses to load unless `SCR` is a `/tmp/rtbt.*` path and `REPO`, `PORT`, `START`, `NODEBIN` are restored from `$SCR/logs/env.txt`; it then restores `SID`, `EL`, `SRV`, `XDISP` from `$SCR/logs/run.env` once a launch has been recorded. Nothing else is carried between calls: each block recomputes what it needs (block ids, tab ids, focused pane) from the DB or the page.
+- A process belongs to this run only if its environment has `HOME=$SCR/home` or its cwd is under `$SCR` (`own_pid`). `own_sid` checks that the recorded session leader still has `HOME=$SCR/home`. Every use of `SID` goes with `own_sid || exit 1`, and every `kill` targets either this run's session after `own_sid` passed or a single PID that passed `own_pid`. Pane shells run in their own sessions (creack/pty uses `Setsid`), so cleanup also scans `/proc` for this run's processes (`own_procs`, `stop_run`).
+- A launch runs `launch.sh` in the background of a non-interactive shell, so it is not a process-group leader and the `setsid` inside it runs in that same process: its PID is the session id. `launch_run` records it and requires the session found through the debugging port and the scratch `--user-data-dir` to be the same one.
 
 - [ ] **Step 1: Scratch root, baseline and `lib.sh`**
 
 ```bash
 REPO=/media/owner/Workspace/remoteterm/remoteterm-builder-terminal
+node -e 'process.exit(typeof WebSocket === "function" ? 0 : 1)' || { echo "ABORT: this node has no global WebSocket (cdp.mjs needs Node 22+)"; exit 1; }
 SCR=$(mktemp -d /tmp/rtbt.XXXX) && chmod 700 "$SCR"
 mkdir -p "$SCR"/{home,run,cfg,data,ud,gocache,gomod,zigcache,vitecache,tmp,t,logs}
 chmod 700 "$SCR/run" "$SCR/tmp"
@@ -7333,25 +7362,54 @@ NODEBIN=$(dirname "$(command -v node)")
 PORT=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
 printf 'REPO=%q\nSCR=%q\nPORT=%q\nSTART=%q\nNODEBIN=%q\n' "$REPO" "$SCR" "$PORT" "$START" "$NODEBIN" | tee "$SCR/logs/env.txt"
 for d in ~/.config/remoteterm* ~/.local/share/remoteterm* ~/.config/RemoteTerm* ~/waveapps; do
-    [ -e "$d" ] && find "$d" -maxdepth 3 -printf '%T@ %p\n' 2>/dev/null
-done | sort > "$SCR/logs/user-dirs-before.txt"
+    [ -e "$d" ] && find "$d" -maxdepth 3 -type f -printf '%T@ %s %p\n' 2>/dev/null
+done | sort -k3 > "$SCR/logs/user-files-before.txt"
 stat -c '%Y %n' "$REPO/node_modules/.vite" "$REPO/node_modules/.vite-temp" > "$SCR/logs/vite-before.txt" 2>&1
 pgrep -a -f 'remoteterm|electron' > "$SCR/logs/live-processes-before.txt" || true
 echo "SCR=$SCR"
 ```
 
-Only `find`/`stat`/`pgrep` touch the user's paths, read-only, to record a baseline. Note the printed `SCR` path; it is the literal every later call starts with.
+Only `find`/`stat`/`pgrep` touch the user's paths, read-only, to record a baseline of the files (mtime, size, path) in the user's RemoteTerm profiles and `~/waveapps`. Note the printed `SCR` path; it is the literal every later call starts with.
 
 Create `$SCR/lib.sh`:
 
 ```bash
-# Sourced at the start of every shell call, after SCR=<literal path>.
-source "$SCR/logs/env.txt"
-[ -f "$SCR/logs/run.env" ] && source "$SCR/logs/run.env"
+# Sourced at the start of every shell call, after SCR=<literal path>: source "$SCR/lib.sh" || exit 1
+need() { for v; do [ -n "${!v}" ] || { echo "ABORT: $v unset"; return 1; }; done; }
+need SCR || return 1
+case "$SCR" in /tmp/rtbt.?*) ;; *) echo "ABORT: SCR=$SCR is not a scratch root"; return 1 ;; esac
+source "$SCR/logs/env.txt" || return 1
+need SCR REPO PORT START NODEBIN || return 1
+if [ -f "$SCR/logs/run.env" ]; then source "$SCR/logs/run.env" || return 1; fi
 T="$SCR/t"
 APPDIR="$SCR/home/waveapps/draft/e2e1"
 DB="$SCR/data/db/waveterm.db"
-need() { for v; do [ -n "${!v}" ] || { echo "ABORT: $v unset"; return 1; }; done; }
+
+# Ownership: a process belongs to this run if its environment has HOME=$SCR/home or its cwd is under $SCR.
+# Pane shells start their own sessions (creack/pty Setsid), so the session alone does not find them.
+own_pid() {
+    [[ "$1" =~ ^[0-9]+$ ]] || return 1
+    tr '\0' '\n' 2>/dev/null < "/proc/$1/environ" | grep -qxF "HOME=$SCR/home" && return 0
+    case "$(readlink "/proc/$1/cwd" 2>/dev/null)" in "$SCR" | "$SCR"/*) return 0 ;; esac
+    return 1
+}
+# Required next to every use of SID: the recorded session leader must still be this run's.
+own_sid() {
+    need SID || return 1
+    tr '\0' '\n' 2>/dev/null < "/proc/$SID/environ" | grep -qxF "HOME=$SCR/home" && return 0
+    echo "session $SID: leader gone or not this run's (no HOME=$SCR/home in its environment)"
+    return 1
+}
+own_procs() {
+    local d p
+    for d in /proc/[0-9]*; do
+        p=${d#/proc/}
+        [ "$p" = "$$" ] || [ "$p" = "$BASHPID" ] && continue
+        own_pid "$p" && echo "$p"
+    done
+}
+show_own() { local l; l=$(own_procs | paste -sd,); if [ -n "$l" ]; then ps -o pid,sid,args -p "$l"; else echo "(no process of this run)"; fi; }
+
 cdp() { node "$SCR/cdp.mjs" "$PORT" "$@"; }
 bcdp() { cdp "RTApp Builder" "$@"; }
 mcdp() { cdp "RemoteTerm" "$@"; }
@@ -7360,11 +7418,79 @@ builder_tabs() { dbq "SELECT oid, json_extract(data,'\$.blockids') FROM db_tab W
 builder_block_ids() { builder_tabs | python3 -c 'import json,sys; rows = json.loads(sys.stdin.read()); print(" ".join(json.loads(rows[0][1])) if rows else "")'; }
 block_exists() { dbq "SELECT count(*) FROM db_block WHERE oid = ?" "$1"; }
 wait_file() { for _ in $(seq 100); do [ -s "$1" ] && return 0; sleep 0.1; done; echo "timeout waiting for $1"; return 1; }
-wait_dead() { for _ in $(seq 50); do kill -0 "$1" 2>/dev/null || return 0; sleep 0.1; done; echo "pid $1 still alive after 5s"; return 1; }
-# Session id of the launch that owns the debugging port; empty if nothing is listening for it.
-session_of_port() { local pid; pid=$(pgrep -o -f "remote-debugging-port=$PORT"); [ -n "$pid" ] && ps -o sid= -p "$pid" | tr -d ' '; }
-# Records the current launch for later calls.
+wait_dead() {
+    [[ "$1" =~ ^[0-9]+$ ]] || { echo "FAIL: no pid"; return 1; }
+    for _ in $(seq 50); do kill -0 "$1" 2>/dev/null || return 0; sleep 0.1; done
+    echo "pid $1 still alive after 5s"; return 1
+}
+wait_block_gone() { for _ in $(seq 50); do [ "$(block_exists "$1")" = "[[0]]" ] && return 0; sleep 0.1; done; echo "block $1 still in the DB after 5s"; return 1; }
+
+# Session id of the launch that owns the debugging port and the scratch profile; empty if none.
+session_of_port() { local pid; pid=$(pgrep -o -f "remote-debugging-port=$PORT .*--user-data-dir=$SCR/ud"); [ -n "$pid" ] && ps -o sid= -p "$pid" | tr -d ' '; }
 save_run() { printf 'SID=%q\nEL=%q\nSRV=%q\nXDISP=%q\n' "$SID" "$EL" "$SRV" "$XDISP" > "$SCR/logs/run.env"; }
+# Starts launch.sh in the background and records it. The background child is not a process-group
+# leader (no job control in a non-interactive shell), so setsid in launch.sh runs in that same
+# process and its PID becomes the session id; session_of_port cross-checks it.
+launch_run() {  # $1 = log name
+    bash "$SCR/launch.sh" "$SCR" > "$SCR/logs/$1.log" 2>&1 &
+    local lpid=$!
+    SID= EL= SRV= XDISP=
+    for _ in $(seq 90); do
+        SID=$(session_of_port)
+        if [ -n "$SID" ]; then
+            EL=$(pgrep -o -s "$SID" -x electron)
+            SRV=$(pgrep -o -s "$SID" -f '^[^ ]*/bin/remotetermsrv\.')
+            [ -n "$EL" ] && [ -n "$SRV" ] && curl -sf "http://127.0.0.1:$PORT/json/list" | grep -q '"page"' && break
+        fi
+        sleep 1
+    done
+    [ -n "$EL" ] && XDISP=$(tr '\0' '\n' 2>/dev/null < "/proc/$EL/environ" | sed -n 's/^DISPLAY=:\([0-9]*\).*/\1/p')
+    save_run; cat "$SCR/logs/run.env"
+    need SID EL SRV || { echo "ABORT: launch not up after 90 s; see logs/$1.log"; return 1; }
+    [ "$SID" = "$lpid" ] || { echo "ABORT: port's session $SID differs from launch pid $lpid"; return 1; }
+    own_sid || return 1
+    need XDISP || return 1
+    [ "$XDISP" != 0 ] || { echo "ABORT: Electron is on display :0"; return 1; }
+}
+# Journal lines since START that mention this run's scratch root or any PID recorded for it.
+journal_check() {
+    local pids pat=(-e "$SCR")
+    pids=$({ cat "$SCR/logs/pids.txt" 2>/dev/null; own_procs; } | sort -u | paste -sd'|')
+    [ -n "$pids" ] && pat+=(-e "(^|[^0-9])($pids)([^0-9]|\$)")
+    journalctl --user --since "$START" --no-pager 2>/dev/null | grep -iE 'remoteterm|\.scope' | grep -E "${pat[@]}" || true
+}
+preflight() {  # $1 = launch number
+    need SID EL SRV && own_sid || return 1
+    { pgrep -s "$SID"; own_procs; } >> "$SCR/logs/pids.txt"
+    ps -s "$SID" -o pid,ppid,args > "$SCR/logs/session$1.txt"
+    { tr '\0' '\n' < "/proc/$EL/environ" | grep -E '^(DISPLAY|WAYLAND_DISPLAY|HOME|TMPDIR|XDG_|REMOTETERM_)'
+      tr '\0' '\n' < "/proc/$SRV/environ" | grep -E '^(DISPLAY|HOME|REMOTETERM_)'; } > "$SCR/logs/preflight$1-environ.txt"
+    find "/proc/$SRV/fd" -mindepth 1 -maxdepth 1 -printf '%l\n' | grep -v -e "$SCR" -e "$REPO" -e '^pipe:' -e '^socket:' -e '^anon_inode' -e '^/dev/' -e '^/proc/' -e '^/sys/' > "$SCR/logs/preflight$1-fds-outside.txt" || true
+    journal_check > "$SCR/logs/preflight$1-journal.txt"
+    head -50 "$SCR/logs/session$1.txt" "$SCR/logs/preflight$1-environ.txt" "$SCR/logs/preflight$1-fds-outside.txt" "$SCR/logs/preflight$1-journal.txt"
+}
+# Open fds of this run's processes that point into the real HOME (outside $SCR).
+fd_scan() {
+    local p
+    for p in $({ [ -n "$SID" ] && pgrep -s "$SID"; own_procs; } | sort -u); do
+        own_pid "$p" || { echo "$p not owned, skipped"; continue; }
+        find "/proc/$p/fd" -mindepth 1 -maxdepth 1 -printf "$p %l\n" 2>/dev/null
+    done | grep -F " $HOME/" | grep -vF " $SCR/" || true
+}
+# Stops this run: Electron first, then the session, then every remaining process that passes own_pid.
+stop_run() {
+    local p
+    if [ -n "$SID" ] && own_sid; then
+        own_pid "$EL" && kill -TERM "$EL" && sleep 5
+        pkill -TERM -s "$SID"; sleep 5; pkill -KILL -s "$SID"
+    fi
+    show_own > "$SCR/logs/stragglers.txt"; cat "$SCR/logs/stragglers.txt"
+    for p in $(own_procs); do kill -TERM "$p" 2>/dev/null; done; sleep 2
+    for p in $(own_procs); do kill -KILL "$p" 2>/dev/null; done; sleep 1
+    [ -z "$(own_procs)" ] && echo "no process of this run left" && return 0
+    echo "ABORT: processes of this run remain:"; show_own; return 1
+}
+
 # Merges one setting into the scratch settings.json; the app's config watcher picks it up.
 set_setting() {
     python3 - "$SCR/cfg/settings.json" "$1" "$2" <<'PY'
@@ -7382,20 +7508,35 @@ dom_panes() { bcdp eval "document.querySelectorAll('[data-builder-term-panel] .b
 run_in_pane() { bcdp text "$1" && bcdp key Enter; }
 # Focuses a pane by clicking its terminal area.
 focus_pane() { bcdp click "[data-builder-term-panel] [data-blockid=\"$1\"] .block-content" || bcdp click "[data-builder-term-panel] [data-blockid=\"$1\"]"; }
-# After an action that should add one pane: checks the DB count, the newest pane's focus and its folder.
-check_new_pane() {  # $1 = label, $2 = expected block count
-    sleep 2
-    local ids count newest
-    ids=$(builder_block_ids)
-    count=$(echo $ids | wc -w)
-    newest=$(echo $ids | awk '{print $NF}')
-    echo "$1: db=$count dom=$(dom_panes) focused=$(focused_block) newest=$newest builderfocus=$(builder_focus)"
-    run_in_pane "pwd > $T/$1.pwd"
-    wait_file "$T/$1.pwd" && [ "$(cat "$T/$1.pwd")" = "$APPDIR" ] && [ "$count" = "$2" ] && echo "$1 PASS" || echo "$1 FAIL"
+# Call before an action that should add one pane.
+mark_panes() { builder_block_ids | tr ' ' '\n' | sed '/^$/d' | sort > "$T/ids-prev"; }
+# After that action: exactly one new block id; it is focused, the DB and DOM hold $2 panes,
+# builder focus is "terminal", and the new pane's shell starts in the app folder.
+check_new_pane() {  # $1 = label, $2 = expected pane count
+    local ids count new dom foc bf
+    for _ in $(seq 50); do
+        ids=$(builder_block_ids); count=$(echo $ids | wc -w)
+        [ "$count" -ge "$2" ] && break; sleep 0.2
+    done
+    sleep 1
+    new=$(echo $ids | tr ' ' '\n' | sed '/^$/d' | sort | comm -13 "$T/ids-prev" -)
+    dom=$(dom_panes); foc=$(focused_block); bf=$(builder_focus)
+    echo "$1: db=$count dom=$dom new=[$new] focused=$foc builderfocus=$bf"
+    [ "$(echo $new | wc -w)" = 1 ] && [ "$count" = "$2" ] && [ "$dom" = "$2" ] \
+        && [ "$foc" = "\"$new\"" ] && [ "$bf" = '"terminal"' ] \
+        && run_in_pane "pwd > $T/$1.pwd" && wait_file "$T/$1.pwd" && [ "$(cat "$T/$1.pwd")" = "$APPDIR" ] \
+        && echo "$1 PASS" || echo "$1 FAIL"
 }
 ```
 
-(`main` windows are titled `RemoteTerm - <tab>`; builder windows `RTApp Builder (draft/e2e1)`, `frontend/remoteterm.ts:265`, `frontend/builder/builder-app.tsx:52`.)
+(`main` windows are titled `RemoteTerm - <tab>`; builder windows `RTApp Builder (draft/e2e1)`, `frontend/remoteterm.ts:265`, `frontend/builder/builder-app.tsx:52`. The server's `argv[0]` is `<app base>/bin/remotetermsrv.<arch>`, `emain/emain-platform.ts:777-785`; no other process of the session has that as its first word.)
+
+Check it loads:
+
+```bash
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh" || exit 1
+echo "lib ok: REPO=$REPO PORT=$PORT"
+```
 
 - [ ] **Step 2: Build with scratch caches**
 
@@ -7417,19 +7558,25 @@ export default {
 Then build (the build needs network for Go and npm modules; `DISPLAY` is not set):
 
 ```bash
-SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
-need REPO NODEBIN || exit 1
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh" || exit 1
+set -o pipefail
 cd "$REPO"
 BUILD_ENV=(env -i PATH="$REPO/golang-1.26.2/bin:$NODEBIN:/usr/local/bin:/usr/bin:/bin" HOME="$SCR/home" TMPDIR="$SCR/tmp" \
     XDG_CONFIG_HOME="$SCR/home/.config" XDG_CACHE_HOME="$SCR/home/.cache" XDG_DATA_HOME="$SCR/home/.local/share" \
     GOCACHE="$SCR/gocache" GOMODCACHE="$SCR/gomod" ZIG_GLOBAL_CACHE_DIR="$SCR/zigcache" ZIG_LOCAL_CACHE_DIR="$SCR/zigcache" \
     E2E_VITE_CACHE="$SCR/vitecache")
-"${BUILD_ENV[@]}" ./node_modules/.bin/task build:backend build:tsunamiscaffold build:tsunamisdk 2>&1 | tee "$SCR/logs/build-task.log"
-"${BUILD_ENV[@]}" node_modules/.bin/electron-vite build --mode production --config "$SCR/e2e.vite.config.ts" 2>&1 | tee "$SCR/logs/build-vite.log"
+"${BUILD_ENV[@]}" ./node_modules/.bin/task build:backend build:tsunamiscaffold build:tsunamisdk 2>&1 | tee "$SCR/logs/build-task.log" \
+    || { echo "ABORT: task build failed"; exit 1; }
+"${BUILD_ENV[@]}" node_modules/.bin/electron-vite build --mode production --config "$SCR/e2e.vite.config.ts" 2>&1 | tee "$SCR/logs/build-vite.log" \
+    || { echo "ABORT: electron-vite build failed"; exit 1; }
+for f in dist/bin/remotetermsrv.* dist/main/index.js dist/preload/index.cjs dist/frontend/index.html; do
+    [ "$f" -nt "$SCR/start-marker" ] || { echo "ABORT: $f was not rebuilt by this run"; exit 1; }
+done
+ls -l dist/bin/remotetermsrv.* dist/main/index.js dist/frontend/index.html
 git status --short
 ```
 
-Expected: both builds succeed; `git status --short` lists only the untracked toolchains (and `.planning/builder-terminal/E2E-REPORT.md` once written). If `electron-vite` cannot load the wrapper config, stop and report the error; do not fall back to the repo config without saying so.
+Expected: both builds succeed and every listed output is newer than `$SCR/start-marker`; `git status --short` lists only the untracked toolchains (and `.planning/builder-terminal/E2E-REPORT.md` once written). If `dist/preload/index.cjs` is not the preload's file name, take the real name from `ls dist/preload` and record it; do not drop the check. If `electron-vite` cannot load the wrapper config, stop and report the error; do not fall back to the repo config without saying so.
 
 - [ ] **Step 3: Helpers**
 
@@ -7440,6 +7587,12 @@ Create `$SCR/cdp.mjs` (Chrome DevTools Protocol client using Node's built-in `fe
 // Commands: targets | eval <expr> | key <combo> | keys <combo>... | keyrepeat <combo> | text <string>
 //           click <css-selector> | clicktext <button-text> | drag <css-selector> <dx> | shot <file.png>
 import fs from "node:fs";
+
+// A hung page or socket must not stall the run: give up after 30 s.
+const watchdog = setTimeout(() => {
+    console.error("cdp: timed out after 30 s");
+    process.exit(3);
+}, 30000);
 
 const [port, match, cmd, ...args] = process.argv.slice(2);
 const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
@@ -7553,6 +7706,7 @@ try {
     console.error(e.message);
     process.exitCode = 1;
 }
+clearTimeout(watchdog);
 ws.close();
 ```
 
@@ -7574,8 +7728,10 @@ Create `$SCR/launch.sh`:
 ```bash
 #!/bin/bash
 # DISPLAY and WAYLAND_DISPLAY are never passed in: env -i starts from nothing and xvfb-run sets DISPLAY for its children only.
-source "$1/logs/env.txt"
-cd "$REPO"
+# setsid runs in this process (it is not a group leader), so this PID becomes the session id that launch_run records.
+[ -f "$1/logs/env.txt" ] || exit 1
+source "$1/logs/env.txt" || exit 1
+cd "$REPO" || exit 1
 ulimit -c 0
 exec env -i \
     PATH="$REPO/golang-1.26.2/bin:$NODEBIN:/usr/local/bin:/usr/bin:/bin" \
@@ -7590,37 +7746,24 @@ exec env -i \
     --remote-debugging-port="$PORT" --user-data-dir="$SCR/ud"
 ```
 
-`TMPDIR` puts `xvfb-run`'s temporary directory (and the app's) under `$SCR/tmp`, so nothing of this run is left in `/tmp` except the Xvfb lock handled in Step 11.
+`TMPDIR` puts `xvfb-run`'s temporary directory (and the app's) under `$SCR/tmp`, so nothing of this run is left in `/tmp` except the Xvfb lock and socket handled in Step 11.
 
-Launch (run 1) and record it:
+Launch (run 1), record it and run the preflight:
 
 ```bash
-SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
-bash "$SCR/launch.sh" "$SCR" > "$SCR/logs/launch1.log" 2>&1 &
-sleep 20
-SID=$(session_of_port)
-[ -n "$SID" ] || { echo "ABORT: nothing runs with remote-debugging-port=$PORT; report launch1.log"; exit 1; }
-EL=$(pgrep -o -s "$SID" -x electron)
-SRV=$(pgrep -s "$SID" -f remotetermsrv | head -1)
-XDISP=$(tr '\0' '\n' < /proc/$EL/environ | sed -n 's/^DISPLAY=:\([0-9]*\).*/\1/p')
-save_run; cat "$SCR/logs/run.env"
-need SID EL SRV XDISP || exit 1
-ps -s "$SID" -o pid,ppid,args > "$SCR/logs/session1.txt"
-tr '\0' '\n' < /proc/$EL/environ | grep -E '^(DISPLAY|WAYLAND_DISPLAY|HOME|TMPDIR|XDG_|REMOTETERM_)' > "$SCR/logs/preflight-environ.txt"
-tr '\0' '\n' < /proc/$SRV/environ | grep -E '^(DISPLAY|HOME|REMOTETERM_)' >> "$SCR/logs/preflight-environ.txt"
-ls -l /proc/$SRV/fd 2>/dev/null | grep -v -e "$SCR" -e "$REPO" -e 'pipe:' -e 'socket:' -e 'anon_inode' -e '/dev/' -e '/proc/' -e '/sys/' > "$SCR/logs/preflight-fds-outside.txt" || true
-journalctl --user --since "$START" --no-pager | grep -iE 'remoteterm|\.scope' > "$SCR/logs/preflight-journal.txt" || true
-cat "$SCR/logs/preflight-environ.txt" "$SCR/logs/preflight-fds-outside.txt" "$SCR/logs/preflight-journal.txt"
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh" || exit 1
+launch_run launch1 || { echo "ABORT: run Step 11 cleanup and report"; exit 1; }
+preflight 1
 ```
 
-Expected: `XDISP` is a number other than 0, `DISPLAY=:<XDISP>` for both processes, no `WAYLAND_DISPLAY`; `HOME=$SCR/home`, `TMPDIR=$SCR/tmp`; `REMOTETERM_CONFIG_HOME=$SCR/cfg`, `REMOTETERM_DATA_HOME=$SCR/data`; `preflight-fds-outside.txt` empty; the journal shows no new unit or scope from this session. Any failure here: in a new call, `need SID || exit 1; kill -TERM -- -"$SID"`, then `-KILL` after 5 s, clean up (Step 11), and report; do not continue.
+`launch_run` polls for up to 90 s until the session, Electron, the server and a page on `/json/list` are all up, then requires: the port's session equals the launch PID, `own_sid` passes, and `XDISP` is set and not `0`. Expected from `preflight 1`: `DISPLAY=:<XDISP>` for both processes, no `WAYLAND_DISPLAY`; `HOME=$SCR/home`, `TMPDIR=$SCR/tmp`; `REMOTETERM_CONFIG_HOME=$SCR/cfg`, `REMOTETERM_DATA_HOME=$SCR/data`; `preflight1-fds-outside.txt` empty; `preflight1-journal.txt` (journal lines since `START` naming `$SCR` or one of this run's PIDs) shows no unit or scope. Any failure here: run Step 11's cleanup in a new call and report; do not continue.
 
 If a first-run feature-tour modal covers the main window, dismiss it through its own button with `mcdp clicktext ...` (the earlier run saw a "Durable SSH Sessions" tour).
 
 - [ ] **Step 5: S1 (first open) and S5 (resize persists)**
 
 ```bash
-SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh" || exit 1
 dbq "SELECT count(*) FROM db_workspace" | tee "$SCR/logs/workspaces-before.txt"
 mcdp eval "window.api.openBuilder()"
 sleep 5
@@ -7633,19 +7776,19 @@ builder_tabs | tee "$SCR/logs/s1-tabs.txt"
 Expected: exactly one builder tab with one block id. Then:
 
 ```bash
-SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh" || exit 1
 B1=$(builder_block_ids)
 [ "$(focused_block)" = "\"$B1\"" ] && echo "S1 focus PASS" || echo "S1 focus FAIL: $(focused_block)"
 [ "$(builder_focus)" = '"terminal"' ] && echo "S1 builder focus PASS" || echo "S1 builder focus FAIL"
-run_in_pane "pwd > $T/s1.pwd; echo \$\$ > $T/p1.pid"
-wait_file "$T/p1.pid" && [ "$(cat "$T/s1.pwd")" = "$APPDIR" ] && echo "S1 pwd PASS" || echo "S1 pwd FAIL: $(cat "$T/s1.pwd")"
+run_in_pane "pwd > $T/s1.pwd; echo \$\$ > $T/p1.pid" && wait_file "$T/p1.pid" && [ "$(cat "$T/s1.pwd")" = "$APPDIR" ] \
+    && echo "S1 pwd PASS" || echo "S1 pwd FAIL: $(cat "$T/s1.pwd" 2>/dev/null)"
 bcdp shot "$SCR/logs/s1.png"
 ```
 
 S5:
 
 ```bash
-SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh" || exit 1
 bcdp drag '[data-builder-focus] > [data-panel-group] > [data-resize-handle]' 200
 sleep 1.5
 bcdp eval "document.querySelector('[data-builder-focus] > [data-panel-group] > [data-panel]').dataset.panelSize"
@@ -7653,8 +7796,9 @@ bcdp eval "window.RpcApi.GetRTInfoCommand(window.TabRpcClient, {oref: 'builder:'
 builder_block_ids > "$SCR/logs/s5-blocks-before-reload.txt"
 bcdp eval "location.reload()"; sleep 8
 bcdp eval "document.querySelector('[data-builder-focus] > [data-panel-group] > [data-panel]').dataset.panelSize"
-builder_block_ids | diff "$SCR/logs/s5-blocks-before-reload.txt" - && echo "reload kept the blocks PASS"
-kill -0 "$(cat "$T/p1.pid")" && echo "reload kept the shell PASS"
+builder_block_ids | diff "$SCR/logs/s5-blocks-before-reload.txt" - && echo "reload kept the blocks PASS" || echo "reload kept the blocks FAIL"
+wait_dead_quick() { kill -0 "$1" 2>/dev/null; }
+[[ "$(cat "$T/p1.pid" 2>/dev/null)" =~ ^[0-9]+$ ]] && kill -0 "$(cat "$T/p1.pid")" && echo "reload kept the shell PASS" || echo "reload kept the shell FAIL"
 ```
 
 Expected: the panel size grows above 40 and `builder:layout.terminal` matches it (within 1); after the reload the size is the same, the builder tab's block ids are unchanged, and the p1 shell is alive (reload keeps panes).
@@ -7664,7 +7808,7 @@ Expected: the panel size grows above 40 and `builder:layout.terminal` matches it
 Header split buttons render only when `term:showsplitbuttons` is true (`frontend/app/block/blockframe-header.tsx:130, 137`), and it defaults to false (`pkg/rtconfig/defaultconfig/settings.json:5`). Turn it on first and require the button before any check:
 
 ```bash
-SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh" || exit 1
 set_setting "term:showsplitbuttons" true
 sleep 2
 bcdp eval "!!document.querySelector('[data-builder-term-panel] button[title=\"Split Horizontally\"]')"
@@ -7672,34 +7816,35 @@ bcdp eval "!!document.querySelector('[data-builder-term-panel] button[title=\"Sp
 
 Expected: `true`. If it prints `false`, stop and report (the S3 header-split check cannot run).
 
-Record the main windows' tabs, then add panes; after each action check the DB, the DOM pane count, the focused pane and its folder. Pane counts: 1 after Step 5, then 2 (Open terminal), 3 (Alt+D), 4 (Shift+Alt+D), 5 (chord), 6 (Alt+N), 7 (header split), 9 (two rapid splits).
+Record the main windows' tabs, then add panes. `mark_panes` saves the block ids before each action; `check_new_pane` then requires exactly one new id (the set difference), that it is the focused pane, that the DB and the DOM both hold the expected count, that builder focus is `"terminal"`, and that the new pane's shell starts in the app folder. Pane counts: 1 after Step 5, then 2 (Open terminal), 3 (Alt+D), 4 (Shift+Alt+D), 5 (chord), 6 (Alt+N), 7 (header split), 9 (two rapid splits).
 
 ```bash
-SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh" || exit 1
 main_tab_counts() { dbq "SELECT oid, json_array_length(json_extract(data,'\$.blockids')) FROM db_tab WHERE json_extract(data,'\$.meta.\"builder:owner\"') IS NULL"; }
 main_tab_counts > "$SCR/logs/main-tabs-before.txt"
-bcdp clicktext "Open terminal"; check_new_pane s2 2
-main_tab_counts | diff "$SCR/logs/main-tabs-before.txt" - && echo "S2 main windows untouched PASS"
-bcdp key Alt+D; check_new_pane s3-altd 3
-bcdp key Shift+Alt+D; check_new_pane s3-shiftaltd 4
-bcdp key Ctrl+Shift+S; bcdp key ArrowDown; check_new_pane s3-chord 5
-bcdp key Alt+N; check_new_pane s3-altn 6
+mark_panes; bcdp clicktext "Open terminal"; check_new_pane s2 2
+main_tab_counts | diff "$SCR/logs/main-tabs-before.txt" - && echo "S2 main windows untouched PASS" || echo "S2 main windows untouched FAIL"
+mark_panes; bcdp key Alt+D; check_new_pane s3-altd 3
+mark_panes; bcdp key Shift+Alt+D; check_new_pane s3-shiftaltd 4
+mark_panes; bcdp key Ctrl+Shift+S; bcdp key ArrowDown; check_new_pane s3-chord 5
+mark_panes; bcdp key Alt+N; check_new_pane s3-altn 6
 FOCUSED=$(focused_block | tr -d '"')
-bcdp click "[data-builder-term-panel] [data-blockid=\"$FOCUSED\"] button[title=\"Split Horizontally\"]"; check_new_pane s3-header 7
+mark_panes; bcdp click "[data-builder-term-panel] [data-blockid=\"$FOCUSED\"] button[title=\"Split Horizontally\"]"; check_new_pane s3-header 7
 bcdp keys Alt+D Alt+D; sleep 3
 echo "rapid: db=$(builder_block_ids | wc -w) dom=$(dom_panes)"
 ```
 
-Expected: every step PASS (count, focus on the newest pane, `pwd` = app folder, builder focus `"terminal"`); the rapid pair leaves 9 blocks in the DB and 9 panes in the DOM. If the DB has 9 blocks but the DOM shows 8 after 3 s, the layout-save race from the spec's Risks reproduced: record it (screenshot, both counts, and the LayoutState's `pendingbackendactions` via `bcdp eval` with `window.RpcApi`), mark S3-rapid FAIL, and continue.
+Expected: every step PASS; the rapid pair leaves 9 blocks in the DB and 9 panes in the DOM. If the DB has 9 blocks but the DOM shows 8 after 3 s, the layout-save race from the spec's Risks reproduced: record it (screenshot, both counts, and the LayoutState's `pendingbackendactions` via `bcdp eval` with `window.RpcApi`), mark S3-rapid FAIL, and continue.
 
 S8:
 
 ```bash
-SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh" || exit 1
 BT=$(builder_tabs | python3 -c 'import json,sys; print(json.loads(sys.stdin.read())[0][0])')
+[ -n "$BT" ] || { echo "ABORT: no builder tab"; exit 1; }
 dbq "SELECT json_extract(data,'\$.tabids') FROM db_workspace" | grep -q "$BT" && echo "S8 FAIL (workspace tabids)" || echo "S8 tabids PASS"
 mcdp eval "[...document.querySelectorAll('[data-tab-id],[data-tabid]')].map((e) => e.dataset.tabId ?? e.dataset.tabid)" | grep -q "$BT" && echo "S8 FAIL (tab bar)" || echo "S8 tab bar PASS"
-dbq "SELECT count(*) FROM db_workspace" | diff "$SCR/logs/workspaces-before.txt" - && echo "S8 workspace count PASS"
+dbq "SELECT count(*) FROM db_workspace" | diff "$SCR/logs/workspaces-before.txt" - && echo "S8 workspace count PASS" || echo "S8 workspace count FAIL"
 ```
 
 Expected: all three PASS. Here `grep -q` exiting 1 (no match) is the passing case.
@@ -7707,28 +7852,31 @@ Expected: all three PASS. Here `grep -q` exiting 1 (no match) is the passing cas
 - [ ] **Step 7: S4 (close panes), Ctrl+W, held Alt+W**
 
 ```bash
-SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh" || exit 1
 FOCUSED=$(focused_block | tr -d '"')
-run_in_pane "echo \$\$ > $T/p4.pid"; wait_file "$T/p4.pid"
-bcdp key Alt+W; sleep 0.5
-[ "$(block_exists "$FOCUSED")" = "[[0]]" ] && wait_dead "$(cat "$T/p4.pid")" && echo "S4 close PASS" || echo "S4 close FAIL"
+run_in_pane "echo \$\$ > $T/p4.pid" && wait_file "$T/p4.pid" || { echo "S4 FAIL: no shell pid"; exit 1; }
+bcdp key Alt+W
+wait_block_gone "$FOCUSED" && wait_dead "$(cat "$T/p4.pid")" && echo "S4 close PASS" || echo "S4 close FAIL"
 FOCUSED=$(focused_block | tr -d '"'); focus_pane "$FOCUSED"
 bcdp text "echo hello world"; bcdp key Ctrl+W; bcdp text " > $T/ctrlw.txt"; bcdp key Enter
-wait_file "$T/ctrlw.txt" && [ "$(cat "$T/ctrlw.txt")" = "hello" ] && echo "Ctrl+W PASS" || echo "Ctrl+W FAIL: $(cat "$T/ctrlw.txt")"
+wait_file "$T/ctrlw.txt" && [ "$(cat "$T/ctrlw.txt")" = "hello" ] && echo "Ctrl+W PASS" || echo "Ctrl+W FAIL: $(cat "$T/ctrlw.txt" 2>/dev/null)"
 ```
 
 Record every remaining pane's shell PID, then close them one at a time:
 
 ```bash
-SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh" || exit 1
 for id in $(builder_block_ids); do
-    focus_pane "$id"; run_in_pane "echo \$\$ > $T/pid-$id"; wait_file "$T/pid-$id"
+    focus_pane "$id" && run_in_pane "echo \$\$ > $T/pid-$id" && wait_file "$T/pid-$id" || echo "FAIL: no pid for pane $id"
 done
 for _ in $(seq 20); do
     [ -z "$(builder_block_ids)" ] && break
     bcdp key Alt+W; sleep 0.4
 done
-for f in "$T"/pid-*; do wait_dead "$(cat "$f")"; done
+for f in "$T"/pid-*; do
+    [ -e "$f" ] || { echo "FAIL: no pid files"; break; }
+    wait_dead "$(cat "$f")" || echo "FAIL: shell of $f still alive"
+done
 builder_tabs; builder_focus
 bcdp eval "!!document.evaluate(\"//*[text()='No terminals']\", document, null, 9, null).singleNodeValue"
 cdp x targets
@@ -7736,39 +7884,57 @@ bcdp keyrepeat Alt+W; sleep 1; cdp x targets
 bcdp clicktext "Open terminal"; sleep 2; builder_tabs
 ```
 
-Expected: after the last Alt+W the builder tab still exists with `[]` blocks, every recorded PID is gone within 5 s, builder focus is `"app"`, "No terminals" is shown, and the builder window is still listed by `targets`; the auto-repeated Alt+W leaves the window open; the empty-state "Open terminal" adds one pane.
+Expected: after the last Alt+W the builder tab still exists with `[]` blocks, every recorded PID is gone within 5 s (no FAIL line), builder focus is `"app"`, "No terminals" is shown, and the builder window is still listed by `targets`; the auto-repeated Alt+W leaves the window open; the empty-state "Open terminal" adds one pane.
 
 - [ ] **Step 8: S9 (two writers, one rebuild)**
 
+Wait for the app to be built and running, then let two panes append to `app.go` at the same moment:
+
 ```bash
-SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh" || exit 1
 set_setting "builder:liverebuild" true
 for _ in $(seq 120); do grep -q "status: running" "$APPDIR/.tsunami/build.log" 2>/dev/null && break; sleep 1; done
 bcdp key Alt+D; sleep 2
-bcdp eval "window.__e2eTransitions = []; const dot = document.querySelector('span.w-2.h-2.rounded-full'); new MutationObserver(() => window.__e2eTransitions.push(dot.className)).observe(dot, { attributes: true, attributeFilter: ['class'] }); !!dot"
+DOT="document.querySelector('span.w-2.h-2.rounded-full')"
+for _ in $(seq 60); do bcdp eval "$DOT?.className ?? ''" | grep -q bg-success && break; sleep 1; done
+bcdp eval "window.__e2eTransitions = []; const dot = $DOT; new MutationObserver(() => window.__e2eTransitions.push(dot.className)).observe(dot, { attributes: true, attributeFilter: ['class'] }); !!dot"
+wc -l < "$APPDIR/app.go" > "$T/app-lines-before"
 for id in $(builder_block_ids); do
-    focus_pane "$id"; run_in_pane "while [ ! -e $T/go ]; do :; done; echo >> app.go"
+    focus_pane "$id" && run_in_pane "while [ ! -e $T/go ]; do :; done; echo >> app.go" || echo "FAIL: could not arm pane $id"
 done
-touch "$T/go"; sleep 6
+touch "$T/go"
+# build.log is replaced on every build (pkg/remotetermappstore/buildlog.go:63-68): wait for one written after $T/go.
+for _ in $(seq 120); do
+    [ "$APPDIR/.tsunami/build.log" -nt "$T/go" ] && grep -q "status: running" "$APPDIR/.tsunami/build.log" && break
+    sleep 1
+done
+sleep 3
+echo "app.go lines: $(cat "$T/app-lines-before") -> $(wc -l < "$APPDIR/app.go")"
 bcdp eval "window.__e2eTransitions"
 ```
 
-Expected: the observer finds the dot (`true`), and the transitions list contains exactly one class string with `bg-warning` (one `building` transition), followed by `bg-success`. `app.go` gained two lines. More than one `bg-warning` is a FAIL.
+Expected: the observer finds the dot (`true`); `app.go` grew by exactly two lines; a `build.log` newer than `$T/go` reports `status: running`; the transitions list contains exactly one class string with `bg-warning` (one `building` transition), followed by `bg-success`. More than one `bg-warning` is a FAIL. If the post-edit wait ran out (120 s) without a newer `build.log`, mark S9 FAIL with the log's content.
 
 - [ ] **Step 9: S6 (teardown on close, on Alt+W from the app side, on app switch)**
 
 For each of the three paths, run one call that records, acts and checks. The recording part is the same each time:
 
 ```bash
-SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh" || exit 1
 TAB=$(builder_tabs | python3 -c 'import json,sys; print(json.loads(sys.stdin.read())[0][0])')
+[ -n "$TAB" ] || { echo "ABORT: no builder tab"; exit 1; }
 IDS=$(builder_block_ids)
-for id in $IDS; do focus_pane "$id"; run_in_pane "echo \$\$ > $T/s6-$id.pid"; wait_file "$T/s6-$id.pid"; done
+for id in $IDS; do
+    focus_pane "$id" && run_in_pane "echo \$\$ > $T/s6-$id.pid" && wait_file "$T/s6-$id.pid" || echo "FAIL: no pid for pane $id"
+done
 # (a) BrowserWindow close, as from the title bar:
 bcdp eval "window.close()"
 sleep 5
 builder_tabs | grep -q "$TAB" && echo "S6 FAIL: tab $TAB still present" || echo "S6 tab gone PASS"
-for id in $IDS; do [ "$(block_exists "$id")" = "[[0]]" ] || echo "S6 FAIL: block $id left"; wait_dead "$(cat "$T/s6-$id.pid")"; done
+for id in $IDS; do
+    [ "$(block_exists "$id")" = "[[0]]" ] || echo "S6 FAIL: block $id left"
+    wait_dead "$(cat "$T/s6-$id.pid" 2>/dev/null)" || echo "S6 FAIL: shell of $id"
+done
 cdp x targets
 ```
 
@@ -7788,25 +7954,28 @@ Expected: all three paths PASS; after (a) and (b) the builder page is gone from 
 - [ ] **Step 10: S7 (sweep after a crash) and S10 (spoofed workspace tab survives)**
 
 ```bash
-SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
-need SID SRV || exit 1
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh" || exit 1
+need SRV && own_sid || exit 1
 bcdp eval "window.close()"; sleep 2
 mcdp eval "window.api.openBuilder('draft/e2e1')"; sleep 8
 builder_tabs | python3 -c 'import json,sys; print(json.loads(sys.stdin.read())[0][0])' > "$SCR/logs/crash-tab.txt"
+[ -s "$SCR/logs/crash-tab.txt" ] || { echo "ABORT: no builder tab to leave behind"; exit 1; }
+own_pid "$SRV" && [ "$(ps -o sid= -p "$SRV" | tr -d ' ')" = "$SID" ] || { echo "ABORT: $SRV is not this run's server"; exit 1; }
 kill -9 "$SRV"
-for _ in $(seq 30); do [ -z "$(ps -s "$SID" -o pid=)" ] && break; sleep 1; done
-ps -s "$SID" -o pid,args
+for _ in $(seq 30); do [ -z "$(own_procs)" ] && break; sleep 1; done
+show_own
 ```
 
-Expected: the session list is empty (if Xvfb or dbus remain, `kill -TERM -- -"$SID"`, then `-KILL` after 5 s, and re-check). Then, as one call:
+Expected: `(no process of this run)`. If any remain, run `stop_run` in a new call and require it to end with "no process of this run left". Then, as one call:
 
 ```bash
-SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
-need SID || exit 1
-# The DB is written directly only while no process of the session is alive.
-[ -z "$(ps -s "$SID" -o pid=)" ] || { echo "ABORT: session $SID still has processes"; exit 1; }
-builder_tabs | grep -q "$(cat "$SCR/logs/crash-tab.txt")" && echo "crash left the builder tab (expected)" || echo "PRECONDITION FAIL: no leftover tab"
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh" || exit 1
+# The DB is written directly only while no process of this run is alive.
+[ -z "$(own_procs)" ] || { echo "ABORT: processes of this run are alive"; show_own; exit 1; }
+CRASH_TAB=$(cat "$SCR/logs/crash-tab.txt")
+[ "$(dbq "SELECT count(*) FROM db_tab WHERE oid = ?" "$CRASH_TAB")" = "[[1]]" ] && echo "crash left the builder tab (expected)" || { echo "PRECONDITION FAIL: no leftover tab"; exit 1; }
 WS_TAB=$(dbq "SELECT json_extract(data,'\$.tabids[0]') FROM db_workspace LIMIT 1" | python3 -c 'import json,sys; print(json.loads(sys.stdin.read())[0][0])')
+[ -n "$WS_TAB" ] || { echo "ABORT: no workspace tab to spoof"; exit 1; }
 echo "$WS_TAB" > "$SCR/logs/spoofed-tab.txt"
 python3 - "$DB" "$WS_TAB" <<'PY'
 import sqlite3, sys
@@ -7814,50 +7983,79 @@ conn = sqlite3.connect(sys.argv[1])
 conn.execute("""UPDATE db_tab SET data = json_set(data, '$.meta."builder:owner"', 'e2e-spoof') WHERE oid = ?""", (sys.argv[2],))
 conn.commit()
 PY
-bash "$SCR/launch.sh" "$SCR" > "$SCR/logs/launch2.log" 2>&1 &
-sleep 20
-SID=$(session_of_port)
-[ -n "$SID" ] || { echo "ABORT: the second launch is not running; report launch2.log"; exit 1; }
-EL=$(pgrep -o -s "$SID" -x electron)
-SRV=$(pgrep -s "$SID" -f remotetermsrv | head -1)
-XDISP=$(tr '\0' '\n' < /proc/$EL/environ | sed -n 's/^DISPLAY=:\([0-9]*\).*/\1/p')
-save_run; cat "$SCR/logs/run.env"
-need SID EL SRV XDISP || exit 1
-grep -n -e "builder sweep: removed" -e "WAVESRV-ESTART" "$SCR/data/rtapp.log" | tail -4
-builder_tabs
-dbq "SELECT json_extract(data,'\$.meta.\"builder:owner\"') FROM db_tab WHERE oid = ?" "$WS_TAB"
-dbq "SELECT json_extract(data,'\$.tabids') FROM db_workspace" | grep -c "$WS_TAB"
+launch_run launch2 || { echo "ABORT: run Step 11 cleanup and report"; exit 1; }
+preflight 2
+# WAVESRV-ESTART is consumed by emain without logging it (emain/emain-remotetermsrv.ts:107-121); its markers stand in:
+# "spawned remotetermsrv" (emain/emain-remotetermsrv.ts:86) and "remotetermsrv ready signal received" (emain/emain.ts:324).
+awk '/spawned remotetermsrv/ { n = NR; s = 0; r = 0 }
+     n && !r && /\[startup\] builder sweep: removed 1 tabs/ { s = NR }
+     n && !r && /remotetermsrv ready signal received/ { r = NR }
+     END { if (n && s && r && s < r) print "S7 order PASS (spawned " n ", sweep " s ", ready " r ")";
+           else print "S7 order FAIL (spawned " n ", sweep " s ", ready " r ")" }' "$SCR/data/rtapp.log"
+[ "$(dbq "SELECT count(*) FROM db_tab WHERE oid = ?" "$CRASH_TAB")" = "[[0]]" ] && echo "S7 crash tab swept PASS" || echo "S7 crash tab swept FAIL"
+# The spoofed workspace tab now carries builder:owner, so it is the only row builder_tabs may return.
+builder_tabs | python3 -c 'import json,sys; rows = json.loads(sys.stdin.read()); ok = [r[0] for r in rows] == [sys.argv[1]]; print(("S7 builder tabs PASS " if ok else "S7 builder tabs FAIL ") + json.dumps(rows))' "$WS_TAB"
+dbq "SELECT json_extract(data,'\$.meta.\"builder:owner\"') FROM db_tab WHERE oid = ?" "$WS_TAB" | grep -q e2e-spoof && echo "S10 owner kept PASS" || echo "S10 owner kept FAIL"
+dbq "SELECT json_extract(data,'\$.tabids') FROM db_workspace" | grep -q "$WS_TAB" && echo "S10 still in workspace PASS" || echo "S10 still in workspace FAIL"
 ```
 
-Expected: in the second launch's lines, `[startup] builder sweep: removed 1 tabs` appears before that launch's `WAVESRV-ESTART`; `builder_tabs` prints `[]`; the spoofed workspace tab still exists, still carries `e2e-spoof`, and is still in its workspace's `tabids` (S10). Redo the preflight of Step 4 for this launch (environ, fds, journal, in a new call with `need SID EL SRV`) and record it.
+Expected: `launch_run` and `preflight 2` pass as in Step 4 (record the preflight); in the second launch's part of `rtapp.log` (after its last "spawned remotetermsrv"), `[startup] builder sweep: removed 1 tabs` comes before "remotetermsrv ready signal received"; the crash tab is gone; `builder_tabs` returns exactly the spoofed tab; the spoofed tab still carries `e2e-spoof` and is still in its workspace's `tabids` (S10). The report says that the emain markers stand in for `WAVESRV-ESTART`, which emain consumes without logging.
 
 - [ ] **Step 11: Cleanup and isolation proof**
 
+First, while the app still runs, the final fd scan and the positive evidence that the scratch profile was used:
+
 ```bash
-SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh"
-need SID EL XDISP || exit 1
-kill -TERM "$EL"; sleep 5
-[ -n "$(ps -s "$SID" -o pid=)" ] && { kill -TERM -- -"$SID"; sleep 5; kill -KILL -- -"$SID" 2>/dev/null; }
-ps -s "$SID" -o pid,args
-# Xvfb normally removes its own lock; remove it only for this run's display, and only once that Xvfb is gone.
-if pgrep -f "Xvfb :$XDISP( |$)" > /dev/null; then echo "Xvfb :$XDISP still running; leaving /tmp/.X$XDISP-lock"; elif [ -e "/tmp/.X$XDISP-lock" ]; then rm -f "/tmp/.X$XDISP-lock" && echo "removed /tmp/.X$XDISP-lock"; fi
-for d in ~/.config/remoteterm* ~/.local/share/remoteterm* ~/.config/RemoteTerm* ~/waveapps; do
-    [ -e "$d" ] && find "$d" -maxdepth 3 -printf '%T@ %p\n' 2>/dev/null
-done | sort > "$SCR/logs/user-dirs-after.txt"
-diff "$SCR/logs/user-dirs-before.txt" "$SCR/logs/user-dirs-after.txt" > "$SCR/logs/user-dirs-diff.txt"; cat "$SCR/logs/user-dirs-diff.txt"
-ls -d ~/waveapps/draft/e2e1 2>/dev/null && echo "ISOLATION FAIL: app folder created in the real HOME"
-stat -c '%Y %n' "$REPO/node_modules/.vite" "$REPO/node_modules/.vite-temp" 2>&1 | diff "$SCR/logs/vite-before.txt" -
-journalctl --user --since "$START" --no-pager | grep -iE 'remoteterm|\.scope'
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh" || exit 1
+{ [ -n "$SID" ] && pgrep -s "$SID"; own_procs; } >> "$SCR/logs/pids.txt"
+fd_scan | tee "$SCR/logs/final-fds-in-home.txt"
+find "$SCR/data/db" "$SCR/cfg" -type f -newer "$SCR/start-marker" -printf '%TT %s %p\n' | tee "$SCR/logs/scratch-profile-written.txt"
 ```
 
-Expected: the session is empty; `user-dirs-diff.txt` is empty. If the user's live dev instance was running (see `live-processes-before.txt`), its own database files may show new mtimes: list each changed path in the report and show, from the preflight fd snapshots, that none of this run's processes had it open; never touch those files. `~/waveapps/draft/e2e1` does not exist; the `.vite` stamps are unchanged; the journal has no new unit or scope from this run. Copy the evidence you cite (logs, PNGs) into the report or next to it, then, in a final call, `chmod -R u+w "$SCR/gomod"` and `rm -rf "$SCR"` (Go marks its module cache read-only). Nothing else in `/tmp` belongs to this run: `xvfb-run` and the app used `TMPDIR=$SCR/tmp`.
+Expected: `final-fds-in-home.txt` is empty (no process of this run has a file under the real `$HOME` open); `scratch-profile-written.txt` lists at least `waveterm.db` (or its `-wal`) and `settings.json`.
+
+Then stop everything this run started and check what is left:
+
+```bash
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh" || exit 1
+need XDISP || exit 1
+stop_run || { echo "ABORT: leave $SCR in place and report the processes above"; exit 1; }
+[ -n "$SID" ] && ps -s "$SID" -o pid,args
+# Xvfb removes its own lock and socket on a clean exit. Remove leftovers only if the lock names a PID recorded for this run that is gone.
+XLOCK="/tmp/.X$XDISP-lock"
+if [ -e "$XLOCK" ]; then
+    XPID=$(tr -dc '0-9' < "$XLOCK")
+    if ! grep -qx "$XPID" "$SCR/logs/pids.txt"; then echo "$XLOCK names PID $XPID, not this run's; leaving it"
+    elif kill -0 "$XPID" 2>/dev/null; then echo "Xvfb $XPID still running; leaving its lock and socket"
+    else rm -f "$XLOCK" "/tmp/.X11-unix/X$XDISP" && echo "removed $XLOCK and /tmp/.X11-unix/X$XDISP"; fi
+fi
+for d in ~/.config/remoteterm* ~/.local/share/remoteterm* ~/.config/RemoteTerm* ~/waveapps; do
+    [ -e "$d" ] && find "$d" -maxdepth 3 -type f -printf '%T@ %s %p\n' 2>/dev/null
+done | sort -k3 > "$SCR/logs/user-files-after.txt"
+diff "$SCR/logs/user-files-before.txt" "$SCR/logs/user-files-after.txt" > "$SCR/logs/user-files-diff.txt"; cat "$SCR/logs/user-files-diff.txt"
+ls -d ~/waveapps/draft/e2e1 2>/dev/null && echo "ISOLATION FAIL: app folder created in the real HOME"
+stat -c '%Y %n' "$REPO/node_modules/.vite" "$REPO/node_modules/.vite-temp" 2>&1 | diff "$SCR/logs/vite-before.txt" - && echo "vite stamps unchanged"
+journal_check
+```
+
+Expected: "no process of this run left"; the session list is empty; `~/waveapps/draft/e2e1` does not exist; the `.vite` stamps are unchanged; `journal_check` prints nothing. A line in `user-files-diff.txt` is a lead to investigate, not proof of a leak: the user's live dev instance (see `live-processes-before.txt`) may be running and writing its own files. For each changed or new path, check `final-fds-in-home.txt` and the `preflight*-fds-outside.txt` lists; if no process of this run had it open, record it as the live instance's write; if one did, it is an isolation FAIL. Never touch those files.
+
+Copy the evidence you cite (logs, PNGs) into the report or next to it. Then, in a final call:
+
+```bash
+SCR=/tmp/rtbt.XXXX; source "$SCR/lib.sh" || exit 1
+[ -z "$(own_procs)" ] || { echo "ABORT: processes of this run are alive; not removing $SCR"; show_own; exit 1; }
+chmod -R u+w "$SCR/gomod"
+rm -rf "$SCR" && echo "removed $SCR"
+```
+
+(Go marks its module cache read-only, hence the `chmod`.) Nothing else in `/tmp` belongs to this run: `xvfb-run` and the app used `TMPDIR=$SCR/tmp`.
 
 - [ ] **Step 12: Report**
 
-Write `.planning/builder-terminal/E2E-REPORT.md`: the scratch root, launch command lines, PIDs and session ids; the preflight for both launches; one line per check (S1, S2, S3 including the rapid pair and whether the layout race reproduced, S4 including Ctrl+W and the held Alt+W, S5, S6 a/b/c, S7, S8, S9, S10) with PASS/FAIL and the evidence; the isolation proof; the cleanup record; and the two substitutions (no window manager, native Switch App menu, with the `markSwitching` note). Do not commit it; the reviewer decides.
+Write `.planning/builder-terminal/E2E-REPORT.md`: the scratch root, launch command lines, PIDs and session ids (and that each session id equalled its launch PID); the preflight for both launches; one line per check (S1, S2, S3 including the rapid pair and whether the layout race reproduced, S4 including Ctrl+W and the held Alt+W, S5, S6 a/b/c, S7, S8, S9, S10) with PASS/FAIL and the evidence; the isolation proof (final fd scan, scratch-profile evidence, user-files diff with each changed path explained, journal); the cleanup record; the substitutions (no window manager, native Switch App menu with the `markSwitching` note, and the emain markers standing in for `WAVESRV-ESTART`). Do not commit it; the reviewer decides.
 
 ---
-
 
 ## Spec coverage
 
@@ -7920,7 +8118,7 @@ Write `.planning/builder-terminal/E2E-REPORT.md`: the scratch root, launch comma
 | S4 `Cmd:w` closes panes incl. last; empty state; app focus; window stays; Ctrl+W unbound | 3, 8, 14, 16 | cascade-skip, close-rule, key-table tests | Step 7 |
 | S5 terminal width persists via `builder:layout.terminal` | 14, 15 | `builder-layout.test.ts` | Step 5 |
 | S6 close, Alt+W from app side and app switch delete tab, blocks, layout; shells die | 8, 10, 14 | `TestDeleteBuilderCommand*`, teardown-order tests | Step 9 |
-| S7 startup sweep with log line before `WAVESRV-ESTART` | 2, 9 | sweep tests, AST order test | Step 10 |
+| S7 startup sweep logged before the server ready signal (emain markers stand in for `WAVESRV-ESTART`) | 2, 9 | sweep tests, AST order test | Step 10 |
 | S8 builder tabs never in `tabids`, tab bar, switcher | 2, 3 | `TestCreateBuilderTab`, `TestUpdateWorkspaceTabIdsRejectsBuilderTab` | Step 6 |
 | S9 two writers in one debounce window, one `building` transition | (existing debounce, `pkg/buildercontroller/appwatcher.go:34`) | none new | Step 8 |
 | S10 workspace tab is never deleted by cleanup or sweep | 1, 2, 3 | `TestIsBuilderTab`, refusal and sweep tests | Step 10 |
