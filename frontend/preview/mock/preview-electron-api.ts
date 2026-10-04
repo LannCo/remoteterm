@@ -51,7 +51,7 @@ const previewElectronApi: ElectronApi = {
 
     nativePaste: () => {},
     openBuilder: (_appId?: string) => {},
-    setBuilderWindowAppId: (_appId: string) => {},
+    setBuilderWindowAppId: (_appId: string) => Promise.resolve(true),
     openBuilderTerminal: () => Promise.resolve(""),
     openBuilderFolder: () => Promise.resolve(""),
     doRefresh: () => {},

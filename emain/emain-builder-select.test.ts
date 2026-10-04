@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { pickTerminalWindow } from "./emain-builder-select";
+import { findBuilderWindowForApp, pickTerminalWindow } from "./emain-builder-select";
 
 function makeWin(id: string, destroyed = false) {
     return { id, isDestroyed: () => destroyed };
@@ -25,5 +25,26 @@ describe("pickTerminalWindow", () => {
     it("returns null when no window is open", () => {
         expect(pickTerminalWindow(null, [])).toBeNull();
         expect(pickTerminalWindow(null, [makeWin("x", true)])).toBeNull();
+    });
+});
+
+describe("findBuilderWindowForApp", () => {
+    const windows = [
+        { builderId: "b1", builderAppId: "draft/one" },
+        { builderId: "b2", builderAppId: "draft/two" },
+        { builderId: "b3", builderAppId: "" },
+    ];
+
+    it("finds another window that already has the app", () => {
+        expect(findBuilderWindowForApp(windows, "draft/two", "b1")).toBe(windows[1]);
+    });
+
+    it("ignores the asking window itself", () => {
+        expect(findBuilderWindowForApp(windows, "draft/one", "b1")).toBeNull();
+    });
+
+    it("never matches an empty app id", () => {
+        expect(findBuilderWindowForApp(windows, "", "b1")).toBeNull();
+        expect(findBuilderWindowForApp(windows, null, "b1")).toBeNull();
     });
 });

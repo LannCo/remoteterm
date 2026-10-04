@@ -11,3 +11,17 @@ export function pickTerminalWindow<T extends DestroyableWindow>(lastFocused: T, 
     }
     return all.find((win) => !win.isDestroyed()) ?? null;
 }
+
+type BuilderWindowLike = { builderId: string; builderAppId?: string };
+
+// One window per app keeps one controller, one watcher and one build per app folder.
+export function findBuilderWindowForApp<T extends BuilderWindowLike>(
+    windows: T[],
+    appId: string,
+    excludeBuilderId: string
+): T {
+    if (!appId) {
+        return null;
+    }
+    return windows.find((win) => win.builderId !== excludeBuilderId && win.builderAppId === appId) ?? null;
+}
