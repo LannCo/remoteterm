@@ -120,7 +120,9 @@ func TestOutsideEditFoldedIntoBuildIsStillAnnounced(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(appDir, "app.go"), []byte("package main // saved\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	RequestRebuildAfterSave("test-folded", "draft/folded", nil)
+	if err := RequestRebuildAfterSave("test-folded", "draft/folded"); err != nil {
+		t.Fatal(err)
+	}
 	waitUntil(t, 2*time.Second, func() bool { return builds.Load() == 3 && !bc.isBuilding() }, "the save's build")
 	bc.handleAppFilesChanged("draft/folded")
 	time.Sleep(100 * time.Millisecond)

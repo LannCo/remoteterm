@@ -376,9 +376,19 @@ func (bc *BuilderController) recordInputHash(appId string) {
 // that saved, which records the input hash and guarantees a build follows, so the watcher
 // can never take our own write for an outside change. Other builders on the same app are
 // left alone; they have their own watchers and hashes.
-func RequestRebuildAfterSave(builderId string, appId string, builderEnv map[string]string) {
+// The rebuild uses the builder's rtinfo app id, like every other rebuild; a save naming a
+// different app (a window that switched apps while the save was in flight) wrote its file
+// but must not build the window's current app on that app's behalf.
+func RequestRebuildAfterSave(builderId string, savedAppId string) error {
 	if builderId == "" {
-		return
+		return nil
+	}
+	appId, builderEnv, err := GetBuilderRebuildInputs(builderId)
+	if err != nil {
+		return err
+	}
+	if appId != savedAppId {
+		return fmt.Errorf("builder %s is on %s, not the saved app %s", builderId, appId, savedAppId)
 	}
 	// A controller deleted by an app switch that timed out on the frontend must not leave
 	// this window's saves building nothing.
@@ -386,6 +396,7 @@ func RequestRebuildAfterSave(builderId string, appId string, builderEnv map[stri
 	// The editor already holds what it just wrote, so the save itself is never announced.
 	bc.recordAnnouncedHash(appId)
 	bc.RequestRebuild(appId, builderEnv)
+	return nil
 }
 
 // The app id and env come from the builder's rtinfo, never from a request: a watcher or

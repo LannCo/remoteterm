@@ -1121,13 +1121,8 @@ func (ws *WshServer) WriteAppGoFileCommand(ctx context.Context, data wshrpc.Comm
 	if err != nil {
 		return nil, err
 	}
-	if data.BuilderId != "" {
-		_, builderEnv, err := buildercontroller.GetBuilderRebuildInputs(data.BuilderId)
-		if err != nil {
-			log.Printf("WriteAppGoFileCommand: saved %s but cannot request a rebuild: %v\n", data.AppId, err)
-		} else {
-			buildercontroller.RequestRebuildAfterSave(data.BuilderId, data.AppId, builderEnv)
-		}
+	if err := buildercontroller.RequestRebuildAfterSave(data.BuilderId, data.AppId); err != nil {
+		log.Printf("WriteAppGoFileCommand: saved %s but not rebuilding: %v\n", data.AppId, err)
 	}
 
 	encoded := base64.StdEncoding.EncodeToString(formattedOutput)

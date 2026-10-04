@@ -196,13 +196,19 @@ func TestRequestRebuildAfterSaveBuildsOnSavingControllerOnly(t *testing.T) {
 	saver.runBuildFn = func(ctx context.Context, appId string, builderEnv map[string]string) { saverCalls.Add(1) }
 	bystander.runBuildFn = func(ctx context.Context, appId string, builderEnv map[string]string) { bystanderCalls.Add(1) }
 
-	RequestRebuildAfterSave("", "draft/saved", nil)
+	setBuilderRtInfoForTest(t, "test-save-saver", "draft/saved", nil)
+	setBuilderRtInfoForTest(t, "test-save-bystander", "draft/saved", nil)
+	if err := RequestRebuildAfterSave("", "draft/saved"); err != nil {
+		t.Fatal(err)
+	}
 	time.Sleep(100 * time.Millisecond)
 	if saverCalls.Load() != 0 || bystanderCalls.Load() != 0 {
 		t.Fatal("a save without a builder id started a build")
 	}
 
-	RequestRebuildAfterSave("test-save-saver", "draft/saved", nil)
+	if err := RequestRebuildAfterSave("test-save-saver", "draft/saved"); err != nil {
+		t.Fatal(err)
+	}
 	waitUntil(t, 2*time.Second, func() bool { return saverCalls.Load() == 1 && !saver.isBuilding() }, "the saving builder's build")
 	time.Sleep(100 * time.Millisecond)
 	if n := saverCalls.Load(); n != 1 {
@@ -336,6 +342,7 @@ func TestDeleteControllerDuringBlockedBuildReturnsAndSaveRecovers(t *testing.T) 
 	}
 	t.Cleanup(func() { runBuildAndRun = origRun })
 
+	setBuilderRtInfoForTest(t, "test-switch", "draft/switch", nil)
 	bc := GetOrCreateController("test-switch")
 	started := make(chan struct{}, 1)
 	release := make(chan struct{})
@@ -367,7 +374,9 @@ func TestDeleteControllerDuringBlockedBuildReturnsAndSaveRecovers(t *testing.T) 
 		t.Fatal("the deleted controller is still registered")
 	}
 
-	RequestRebuildAfterSave("test-switch", "draft/switch", nil)
+	if err := RequestRebuildAfterSave("test-switch", "draft/switch"); err != nil {
+		t.Fatal(err)
+	}
 	fresh := GetController("test-switch")
 	t.Cleanup(func() { DeleteController("test-switch") })
 	if fresh == nil || fresh == bc {
@@ -391,5 +400,43 @@ func TestDeleteControllerDuringBlockedBuildReturnsAndSaveRecovers(t *testing.T) 
 	time.Sleep(100 * time.Millisecond)
 	if n := freshBuilds.Load(); n != 1 {
 		t.Fatalf("the fresh controller ran %d builds, want 1", n)
+	}
+}
+
+func TestRequestRebuildAfterSaveUsesTheBuilderAppId(t *testing.T) {
+	home, _ := setupBuilderTest(t)
+	makeTestApp(t, home, "current")
+	makeTestApp(t, home, "other")
+	bc := GetOrCreateController("test-save-appid")
+	t.Cleanup(func() { DeleteController("test-save-appid") })
+	setBuilderRtInfoForTest(t, "test-save-appid", "draft/current", map[string]any{"FOO": "bar"})
+	type buildCall struct {
+		appId string
+		env   map[string]string
+	}
+	builds := make(chan buildCall, 4)
+	bc.runBuildFn = func(ctx context.Context, appId string, builderEnv map[string]string) {
+		builds <- buildCall{appId, builderEnv}
+	}
+
+	if err := RequestRebuildAfterSave("test-save-appid", "draft/other"); err == nil {
+		t.Fatal("a save of another app reported a rebuild")
+	}
+	select {
+	case call := <-builds:
+		t.Fatalf("a save of draft/other built %s", call.appId)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	if err := RequestRebuildAfterSave("test-save-appid", "draft/current"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case call := <-builds:
+		if call.appId != "draft/current" || call.env["FOO"] != "bar" {
+			t.Fatalf("build = %+v, want draft/current with the rtinfo env", call)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the save of the builder's app did not build")
 	}
 }
