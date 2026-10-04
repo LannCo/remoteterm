@@ -505,6 +505,15 @@ func TsunamiBuild(opts BuildOpts) error {
 	return nil
 }
 
+// TsunamiBuildOutput is for long-lived callers such as the builder server. TsunamiBuildInternal
+// leaves the temp directory to its caller, and a caller that drops the returned BuildEnv leaks it.
+// Unlike TsunamiBuild this installs no signal handler, which would exit the host process.
+func TsunamiBuildOutput(opts BuildOpts) error {
+	buildEnv, err := TsunamiBuildInternal(opts)
+	buildEnv.cleanupTempDir(opts.KeepTemp, opts.Verbose)
+	return err
+}
+
 func TsunamiBuildInternal(opts BuildOpts) (*BuildEnv, error) {
 	oc := opts.OutputCapture
 

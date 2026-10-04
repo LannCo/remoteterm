@@ -615,7 +615,7 @@ var compileApp = func(ctx context.Context, appNS string, appPath string, outputC
 		sdkVersion = remotetermapputil.DefaultTsunamiSdkVersion
 	}
 
-	_, err = build.TsunamiBuildInternal(build.BuildOpts{
+	err = build.TsunamiBuildOutput(build.BuildOpts{
 		AppPath:        appPath,
 		AppNS:          appNS,
 		Verbose:        true,
