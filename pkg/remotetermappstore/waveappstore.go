@@ -6,13 +6,12 @@ package remotetermappstore
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 
-	"github.com/LannCo/remoteterm/pkg/remotetermapputil"
 	"github.com/LannCo/remoteterm/pkg/remotetermbase"
 	"github.com/LannCo/remoteterm/pkg/secretstore"
 	"github.com/LannCo/remoteterm/pkg/util/fileutil"
@@ -87,32 +86,50 @@ func GetAppDir(appId string) (string, error) {
 }
 
 func copyDir(src, dst string) error {
+	if err := CheckNoSymlinks(src); err != nil {
+		return err
+	}
+	if err := CheckNoSymlinks(dst); err != nil {
+		return err
+	}
+	srcRoot, err := openAppRoot(src)
+	if err != nil {
+		return err
+	}
+	defer srcRoot.Close()
+
 	if err := os.RemoveAll(dst); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove existing directory: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-		return fmt.Errorf("failed to create parent directory: %w", err)
+	if err := os.MkdirAll(dst, 0755); err != nil {
+		return fmt.Errorf("failed to create destination directory: %w", err)
 	}
+	dstRoot, err := openAppRoot(dst)
+	if err != nil {
+		return err
+	}
+	defer dstRoot.Close()
 
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+	// Only regular files and directories are copied: a planted symlink, device or FIFO
+	// must not carry outside data into the published or reverted app.
+	return fs.WalkDir(srcRoot.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		relPath, err := filepath.Rel(src, path)
+		if rel == "." {
+			return nil
+		}
+		if d.IsDir() {
+			return dstRoot.MkdirAll(rel, 0755)
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		data, _, err := readRegularFileInRoot(srcRoot, rel, MaxAppFileReadSize)
 		if err != nil {
 			return err
 		}
-		dstPath := filepath.Join(dst, relPath)
-
-		if info.IsDir() {
-			return os.MkdirAll(dstPath, info.Mode())
-		}
-
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(dstPath, data, info.Mode())
+		return createFileExclusiveInRoot(dstRoot, rel, data)
 	})
 }
 
@@ -275,13 +292,25 @@ func WriteAppFile(appId string, fileName string, contents []byte) error {
 		return err
 	}
 
-	if err := CheckNoSymlinks(filepath.Dir(filePath)); err != nil {
+	if err := CheckNoSymlinks(filePath); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+	if err := os.MkdirAll(appDir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
-	if err := writeAppFileSafe(filePath, contents); err != nil {
+	root, err := openAppRoot(appDir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	rel, err := filepath.Rel(appDir, filePath)
+	if err != nil {
+		return err
+	}
+	if err := root.MkdirAll(filepath.Dir(rel), 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+	if err := writeFileInRoot(root, rel, contents); err != nil {
 		return err
 	}
 
@@ -306,7 +335,16 @@ func ReadAppFile(appId string, fileName string) (*FileData, error) {
 	if err := CheckNoSymlinks(filePath); err != nil {
 		return nil, err
 	}
-	contents, modTs, err := readRegularFileCapped(filePath, MaxAppFileReadSize)
+	root, err := openAppRoot(appDir)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	rel, err := filepath.Rel(appDir, filePath)
+	if err != nil {
+		return nil, err
+	}
+	contents, modTs, err := readRegularFileInRoot(root, rel, MaxAppFileReadSize)
 	if err != nil {
 		return nil, err
 	}
@@ -334,47 +372,20 @@ func DeleteAppFile(appId string, fileName string) error {
 	if err := CheckNoSymlinks(filepath.Dir(filePath)); err != nil {
 		return err
 	}
-	if err := os.Remove(filePath); err != nil {
+	root, err := openAppRoot(appDir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	rel, err := filepath.Rel(appDir, filePath)
+	if err != nil {
+		return err
+	}
+	if err := root.Remove(rel); err != nil {
 		return fmt.Errorf("failed to delete file: %w", err)
 	}
 
 	return nil
-}
-
-func ReplaceInAppFile(appId string, fileName string, edits []fileutil.EditSpec) error {
-	if err := ValidateAppId(appId); err != nil {
-		return fmt.Errorf("invalid appId: %w", err)
-	}
-
-	appDir, err := GetAppDir(appId)
-	if err != nil {
-		return err
-	}
-
-	filePath, err := validateAndResolveFilePath(appDir, fileName)
-	if err != nil {
-		return err
-	}
-
-	return fileutil.ReplaceInFile(filePath, edits)
-}
-
-func ReplaceInAppFilePartial(appId string, fileName string, edits []fileutil.EditSpec) ([]fileutil.EditResult, error) {
-	if err := ValidateAppId(appId); err != nil {
-		return nil, fmt.Errorf("invalid appId: %w", err)
-	}
-
-	appDir, err := GetAppDir(appId)
-	if err != nil {
-		return nil, err
-	}
-
-	filePath, err := validateAndResolveFilePath(appDir, fileName)
-	if err != nil {
-		return nil, err
-	}
-
-	return fileutil.ReplaceInFilePartial(filePath, edits)
 }
 
 func RenameAppFile(appId string, fromFileName string, toFileName string) error {
@@ -397,50 +408,31 @@ func RenameAppFile(appId string, fromFileName string, toFileName string) error {
 		return fmt.Errorf("invalid destination path: %w", err)
 	}
 
-	if err := CheckNoSymlinks(filepath.Dir(fromPath)); err != nil {
+	if err := CheckNoSymlinks(fromPath); err != nil {
 		return err
 	}
-	if err := CheckNoSymlinks(filepath.Dir(toPath)); err != nil {
+	if err := CheckNoSymlinks(toPath); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(toPath), 0755); err != nil {
+	root, err := openAppRoot(appDir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	fromRel, err := filepath.Rel(appDir, fromPath)
+	if err != nil {
+		return err
+	}
+	toRel, err := filepath.Rel(appDir, toPath)
+	if err != nil {
+		return err
+	}
+	if err := root.MkdirAll(filepath.Dir(toRel), 0755); err != nil {
 		return fmt.Errorf("failed to create destination directory: %w", err)
 	}
 
-	if err := os.Rename(fromPath, toPath); err != nil {
+	if err := root.Rename(fromRel, toRel); err != nil {
 		return fmt.Errorf("failed to rename file: %w", err)
-	}
-
-	return nil
-}
-
-func FormatGoFile(appId string, fileName string) error {
-	if err := ValidateAppId(appId); err != nil {
-		return fmt.Errorf("invalid appId: %w", err)
-	}
-
-	appDir, err := GetAppDir(appId)
-	if err != nil {
-		return err
-	}
-
-	filePath, err := validateAndResolveFilePath(appDir, fileName)
-	if err != nil {
-		return err
-	}
-
-	if filepath.Ext(filePath) != ".go" {
-		return fmt.Errorf("file is not a Go file: %s", fileName)
-	}
-
-	gofmtPath, err := remotetermapputil.ResolveGoFmtPath()
-	if err != nil {
-		return fmt.Errorf("failed to resolve gofmt path: %w", err)
-	}
-
-	cmd := exec.Command(gofmtPath, "-w", filePath)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("gofmt failed: %w\nOutput: %s", err, string(output))
 	}
 
 	return nil
@@ -456,6 +448,9 @@ func ListAllAppFiles(appId string) (*fileutil.ReadDirResult, error) {
 		return nil, err
 	}
 
+	if err := CheckNoSymlinks(appDir); err != nil {
+		return nil, err
+	}
 	if _, err := os.Stat(appDir); os.IsNotExist(err) {
 		return nil, fmt.Errorf("app directory does not exist: %s", appDir)
 	}
@@ -737,8 +732,10 @@ func ReadAppManifest(appId string) (*wshrpc.AppManifest, error) {
 		return nil, err
 	}
 
-	manifestPath := filepath.Join(appDir, ManifestFileName)
-	data, err := os.ReadFile(manifestPath)
+	if err := CheckNoSymlinks(filepath.Join(appDir, ManifestFileName)); err != nil {
+		return nil, err
+	}
+	data, _, err := readRegularFileCapped(filepath.Join(appDir, ManifestFileName), MaxAppFileReadSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", ManifestFileName, err)
 	}

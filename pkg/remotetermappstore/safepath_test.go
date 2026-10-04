@@ -6,6 +6,7 @@ package remotetermappstore
 import (
 	"bytes"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -213,5 +214,203 @@ func TestSymlinkedNamespaceRejected(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(realNs); len(entries) != 0 {
 		t.Fatalf("files created in the symlink target: %v", entries)
+	}
+}
+
+func TestCreateFileExclusiveRefusesDanglingSymlink(t *testing.T) {
+	skipWithoutSymlinks(t)
+	dir := t.TempDir()
+	target := filepath.Join(t.TempDir(), "created-through-link")
+	link := filepath.Join(dir, "app.go")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	err := createFileExclusive(link, []byte("x"))
+	if !errors.Is(err, fs.ErrExist) {
+		t.Fatalf("got %v, want an fs.ErrExist error", err)
+	}
+	if _, err := os.Stat(target); err == nil {
+		t.Fatal("the symlink target was created")
+	}
+}
+
+func TestCheckNoSymlinksRejectsFileAsParent(t *testing.T) {
+	home := setupAppStoreTest(t)
+	dir := makeAppDir(t, home, "draft", "demo")
+	if err := os.WriteFile(filepath.Join(dir, "static"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckNoSymlinks(filepath.Join(dir, "static", "a.css")); err == nil {
+		t.Fatal("a regular file as a parent component was accepted")
+	}
+}
+
+func TestRenameAppFileRefusesSymlinks(t *testing.T) {
+	skipWithoutSymlinks(t)
+	home := setupAppStoreTest(t)
+	dir := makeAppDir(t, home, "draft", "demo")
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("s"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(dir, "link.go")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "static")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "app.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RenameAppFile("draft/demo", "link.go", "moved.go"); err == nil {
+		t.Error("renaming a symlink succeeded")
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "link.go")); err != nil {
+		t.Error("the symlink was moved")
+	}
+	if err := RenameAppFile("draft/demo", "app.go", "link.go"); err == nil {
+		t.Error("renaming onto a symlink succeeded")
+	}
+	if data, _ := os.ReadFile(filepath.Join(outside, "secret.txt")); string(data) != "s" {
+		t.Error("the symlink target was modified")
+	}
+	if err := RenameAppFile("draft/demo", "app.go", "static/app.go"); err == nil {
+		t.Error("renaming through a symlinked parent succeeded")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "app.go")); err == nil {
+		t.Error("a file was moved outside the app folder")
+	}
+	if err := RenameAppFile("draft/demo", "static/secret.txt", "secret.txt"); err == nil {
+		t.Error("renaming out of a symlinked parent succeeded")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "secret.txt")); err != nil {
+		t.Error("a file outside the app folder was moved")
+	}
+}
+
+func TestRenameAppFileMovesRegularFile(t *testing.T) {
+	home := setupAppStoreTest(t)
+	dir := makeAppDir(t, home, "draft", "demo")
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("a"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := RenameAppFile("draft/demo", "a.go", "sub/b.go"); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "sub", "b.go")); err != nil || string(data) != "a" {
+		t.Fatalf("renamed file: %q, %v", data, err)
+	}
+}
+
+func TestCopyDirSkipsSymlinksAndCopiesFiles(t *testing.T) {
+	skipWithoutSymlinks(t)
+	home := setupAppStoreTest(t)
+	dir := makeAppDir(t, home, "draft", "demo")
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(outside, []byte("secret"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "app.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "static"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "static", "a.css"), []byte("css"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "x")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Dir(outside), filepath.Join(dir, "linkdir")); err != nil {
+		t.Fatal(err)
+	}
+	localAppId, err := PublishDraft("draft/demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	localDir, _ := GetAppDir(localAppId)
+	for _, name := range []string{"x", "linkdir"} {
+		if _, err := os.Lstat(filepath.Join(localDir, name)); err == nil {
+			t.Errorf("%s was copied", name)
+		}
+	}
+	if data, err := os.ReadFile(filepath.Join(localDir, "static", "a.css")); err != nil || string(data) != "css" {
+		t.Fatalf("copied file: %q, %v", data, err)
+	}
+	if data, err := os.ReadFile(filepath.Join(localDir, "app.go")); err != nil || string(data) != "package main\n" {
+		t.Fatalf("copied file: %q, %v", data, err)
+	}
+}
+
+func TestCopyDirRefusesOversizeFile(t *testing.T) {
+	home := setupAppStoreTest(t)
+	dir := makeAppDir(t, home, "draft", "demo")
+	if err := os.WriteFile(filepath.Join(dir, "big.bin"), bytes.Repeat([]byte("a"), MaxAppFileReadSize+1), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PublishDraft("draft/demo"); err == nil {
+		t.Fatal("expected an error copying a file over 2 MiB")
+	}
+}
+
+func TestReadAppManifestRefusesSymlink(t *testing.T) {
+	skipWithoutSymlinks(t)
+	home := setupAppStoreTest(t)
+	dir := makeAppDir(t, home, "draft", "demo")
+	outside := filepath.Join(t.TempDir(), "manifest.json")
+	if err := os.WriteFile(outside, []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, ManifestFileName)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadAppManifest("draft/demo"); err == nil {
+		t.Fatal("read a symlinked manifest")
+	}
+	if err := os.Remove(filepath.Join(dir, ManifestFileName)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ManifestFileName), []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadAppManifest("draft/demo"); err != nil {
+		t.Fatalf("regular manifest: %v", err)
+	}
+}
+
+func TestListAllAppFilesRefusesSymlinkedAppDir(t *testing.T) {
+	skipWithoutSymlinks(t)
+	home := setupAppStoreTest(t)
+	real := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, "waveapps", "draft"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, filepath.Join(home, "waveapps", "draft", "demo")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ListAllAppFiles("draft/demo"); err == nil {
+		t.Fatal("listed a symlinked app folder")
+	}
+}
+
+func TestCreateFileExclusiveInRootRefusesDanglingSymlink(t *testing.T) {
+	skipWithoutSymlinks(t)
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err := os.Symlink("created-through-link", filepath.Join(dir, "app.go")); err != nil {
+		t.Fatal(err)
+	}
+	err = createFileExclusiveInRoot(root, "app.go", []byte("x"))
+	if !errors.Is(err, fs.ErrExist) {
+		t.Fatalf("got %v, want an fs.ErrExist error", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "created-through-link")); err == nil {
+		t.Fatal("the symlink target was created")
 	}
 }
