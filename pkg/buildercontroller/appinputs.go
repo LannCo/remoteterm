@@ -106,6 +106,13 @@ func ComputeAppInputHash(appDir string) (string, error) {
 		}
 		data, err := remotetermappstore.ReadAppRootFile(root, rel, remotetermappstore.MaxAppFileReadSize)
 		if err != nil {
+			// Over the read cap or unreadable: an edit must still change the hash, or the
+			// watcher would take it for an echo of our own build.
+			info, statErr := root.Lstat(rel)
+			if statErr != nil || !info.Mode().IsRegular() {
+				return nil
+			}
+			fmt.Fprintf(hasher, "%s\x00unread\x00%d\x00%d\x00", rel, info.Size(), info.ModTime().UnixNano())
 			return nil
 		}
 		fmt.Fprintf(hasher, "%s\x00%d\x00", rel, len(data))

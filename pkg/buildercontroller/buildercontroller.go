@@ -68,6 +68,7 @@ type BuilderController struct {
 	errorMsg      string
 
 	closed             bool
+	stopping           int
 	building           bool
 	rebuildPending     bool
 	pendingAppId       string
@@ -181,6 +182,9 @@ func (bc *BuilderController) Start(ctx context.Context, appId string, builderEnv
 // the RPC timeout never applies to a build. Requests that arrive during a build
 // collapse into a single follow-up build.
 func (bc *BuilderController) RequestRebuild(appId string, builderEnv map[string]string) {
+	if !bc.acceptsRequests() {
+		return
+	}
 	bc.recordInputHash(appId)
 	if !bc.queueBuild(appId, builderEnv) {
 		return
@@ -189,8 +193,7 @@ func (bc *BuilderController) RequestRebuild(appId string, builderEnv map[string]
 		defer func() {
 			if r := recover(); r != nil {
 				panichandler.PanicHandler(fmt.Sprintf("buildercontroller[%s].buildLoop", bc.builderId), r)
-				// Stop() waits for building to clear; a panicked loop would hang it forever.
-				bc.abandonBuildLoop()
+				bc.abandonBuildLoop(r)
 			}
 		}()
 		bc.buildLoop()
@@ -200,7 +203,7 @@ func (bc *BuilderController) RequestRebuild(appId string, builderEnv map[string]
 func (bc *BuilderController) queueBuild(appId string, builderEnv map[string]string) bool {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
-	if bc.closed {
+	if bc.closed || bc.stopping > 0 {
 		return false
 	}
 	bc.pendingAppId = appId
@@ -265,7 +268,10 @@ func (bc *BuilderController) endBuild() bool {
 	return false
 }
 
-func (bc *BuilderController) abandonBuildLoop() {
+// Without the error status the UI would stay on "building" for good, and the cleared
+// building flag is what lets Stop() return instead of waiting for a loop that is gone.
+func (bc *BuilderController) abandonBuildLoop(panicVal any) {
+	bc.handleBuildError(fmt.Errorf("build crashed: %v", panicVal), nil)
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
 	bc.building = false
@@ -287,10 +293,31 @@ func (bc *BuilderController) isClosed() bool {
 	return bc.closed
 }
 
-func (bc *BuilderController) clearPendingRebuild() {
+// A request that arrived while Stop() waits would re-arm rebuildPending and keep the
+// build loop going, so Stop() would never see building clear.
+func (bc *BuilderController) beginStop() {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
+	bc.stopping++
 	bc.rebuildPending = false
+}
+
+func (bc *BuilderController) endStop() {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	bc.stopping--
+}
+
+func (bc *BuilderController) isStopping() bool {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	return bc.stopping > 0
+}
+
+func (bc *BuilderController) acceptsRequests() bool {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	return !bc.closed && bc.stopping == 0
 }
 
 func (bc *BuilderController) isBuilding() bool {
@@ -325,41 +352,19 @@ func (bc *BuilderController) recordInputHash(appId string) {
 	bc.setLastBuildInputHash(hash)
 }
 
-// RecordAppInputHash is called after the builder itself writes app files (a Code-tab
-// save), so the watcher treats that write as ours whichever RPC reaches us first.
-func RecordAppInputHash(appId string) {
-	controllers := getControllersForApp(appId)
-	if len(controllers) == 0 {
+// A Code-tab save calls this after writing app.go: the build is requested on the builder
+// that saved, which records the input hash and guarantees a build follows, so the watcher
+// can never take our own write for an outside change. Other builders on the same app are
+// left alone; they have their own watchers and hashes.
+func RequestRebuildAfterSave(builderId string, appId string, builderEnv map[string]string) {
+	if builderId == "" {
 		return
 	}
-	appDir, err := remotetermappstore.GetAppDir(appId)
-	if err != nil {
+	bc := GetController(builderId)
+	if bc == nil {
 		return
 	}
-	hash, err := ComputeAppInputHash(appDir)
-	if err != nil {
-		return
-	}
-	for _, bc := range controllers {
-		bc.setLastBuildInputHash(hash)
-	}
-}
-
-func getControllersForApp(appId string) []*BuilderController {
-	mapLock.Lock()
-	controllers := make([]*BuilderController, 0, len(controllerMap))
-	for _, bc := range controllerMap {
-		controllers = append(controllers, bc)
-	}
-	mapLock.Unlock()
-
-	var matching []*BuilderController
-	for _, bc := range controllers {
-		if bc.getAppId() == appId {
-			matching = append(matching, bc)
-		}
-	}
-	return matching
+	bc.RequestRebuild(appId, builderEnv)
 }
 
 func (bc *BuilderController) setLastBuildInputHash(hash string) {
@@ -655,7 +660,8 @@ func (bc *BuilderController) recordBuildError(err error, resultCh chan<- *BuildR
 }
 
 func (bc *BuilderController) Stop() error {
-	bc.clearPendingRebuild()
+	bc.beginStop()
+	defer bc.endStop()
 	if err := bc.waitForBuildDone(context.Background()); err != nil {
 		return err
 	}
@@ -733,10 +739,17 @@ func (bc *BuilderController) GetStatus() wshrpc.BuilderStatusData {
 }
 
 func (bc *BuilderController) GetOutput() []string {
-	if bc.outputBuffer == nil {
+	buf := bc.getOutputBuffer()
+	if buf == nil {
 		return []string{}
 	}
-	return bc.outputBuffer.GetLines()
+	return buf.GetLines()
+}
+
+func (bc *BuilderController) getOutputBuffer() *utilds.MultiReaderLineBuffer {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	return bc.outputBuffer
 }
 
 func (bc *BuilderController) setStatus_nolock(status string, port int, exitCode int, errorMsg string) {

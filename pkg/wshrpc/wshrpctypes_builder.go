@@ -78,8 +78,9 @@ type CommandWriteAppFileData struct {
 }
 
 type CommandWriteAppGoFileData struct {
-	AppId  string `json:"appid"`
-	Data64 string `json:"data64"`
+	AppId     string `json:"appid"`
+	Data64    string `json:"data64"`
+	BuilderId string `json:"builderid,omitempty"`
 }
 
 type CommandWriteAppGoFileRtnData struct {

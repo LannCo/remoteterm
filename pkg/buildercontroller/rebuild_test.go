@@ -7,6 +7,7 @@ import (
 	"context"
 	"os/exec"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -176,34 +177,140 @@ func attachTestProcess(bc *BuilderController, cmd *exec.Cmd) {
 	bc.process = &BuilderProcess{Cmd: cmd}
 }
 
-func TestRecordAppInputHashUpdatesMatchingControllers(t *testing.T) {
+func TestRequestRebuildAfterSaveBuildsOnSavingControllerOnly(t *testing.T) {
 	home, _ := setupBuilderTest(t)
-	appDir := makeTestApp(t, home, "recorded")
-	match := GetOrCreateController("test-record-match")
-	other := GetOrCreateController("test-record-other")
+	appDir := makeTestApp(t, home, "saved")
+	saver := GetOrCreateController("test-save-saver")
+	bystander := GetOrCreateController("test-save-bystander")
 	t.Cleanup(func() {
-		DeleteController("test-record-match")
-		DeleteController("test-record-other")
+		DeleteController("test-save-saver")
+		DeleteController("test-save-bystander")
 	})
-	setTestAppId(match, "draft/recorded")
-	setTestAppId(other, "draft/elsewhere")
-	other.setLastBuildInputHash("untouched")
+	var saverCalls, bystanderCalls atomic.Int32
+	saver.runBuildFn = func(ctx context.Context, appId string, builderEnv map[string]string) { saverCalls.Add(1) }
+	bystander.runBuildFn = func(ctx context.Context, appId string, builderEnv map[string]string) { bystanderCalls.Add(1) }
 
-	RecordAppInputHash("draft/recorded")
+	RequestRebuildAfterSave("", "draft/saved", nil)
+	RequestRebuildAfterSave("test-save-missing", "draft/saved", nil)
+	time.Sleep(100 * time.Millisecond)
+	if saverCalls.Load() != 0 || bystanderCalls.Load() != 0 {
+		t.Fatal("a save without a known builder started a build")
+	}
+
+	RequestRebuildAfterSave("test-save-saver", "draft/saved", nil)
+	waitUntil(t, 2*time.Second, func() bool { return saverCalls.Load() == 1 && !saver.isBuilding() }, "the saving builder's build")
+	time.Sleep(100 * time.Millisecond)
+	if n := saverCalls.Load(); n != 1 {
+		t.Fatalf("saving builder ran %d builds, want exactly 1", n)
+	}
+	if n := bystanderCalls.Load(); n != 0 {
+		t.Fatalf("a builder that did not save ran %d builds", n)
+	}
 	want, err := ComputeAppInputHash(appDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := match.getLastBuildInputHash(); got != want {
-		t.Fatalf("matching controller hash %q, want %q", got, want)
+	if got := saver.getLastBuildInputHash(); got != want {
+		t.Fatalf("saving builder hash %q, want %q", got, want)
 	}
-	if got := other.getLastBuildInputHash(); got != "untouched" {
-		t.Fatalf("a controller for another app was updated: %q", got)
+	if got := bystander.getLastBuildInputHash(); got != "" {
+		t.Fatalf("a builder on the same app was stamped with %q", got)
 	}
 }
 
-func setTestAppId(bc *BuilderController, appId string) {
-	bc.lock.Lock()
-	defer bc.lock.Unlock()
-	bc.appId = appId
+func TestRequestRebuildDuringStopDoesNotBuild(t *testing.T) {
+	home, _ := setupBuilderTest(t)
+	makeTestApp(t, home, "stopping")
+	bc := makeBuilderController("test-stopping")
+	started := make(chan struct{}, 4)
+	release := make(chan struct{})
+	var calls atomic.Int32
+	bc.runBuildFn = func(ctx context.Context, appId string, builderEnv map[string]string) {
+		calls.Add(1)
+		started <- struct{}{}
+		<-release
+	}
+	bc.RequestRebuild("draft/stopping", nil)
+	waitSignal(t, started, "the first build")
+
+	stopped := make(chan struct{})
+	go func() {
+		bc.Stop()
+		close(stopped)
+	}()
+	waitUntil(t, 2*time.Second, func() bool { return bc.isStopping() }, "Stop to begin")
+	for i := 0; i < 3; i++ {
+		bc.RequestRebuild("draft/stopping", nil)
+	}
+	close(release)
+	begin := time.Now()
+	waitSignal(t, stopped, "Stop to return")
+	t.Logf("Stop returned %v after release", time.Since(begin))
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("%d builds ran, want 1: a request during Stop started a build", n)
+	}
+	if bc.isStopping() {
+		t.Fatal("the stopping state outlived Stop")
+	}
+
+	bc.RequestRebuild("draft/stopping", nil)
+	waitSignal(t, started, "a build requested after Stop")
+}
+
+func TestBuildLoopPanicSetsErrorStatus(t *testing.T) {
+	home, _ := setupBuilderTest(t)
+	makeTestApp(t, home, "panics")
+	bc := makeBuilderController("test-panic")
+	bc.runBuildFn = func(ctx context.Context, appId string, builderEnv map[string]string) {
+		panic("boom")
+	}
+	bc.RequestRebuild("draft/panics", nil)
+	waitUntil(t, 2*time.Second, func() bool { return !bc.isBuilding() }, "the build loop to be abandoned")
+	waitUntil(t, 2*time.Second, func() bool { return bc.GetStatus().Status == BuilderStatus_Error }, "the error status")
+	if msg := bc.GetStatus().ErrorMsg; !strings.Contains(msg, "boom") {
+		t.Fatalf("error message %q does not mention the panic", msg)
+	}
+	lines := bc.GetOutput()
+	if len(lines) == 0 || !strings.HasPrefix(lines[len(lines)-1], "[error] build crashed") {
+		t.Fatalf("build output = %q; want a final [error] line", lines)
+	}
+
+	stopped := make(chan struct{})
+	go func() {
+		bc.Stop()
+		close(stopped)
+	}()
+	waitSignal(t, stopped, "Stop after a panicked build")
+}
+
+func TestGetOutputDuringRebuildsIsRaceFree(t *testing.T) {
+	home, _ := setupBuilderTest(t)
+	makeTestApp(t, home, "race")
+	bc := makeBuilderController("test-output-race")
+	var calls atomic.Int32
+	bc.runBuildFn = func(ctx context.Context, appId string, builderEnv map[string]string) {
+		calls.Add(1)
+	}
+	stop := make(chan struct{})
+	readerDone := make(chan struct{})
+	go func() {
+		defer close(readerDone)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				bc.GetOutput()
+			}
+		}
+	}()
+	for i := 0; i < 40; i++ {
+		bc.RequestRebuild("draft/race", nil)
+		waitUntil(t, 2*time.Second, func() bool { return !bc.isBuilding() }, "a build to finish")
+	}
+	close(stop)
+	<-readerDone
+	if calls.Load() == 0 {
+		t.Fatal("no builds ran")
+	}
 }

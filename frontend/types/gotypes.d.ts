@@ -775,6 +775,7 @@ declare global {
     type CommandWriteAppGoFileData = {
         appid: string;
         data64: string;
+        builderid?: string;
     };
 
     // wshrpc.CommandWriteAppGoFileRtnData

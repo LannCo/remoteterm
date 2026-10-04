@@ -4,11 +4,14 @@
 package buildercontroller
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/LannCo/remoteterm/pkg/remotetermappstore"
 )
 
 func TestIsRelevantAppPath(t *testing.T) {
@@ -209,5 +212,30 @@ func TestComputeAppInputHashDoesNotFollowSymlinks(t *testing.T) {
 	}
 	if before != after {
 		t.Fatal("the hash followed a symlink out of the app folder")
+	}
+}
+
+func TestComputeAppInputHashCoversOversizedGoFile(t *testing.T) {
+	dir := makeHashAppDir(t)
+	big := filepath.Join(dir, "big.go")
+	payload := func(extra int) []byte {
+		return bytes.Repeat([]byte("x"), remotetermappstore.MaxAppFileReadSize+1+extra)
+	}
+	if err := os.WriteFile(big, payload(0), 0644); err != nil {
+		t.Fatal(err)
+	}
+	before, err := ComputeAppInputHash(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(big, payload(2), 0644); err != nil {
+		t.Fatal(err)
+	}
+	after, err := ComputeAppInputHash(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before == after {
+		t.Fatal("editing a .go file over the read cap did not change the hash")
 	}
 }

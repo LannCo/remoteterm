@@ -306,12 +306,12 @@ export class BuilderAppPanelModel {
             const result = await RpcApi.WriteAppGoFileCommand(TabRpcClient, {
                 appid: appId,
                 data64: encoded,
+                builderid: globalStore.get(atoms.builderId),
             });
             const formattedContent = base64ToString(result.data64);
             globalStore.set(this.codeContentAtom, formattedContent);
             globalStore.set(this.originalContentAtom, formattedContent);
             globalStore.set(this.errorAtom, "");
-            this.debouncedRestart();
         } catch (err) {
             console.error("Failed to save app.go:", err);
             globalStore.set(this.errorAtom, `Failed to save app.go: ${err.message || "Unknown error"}`);
