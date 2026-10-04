@@ -1,8 +1,8 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, expect, it } from "vitest";
-import { findBuilderWindowForApp, pickTerminalWindow } from "./emain-builder-select";
+import { describe, expect, it, vi } from "vitest";
+import { bringWindowToFront, findBuilderWindowForApp, pickTerminalWindow } from "./emain-builder-select";
 
 function makeWin(id: string, destroyed = false) {
     return { id, isDestroyed: () => destroyed };
@@ -46,5 +46,37 @@ describe("findBuilderWindowForApp", () => {
     it("never matches an empty app id", () => {
         expect(findBuilderWindowForApp(windows, "", "b1")).toBeNull();
         expect(findBuilderWindowForApp(windows, null, "b1")).toBeNull();
+    });
+});
+
+describe("bringWindowToFront", () => {
+    function makeRevealable(minimized: boolean, visible: boolean) {
+        return {
+            isMinimized: () => minimized,
+            restore: vi.fn(),
+            isVisible: () => visible,
+            show: vi.fn(),
+            focus: vi.fn(),
+        };
+    }
+
+    it("restores a minimised window before focusing it", () => {
+        const win = makeRevealable(true, true);
+        bringWindowToFront(win);
+        expect(win.restore).toHaveBeenCalledTimes(1);
+        expect(win.focus).toHaveBeenCalledTimes(1);
+        expect(win.restore.mock.invocationCallOrder[0]).toBeLessThan(win.focus.mock.invocationCallOrder[0]);
+    });
+
+    it("shows a hidden window and leaves a normal one alone", () => {
+        const hidden = makeRevealable(false, false);
+        bringWindowToFront(hidden);
+        expect(hidden.show).toHaveBeenCalledTimes(1);
+        expect(hidden.restore).not.toHaveBeenCalled();
+        const normal = makeRevealable(false, true);
+        bringWindowToFront(normal);
+        expect(normal.show).not.toHaveBeenCalled();
+        expect(normal.restore).not.toHaveBeenCalled();
+        expect(normal.focus).toHaveBeenCalledTimes(1);
     });
 });

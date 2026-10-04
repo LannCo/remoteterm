@@ -21,7 +21,7 @@ import {
     getAllBuilderWindows,
     getBuilderWindowByWebContentsId,
 } from "./emain-builder";
-import { findBuilderWindowForApp, pickTerminalWindow } from "./emain-builder-select";
+import { bringWindowToFront, findBuilderWindowForApp, pickTerminalWindow } from "./emain-builder-select";
 import { callWithOriginalXdgCurrentDesktopAsync, unamePlatform } from "./emain-platform";
 import { handleTabLoadSucceeded } from "./emain-tab-lifecycle";
 import { getRemoteTermTabViewByWebContentsId } from "./emain-tabview";
@@ -561,10 +561,7 @@ export function initIpcHandlers() {
             await revealQuakeWindow();
             return "";
         }
-        if (!ww.isVisible()) {
-            ww.show();
-        }
-        ww.focus();
+        bringWindowToFront(ww);
         return "";
     });
 

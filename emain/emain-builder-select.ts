@@ -12,6 +12,26 @@ export function pickTerminalWindow<T extends DestroyableWindow>(lastFocused: T, 
     return all.find((win) => !win.isDestroyed()) ?? null;
 }
 
+type RevealableWindow = {
+    isMinimized(): boolean;
+    restore(): void;
+    isVisible(): boolean;
+    show(): void;
+    focus(): void;
+};
+
+// focus() does not restore a minimised window, so the terminal opened for the builder
+// would land in a window the user cannot see.
+export function bringWindowToFront(win: RevealableWindow) {
+    if (!win.isVisible()) {
+        win.show();
+    }
+    if (win.isMinimized()) {
+        win.restore();
+    }
+    win.focus();
+}
+
 type BuilderWindowLike = { builderId: string; builderAppId?: string };
 
 // One window per app keeps one controller, one watcher and one build per app folder.
