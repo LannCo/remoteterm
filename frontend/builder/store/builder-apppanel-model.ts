@@ -36,6 +36,8 @@ export class BuilderAppPanelModel {
     diskChangedAtom = atom<string>(null) as PrimitiveAtom<string>;
     externalChangeAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
     watchStatusAtom = atom<BuilderWatchStatusData>(null) as PrimitiveAtom<BuilderWatchStatusData>;
+    appDirAtom = atom<string>(null) as PrimitiveAtom<string>;
+    noticeAtom: PrimitiveAtom<string> = atom<string>("");
     builderStatusAtom = atom<BuilderStatusData>(null) as PrimitiveAtom<BuilderStatusData>;
     hasSecretsAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
     saveNeededAtom!: Atom<boolean>;
@@ -115,6 +117,7 @@ export class BuilderAppPanelModel {
         const appId = globalStore.get(atoms.builderAppId);
         await this.loadAppFile(appId);
         await this.loadEnvVars(builderId);
+        await this.loadAppDir();
 
         this.watchStatusUnsubFn = waveEventSubscribeSingle({
             eventType: "rtapp:watchstatus",
@@ -182,6 +185,30 @@ export class BuilderAppPanelModel {
                 secretbindings: newBindings,
             });
         }
+    }
+
+    async loadAppDir() {
+        const builderId = globalStore.get(atoms.builderId);
+        try {
+            const appDir = await RpcApi.GetBuilderAppDirCommand(TabRpcClient, { builderid: builderId });
+            globalStore.set(this.appDirAtom, appDir);
+        } catch (err) {
+            console.error("Failed to resolve the app folder:", err);
+        }
+    }
+
+    async openTerminal() {
+        const err = await getApi().openBuilderTerminal();
+        globalStore.set(this.noticeAtom, err ?? "");
+    }
+
+    async openFolder() {
+        const err = await getApi().openBuilderFolder();
+        globalStore.set(this.noticeAtom, err ?? "");
+    }
+
+    clearNotice() {
+        globalStore.set(this.noticeAtom, "");
     }
 
     async loadEnvVars(builderId: string) {

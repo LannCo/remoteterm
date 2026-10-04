@@ -404,6 +404,12 @@ func GetAllVarsCommand(w *wshutil.WshRpc, data wshrpc.CommandVarData, opts *wshr
 	return resp, err
 }
 
+// command "getbuilderappdir", wshserver.GetBuilderAppDirCommand
+func GetBuilderAppDirCommand(w *wshutil.WshRpc, data wshrpc.CommandGetBuilderAppDirData, opts *wshrpc.RpcOpts) (string, error) {
+	resp, err := sendRpcRequestCallHelper[string](w, "getbuilderappdir", data, opts)
+	return resp, err
+}
+
 // command "getbuilderoutput", wshserver.GetBuilderOutputCommand
 func GetBuilderOutputCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) ([]string, error) {
 	resp, err := sendRpcRequestCallHelper[[]string](w, "getbuilderoutput", data, opts)
@@ -689,6 +695,12 @@ func NotifyCommand(w *wshutil.WshRpc, data wshrpc.WaveNotificationOptions, opts 
 // command "notifysystemresume", wshserver.NotifySystemResumeCommand
 func NotifySystemResumeCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "notifysystemresume", nil, opts)
+	return err
+}
+
+// command "openbuilderterminal", wshserver.OpenBuilderTerminalCommand
+func OpenBuilderTerminalCommand(w *wshutil.WshRpc, data wshrpc.CommandOpenBuilderTerminalData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "openbuilderterminal", data, opts)
 	return err
 }
 

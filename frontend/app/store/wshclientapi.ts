@@ -408,6 +408,12 @@ export class RpcApiType {
         return client.wshRpcCall("getallvars", data, opts);
     }
 
+    // command "getbuilderappdir" [call]
+    GetBuilderAppDirCommand(client: WshClient, data: CommandGetBuilderAppDirData, opts?: RpcOpts): Promise<string> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getbuilderappdir", data, opts);
+        return client.wshRpcCall("getbuilderappdir", data, opts);
+    }
+
     // command "getbuilderoutput" [call]
     GetBuilderOutputCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<string[]> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getbuilderoutput", data, opts);
@@ -694,6 +700,12 @@ export class RpcApiType {
     NotifySystemResumeCommand(client: WshClient, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "notifysystemresume", null, opts);
         return client.wshRpcCall("notifysystemresume", null, opts);
+    }
+
+    // command "openbuilderterminal" [call]
+    OpenBuilderTerminalCommand(client: WshClient, data: CommandOpenBuilderTerminalData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "openbuilderterminal", data, opts);
+        return client.wshRpcCall("openbuilderterminal", data, opts);
     }
 
     // command "path" [call]

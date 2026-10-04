@@ -329,6 +329,11 @@ declare global {
         streammeta: StreamMeta;
     };
 
+    // wshrpc.CommandGetBuilderAppDirData
+    type CommandGetBuilderAppDirData = {
+        builderid: string;
+    };
+
     // wshrpc.CommandGetMetaData
     type CommandGetMetaData = {
         oref: ORef;
@@ -504,6 +509,12 @@ declare global {
     // wshrpc.CommandMessageData
     type CommandMessageData = {
         message: string;
+    };
+
+    // wshrpc.CommandOpenBuilderTerminalData
+    type CommandOpenBuilderTerminalData = {
+        builderid: string;
+        tabid: string;
     };
 
     // wshrpc.CommandPublishAppData

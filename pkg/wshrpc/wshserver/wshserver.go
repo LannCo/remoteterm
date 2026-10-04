@@ -1210,6 +1210,29 @@ func (ws *WshServer) WatchBuilderAppCommand(ctx context.Context, data wshrpc.Com
 	return &status, nil
 }
 
+func (ws *WshServer) OpenBuilderTerminalCommand(ctx context.Context, data wshrpc.CommandOpenBuilderTerminalData) error {
+	if data.BuilderId == "" || data.TabId == "" {
+		return fmt.Errorf("must provide a builderId and a tabId to OpenBuilderTerminalCommand")
+	}
+	appDir, err := buildercontroller.ResolveBuilderAppDir(data.BuilderId)
+	if err != nil {
+		return err
+	}
+	_, err = ws.CreateBlockCommand(ctx, wshrpc.CommandCreateBlockData{
+		TabId:    data.TabId,
+		BlockDef: buildercontroller.MakeBuilderTerminalBlockDef(appDir),
+		Focused:  true,
+	})
+	return err
+}
+
+func (ws *WshServer) GetBuilderAppDirCommand(ctx context.Context, data wshrpc.CommandGetBuilderAppDirData) (string, error) {
+	if data.BuilderId == "" {
+		return "", fmt.Errorf("must provide a builderId to GetBuilderAppDirCommand")
+	}
+	return buildercontroller.ResolveBuilderAppDir(data.BuilderId)
+}
+
 func (ws *WshServer) StopBuilderCommand(ctx context.Context, builderId string) error {
 	if builderId == "" {
 		return fmt.Errorf("must provide a builderId to StopBuilderCommand")
