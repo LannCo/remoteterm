@@ -151,16 +151,33 @@ func copyRegularFileBetweenRoots(srcRoot *os.Root, dstRoot *os.Root, rel string)
 	return dst.Close()
 }
 
+// writeFileForTest, when non-nil, replaces the write in createFileExclusiveInRoot and
+// fillEmptyFileInRoot so tests can simulate a full disk.
+var writeFileForTest func(f *os.File, contents []byte) error
+
+func writeContents(f *os.File, contents []byte) error {
+	if writeFileForTest != nil {
+		return writeFileForTest(f, contents)
+	}
+	_, err := f.Write(contents)
+	return err
+}
+
+// O_EXCL means this call made the file, so a failed write removes it: left behind, a
+// truncated file would count as the user's content on every retry.
 func createFileExclusiveInRoot(root *os.Root, rel string, contents []byte) error {
 	f, err := root.OpenFile(rel, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
-	if _, err := f.Write(contents); err != nil {
+	if err := writeContents(f, contents); err != nil {
 		f.Close()
-		return fmt.Errorf("failed to write %s: %w", filepath.Base(rel), err)
+		return errors.Join(fmt.Errorf("failed to write %s: %w", filepath.Base(rel), err), root.Remove(rel))
 	}
-	return f.Close()
+	if err := f.Close(); err != nil {
+		return errors.Join(fmt.Errorf("failed to close %s: %w", filepath.Base(rel), err), root.Remove(rel))
+	}
+	return nil
 }
 
 // Overwrites open without O_TRUNC and truncate only after the post-open Stat confirms the

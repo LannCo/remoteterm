@@ -98,9 +98,9 @@ func fillEmptyFileInRoot(root *os.Root, rel string, contents []byte) (bool, erro
 		f.Close()
 		return false, nil
 	}
-	if _, err := f.Write(contents); err != nil {
-		f.Close()
-		return false, err
+	if err := writeContents(f, contents); err != nil {
+		// The file was the user's empty one; put it back as it was.
+		return false, errors.Join(err, f.Truncate(0), f.Close())
 	}
 	return true, f.Close()
 }

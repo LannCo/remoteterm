@@ -8,6 +8,7 @@ import { memo, useState } from "react";
 
 const EmptyStateView = memo(({ showCreate }: { showCreate: boolean }) => {
     const model = BuilderAppPanelModel.getInstance();
+    const isSeeding = useAtomValue(model.isSeedingAtom);
     return (
         <div className="w-full h-full flex items-center justify-center bg-background">
             <div className="flex flex-col items-center gap-6 max-w-[500px] text-center px-8">
@@ -21,7 +22,10 @@ const EmptyStateView = memo(({ showCreate }: { showCreate: boolean }) => {
                 {showCreate ? (
                     <button
                         onClick={() => model.seedStarterApp()}
-                        className="px-6 py-2 font-semibold bg-accent/80 text-onaccent rounded hover:bg-accent transition-colors cursor-pointer"
+                        disabled={isSeeding}
+                        className={`px-6 py-2 font-semibold bg-accent/80 text-onaccent rounded transition-colors ${
+                            isSeeding ? "opacity-50" : "hover:bg-accent cursor-pointer"
+                        }`}
                     >
                         Create starter app
                     </button>

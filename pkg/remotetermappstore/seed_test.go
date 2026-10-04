@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"syscall"
 	"testing"
 
 	"github.com/LannCo/remoteterm/pkg/remotetermappstore/starter"
@@ -219,5 +220,61 @@ func TestSeedAppThroughSymlinkedRootButNotNamespace(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(realNs); len(entries) != 0 {
 		t.Fatalf("files created in the symlink target: %v", entries)
+	}
+}
+
+func failWritesForTest(t *testing.T) {
+	t.Helper()
+	writeFileForTest = func(f *os.File, contents []byte) error {
+		// A partial write, as a full disk would leave.
+		f.Write(contents[:len(contents)/2])
+		return syscall.ENOSPC
+	}
+	t.Cleanup(func() { writeFileForTest = nil })
+}
+
+func TestSeedAppFailedCreateLeavesNoFileAndRetryCompletes(t *testing.T) {
+	home := setupAppStoreTest(t)
+	setDataDir(t)
+	failWritesForTest(t)
+	if _, err := SeedApp("draft/full"); err == nil {
+		t.Fatal("seeding succeeded although every write failed")
+	}
+	dir := filepath.Join(home, "waveapps", "draft", "full")
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("failed seed left files behind: %v", entries)
+	}
+	writeFileForTest = nil
+	written, err := SeedApp("draft/full")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, _ := starter.GetStarterFiles()
+	if len(written) != len(files) {
+		t.Fatalf("retry wrote %v, want all %d starter files", written, len(files))
+	}
+	for _, f := range files {
+		data, err := os.ReadFile(filepath.Join(dir, f.Name))
+		if err != nil || string(data) != string(f.Data) {
+			t.Errorf("%s incomplete after retry: %v", f.Name, err)
+		}
+	}
+}
+
+func TestSeedAppFailedFillLeavesAppGoEmpty(t *testing.T) {
+	home := setupAppStoreTest(t)
+	setDataDir(t)
+	dir := makeAppDir(t, home, "draft", "emptyfail")
+	appGo := filepath.Join(dir, "app.go")
+	if err := os.WriteFile(appGo, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	failWritesForTest(t)
+	if _, err := SeedApp("draft/emptyfail"); err == nil {
+		t.Fatal("seeding succeeded although the write failed")
+	}
+	info, err := os.Stat(appGo)
+	if err != nil || info.Size() != 0 {
+		t.Fatalf("app.go after a failed fill: %v, %v; want an empty file", info, err)
 	}
 }

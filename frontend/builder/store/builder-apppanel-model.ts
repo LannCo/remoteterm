@@ -31,6 +31,7 @@ export class BuilderAppPanelModel {
     envVarsDirtyAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
     isLoadingAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
     errorAtom: PrimitiveAtom<string> = atom<string>("");
+    isSeedingAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
     builderStatusAtom = atom<BuilderStatusData>(null) as PrimitiveAtom<BuilderStatusData>;
     hasSecretsAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
     saveNeededAtom!: Atom<boolean>;
@@ -245,16 +246,24 @@ export class BuilderAppPanelModel {
 
     async seedStarterApp() {
         const appId = globalStore.get(atoms.builderAppId);
-        if (!appId) {
+        if (!appId || globalStore.get(this.isSeedingAtom)) {
             return;
         }
+        globalStore.set(this.isSeedingAtom, true);
+        let seedError: string = null;
         try {
             await RpcApi.SeedBuilderAppCommand(TabRpcClient, { appid: appId });
-            await this.loadAppFile(appId);
         } catch (err) {
             console.error("Failed to create starter app:", err);
-            globalStore.set(this.errorAtom, `Failed to create starter app: ${err.message || "Unknown error"}`);
+            seedError = `Failed to create starter app: ${err.message || "Unknown error"}`;
         }
+        // Reload even after a failure so files written before it show up. loadAppFile clears
+        // the error, so the seed error is set afterwards.
+        await this.loadAppFile(appId);
+        if (seedError != null) {
+            globalStore.set(this.errorAtom, seedError);
+        }
+        globalStore.set(this.isSeedingAtom, false);
     }
 
     async loadAppFile(appId: string) {
