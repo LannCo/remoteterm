@@ -1,7 +1,7 @@
-# Builder terminal panel: design spec (v4)
+# Builder terminal panel: design spec (v5)
 
 Date: 2026-10-04. Branch: `feat/builder-terminal` off local `main` 0fee7150 (builder-by-hand).
-v4 folds in three audit rounds (requirements and security, rounds 1-3); disposition tables at the end. In this spec `Cmd:` is the keymodel notation: Cmd on macOS, Alt on Linux/Windows (`frontend/util/keyutil.ts:78-84`).
+v5 folds in four audit rounds (requirements and security); disposition tables at the end. In this spec `Cmd:` is the keymodel notation: Cmd on macOS, Alt on Linux/Windows (`frontend/util/keyutil.ts:78-84`).
 
 ## Problem
 
@@ -39,9 +39,10 @@ The left side of the builder window becomes a tiled terminal area, so one or mor
 ## Trust model
 
 - Renderers and the Electron main process hold the authkey and are trusted: any of them can already delete any tab or block through existing RPCs (`pkg/web/ws.go:232`, `/wave/service`). Builder invariants are not defended against a compromised renderer.
-- Pane shells do not hold the authkey (`pkg/authkey/authkey.go:34`); they reach the server only over wshrpc with a block-scoped JWT, as an unrestricted RPC client. The design goal: a pane (e.g. a prompt-injected agent) cannot, through *builder-specific* mechanisms, cause silent deletion of tabs it does not own, kill sibling panes, or keep a builder tab alive past teardown.
+- Pane shells are not given the authkey (`pkg/authkey/authkey.go:34`); `wsh` reaches the server over wshrpc with a block-scoped JWT, as an unrestricted RPC client. The adversary for this design is a pane acting through its issued JWT and `wsh` (e.g. an agent steered into running `wsh` commands). The goal: such a pane cannot, through *builder-specific* mechanisms, cause silent deletion of tabs it does not own, kill sibling panes, or keep a builder tab alive past teardown.
+- Out of scope: same-uid OS capabilities. A pane runs as the user and can read the DB (including the JWT signing key, `pkg/remotetermobj/wtype.go:305`), `/proc/<pid>/environ` of the server, or `kill` processes; any of these defeats every builder invariant. D2's caller check is defence in depth and accident prevention against that class, not a boundary.
 - The Preview `<webview>` gets no authkey, no preload, and cannot reach builder IPC (`emain/authkey.ts:12-26`, `emain/emain-websecurity.ts:88`, `emain/emain.ts:149-155`). D6 adds a dedicated preview partition.
-- The builder-specific RPCs (`EnsureBuilderTabCommand`, `OpenBuilderTerminalCommand`, `DeleteBuilderCommand`) check the router-stamped RPC source (`wshutil.GetRpcSourceFromContext`, stamped per link at `pkg/wshutil/wshrouter.go:566-568`), so a pane cannot call them (D2).
+- `EnsureBuilderTabCommand`, `OpenBuilderTerminalCommand` and `DeleteBuilderCommand` check the RPC source (`wshutil.GetRpcSourceFromContext`). Leaf links (pane `wsh` JWTs) have `Source` stamped by the router (`pkg/wshutil/wshrouter.go:566-568`, `proc:<uuid>`); websocket links (Electron, renderers) are trusted router links whose source is self-asserted. So a pane using `wsh` cannot call them (D2). The other builder RPCs (`StartBuilderCommand`, `RequestBuilderRebuildCommand`, `StopBuilderCommand`, `WatchBuilderAppCommand`) take any builderId with no caller check; pre-existing, recorded not fixed.
 - Pre-existing, recorded not fixed: pane JWTs live 365 days and are not revoked on block delete (`pkg/remotetermjwt/wavejwt.go:132-134`); `REMOTETERM_JWT` is in the pane env; `SetRTInfoCommand` accepts any oref (builder-by-hand R5). This spec stops trusting rtinfo for the builder tab's lifecycle and pane cwd. Other builder features still follow rtinfo `builder:appid` (build controller, Open folder, the renderer's app id on reload); a pane rewriting it can desync them from the terminals, which D5 detects and shows as an error.
 
 ## Design
@@ -49,7 +50,7 @@ The left side of the builder window becomes a tiled terminal area, so one or mor
 ### D1. Builder tab (backend)
 
 - **Create:** `rtcore.CreateBuilderTab(ctx, builderId, appId)` inserts, in one transaction, a `Tab` (`Name: "builder"`, `BlockIds: []`, new `LayoutState`, `Meta{"builder:owner": builderId, "builder:appid": appId}`) and its `LayoutState`. It joins no workspace. The meta is written at insert.
-- **Is-builder-tab predicate** (every delete path and the cascade skip): `Meta["builder:owner"]` non-empty AND `DBFindWorkspaceForTabId(tab)` returns `""` with nil error. A lookup error counts as "not a builder tab" (fail safe: refuse to delete).
+- **Is-builder-tab predicate** `rtstore.IsBuilderTab(ctx, tabId)` (every delete path, the cascade skip, the local-only guard): `Meta["builder:owner"]` non-empty AND `DBFindWorkspaceForTabId(tab)` returns `""` with nil error. A lookup error counts as "not a builder tab" (fail safe: refuse to delete). It lives in `rtstore` (no import cycle; `rtcore` reuses it). Inside a transaction it is called with `tx.Context()`: the DB allows one open connection (`wstore_dbsetup.go:55`), so an outer context would deadlock until timeout.
 - **Delete:** `rtcore.DeleteBuilderTab(ctx, tabId, expectedOwner)`:
   - Missing tab: no-op, nil error.
   - Refuses (error, deletes nothing) unless the predicate holds and, when `expectedOwner != ""`, `builder:owner == expectedOwner`.
@@ -58,15 +59,15 @@ The left side of the builder window becomes a tiled terminal area, so one or mor
 - **Cascade skip:** in `DeleteBlock(recursive=true)`, when the parent tab satisfies the predicate, skip the "last block -> delete tab" cascade. Today that path calls `DeleteTab("")`, errors, and returns *before* `sendBlockCloseEvent`, leaking the shell (`pkg/rtcore/block.go:142-156`). With the skip, `DeleteBlock` returns nil and publishes BlockClose. Independently, `sendBlockCloseEvent` moves to immediately after `deleteBlockObj` succeeds, so no later cascade error (any tab) can skip it.
 - **Reserved meta:** `rtstore.UpdateObjectMeta` (`pkg/rtstore/wstore.go:57`) rejects any key with prefix `builder:` (covers `builder:*` section-clears and nil deletes) on `tab:` orefs, so `SetMetaCommand` and `ObjectService.UpdateObjectMeta` are both covered. Only tab meta carries builder keys; block meta is not guarded. `CreateBuilderTab` writes at insert and does not go through it.
 - **Workspace membership:** `UpdateWorkspaceTabIds` (`pkg/rtcore/workspace.go:453-461`) rejects a tab id whose tab has non-empty `builder:owner`, and rejects on a tab lookup error (fail closed).
-- **Local only:** `rtstore.UpdateObjectMeta` (block orefs) and `rtcore.CreateBlock` / `CreateSubBlock` reject a `connection` value other than `""` / `"local"` when the block's tab (resolved through parent blocks, as `DBFindTabForBlockId`) satisfies the predicate. This covers `SetMetaCommand`, the conn picker, `wsh ssh`/`wsh wsl`, `CreateBlockCommand`, `CreateSubBlockCommand` and `ObjectService`. It is a UX guard (unroutable SSH prompts), not a security boundary.
+- **Local only:** `rtstore.UpdateObjectMeta` (block orefs) and `rtcore.CreateBlock` / `CreateSubBlock` reject a `connection` value other than `""` / `"local"` when the block's tab (resolved through parent blocks, as `DBFindTabForBlockId`; for `CreateSubBlock` from the parent block id) satisfies the predicate. The check runs only when the incoming patch or block def contains a `connection` key, so ordinary meta writes do no lookups. This covers `SetMetaCommand`, the conn picker, `wsh ssh`/`wsh wsl`, `CreateBlockCommand`, `CreateSubBlockCommand` and `ObjectService`. It is a UX guard (unroutable SSH prompts), not a security boundary.
 - **Workspace env:** `makeSwapToken` omits `WORKSPACEID` when the workspace id is empty (`pkg/blockcontroller/blockcontroller.go:618-630`).
 - **Block def:** `MakeBuilderTerminalBlockDef` (`pkg/buildercontroller/appdir.go:38-47`) also pins the durable-shell meta key to false (exact key confirmed in the plan).
 
 ### D2. Serialisation and RPCs
 
-- **Caller check:** `EnsureBuilderTabCommand` and `OpenBuilderTerminalCommand` reject any caller whose RPC source is not the Electron main route (`wshutil.ElectronRoute`). `DeleteBuilderCommand` accepts the Electron route or `builder:<builderid>` for the same builderId (the renderer's `switchBuilderApp` calls it). Everything else (`proc:`, `controller:`, `conn:`, `tab:`, `feblock:`, other builders) is rejected. Exact source strings for the Electron and renderer links are confirmed in the plan with a test per accepted and rejected source. `builderid` must parse as a UUID.
+- **Caller check:** a pure function `checkBuilderCaller(source, builderId, allowRenderer bool) error`. `EnsureBuilderTabCommand` and `OpenBuilderTerminalCommand` accept only `wshutil.ElectronRoute` (`"electron"`, `pkg/wshutil/wshrouter.go:30`; set by `emain/emain-wsh.ts:15`). `DeleteBuilderCommand` also accepts `wshutil.MakeBuilderRouteId(builderid)` (`wshrouter.go:139`; the renderer's `switchBuilderApp` calls it via `TabRpcClient`). Everything else (`proc:`, `controller:`, `conn:`, `tab:`, `feblock:`, other builders, empty) is rejected. `builderid` must parse as a UUID. A test-only exported helper in `wshutil` builds a context with a given source, so the handlers are testable.
 - **Lock:** a keyed mutex per builderId (map guarded by its own mutex; helper funcs with `Lock(); defer Unlock()`), held by Ensure, Open and the tab teardown in `DeleteBuilderCommand`. Entries are never removed (one per builder window per process lifetime; the caller check stops panes minting ids). After acquiring, Ensure and Open return `ctx.Err()` if their RPC context is done.
-- **Update broadcast:** Ensure, Open and the teardown in `DeleteBuilderCommand` run on a context wrapped with `remotetermobj.ContextWithUpdates`, and call `wps.Broker.SendUpdateEvents(remotetermobj.ContextGetUpdatesRtn(ctx))` before returning, on success and after rollback (as `CreateBlockCommand` does, `pkg/wshrpc/wshserver/wshserver.go:219, 286-288`). Without it the renderer never sees new panes' layout actions or the tab's deletion. The startup sweep is exempt (no clients yet).
+- **Write context and broadcast:** after validation, the write phase of Ensure and Open, and the teardown in `DeleteBuilderCommand`, run on a detached, time-bounded context (`context.WithTimeout(context.Background(), 15s)`) wrapped with `remotetermobj.ContextWithUpdates`, on a single goroutine (the update map is not goroutine-safe). Rollbacks use the same context, so an expiring RPC context cannot strand a half-created tab. Each calls `wps.Broker.SendUpdateEvents(remotetermobj.ContextGetUpdatesRtn(ctx))` once before returning, on success and after rollback (failed transactions contribute no updates, `pkg/rtstore/wstore_dbsetup.go:58-80`). Without it the renderer never sees new panes' layout actions or the tab's deletion. Open calls `rtcore.CreateBlock` and `QueueLayoutActionForTab` directly rather than `CreateBlockCommand` (which broadcasts on success only and cannot roll back). The startup sweep is exempt (no clients yet).
 - **App dir:** new `buildercontroller.ResolveAppDirForAppId(appId)`: `GetAppDir` (validates the id and bounds the dir to the apps root, `pkg/remotetermappstore/waveappstore.go:79-86`) plus the symlink and `Lstat` checks of `ResolveBuilderAppDir`. It never reads rtinfo. `ResolveBuilderAppDir` keeps serving its existing callers.
 - **`EnsureBuilderTabCommand{builderid, appid} -> {tabid, appid}`** (under the lock). Electron IPC fills both fields from the calling window (`bw.builderId`, `bw.builderAppId`):
   - `appid` empty or invalid -> error.
@@ -104,7 +105,7 @@ In `cmd/server/main-server.go`, after `InitJobController` and `InitBlockControll
   3. If `staticTabId` is unset, set it. If it is set to a different id (cannot happen without an app switch, which reloads), reload the renderer.
   4. Mount the tile layout for that tab inside `TabModelContext`, with `TileLayoutContents.onNodeDelete = ObjectService.DeleteBlock(blockId)` (as `tabcontent.tsx:38-46`; the D1 cascade skip keeps the tab).
   No code obtains a layout model for the builder tab before step 3. Callers of `getLayoutModelForStaticTab()` reachable in builder windows (`frontend/app/store/keymodel.ts:67-71, 154, 175, 191, 217, 295-315`, `frontend/app/store/focusManager.ts:16-20, 35`) return early on a null model.
-- **Tab vanishes while mounted** (tab atom becomes null): unmount the tile layout, `deleteLayoutModelForTab`, show the Retry state; Retry reloads the renderer.
+- **Tab vanishes while mounted** (tab atom becomes null): unmount the tile layout, `deleteLayoutModelForTab`, show the Retry state; Retry reloads the renderer. `switchBuilderApp` sets a "switching" flag before `DeleteBuilderCommand` that shows a neutral "Switching app…" state instead of Retry.
 - **Layout:** `builder-workspace.tsx` restores the horizontal `PanelGroup`: left `BuilderTermPanel` (`layout.terminal`, default 40, min 20), resize handle, right column (existing app/build vertical group). A saved layout without `terminal` uses 40.
 - **Empty state:** when the layout has no visible leaves, show "No terminals" and an "Open terminal" button.
 - **Header button:** the app panel's "Open terminal" is disabled until bootstrap step 1 has succeeded.
@@ -250,3 +251,17 @@ In `cmd/server/main-server.go`, after `InitJobController` and `InitBlockControll
 | Req m2 header Open before Ensure | Accepted: disabled until step 1 | D5 |
 | Req m5 dead `builder:tabid` rtinfo | Accepted: dropped | D2 |
 | Req m6 S6 close paths; S9 timing | Accepted | Testing |
+
+## Audit disposition: round 4 (v4)
+
+| Finding | Disposition | Where |
+|---|---|---|
+| Major 1 source stamping wording; same-uid adversary | Accepted: wording corrected; adversary narrowed; same-uid out of scope | Trust model |
+| Minor 1 Ensure rollback on RPC ctx | Accepted: detached write context | D2 |
+| Minor 2 guard placement, tx context, patch-only check | Accepted | D1 |
+| Minor 3 broadcast citation; Open via `CreateBlockCommand` | Accepted: Open uses `rtcore.CreateBlock` + `QueueLayoutActionForTab` | D2 |
+| Minor 4 caller-check test seam | Accepted: pure function + test helper | D2 |
+| Minor 5 other builder RPCs unchecked | Recorded as pre-existing | Trust model |
+| Minor 6 Retry flash on app switch | Accepted: switching flag | D5 |
+
+Verdict after round 4: no blockers; the single major was wording. Spec ready to plan.
