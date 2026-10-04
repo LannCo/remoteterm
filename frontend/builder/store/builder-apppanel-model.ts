@@ -6,6 +6,7 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { BuilderTermModel } from "@/builder/store/builder-term-model";
 import { atoms, getApi, getSettingsKeyAtom, WOS } from "@/store/global";
 import { base64ToString, stringToBase64 } from "@/util/util";
 import type { WebviewTag } from "electron";
@@ -296,6 +297,8 @@ export class BuilderAppPanelModel {
 
     async switchBuilderApp() {
         const builderId = globalStore.get(atoms.builderId);
+        // Set first: DeleteBuilderCommand removes the tab, and the panel must not offer Retry meanwhile.
+        BuilderTermModel.getInstance().markSwitching();
         try {
             await RpcApi.DeleteBuilderCommand(TabRpcClient, builderId);
             await new Promise((resolve) => setTimeout(resolve, 500));
@@ -303,12 +306,17 @@ export class BuilderAppPanelModel {
                 oref: WOS.makeORef("builder", builderId),
                 data: { "builder:appid": null },
             });
-            getApi().setBuilderWindowAppId(null);
+            await getApi().setBuilderWindowAppId(null);
             await new Promise((resolve) => setTimeout(resolve, 100));
             getApi().doRefresh();
         } catch (err) {
             console.error("Failed to switch builder app:", err);
             globalStore.set(this.errorAtom, `Failed to switch builder app: ${err.message || "Unknown error"}`);
+            // Leave "Switching app…": back to the terminals if the tab survived, otherwise to Retry (a reload).
+            const termModel = BuilderTermModel.getInstance();
+            const tabId = globalStore.get(termModel.tabIdAtom);
+            const tab = tabId == null ? null : globalStore.get(WOS.getWaveObjectAtom<Tab>(WOS.makeORef("tab", tabId)));
+            termModel.setState(tab != null ? "ready" : "vanished");
         }
     }
 

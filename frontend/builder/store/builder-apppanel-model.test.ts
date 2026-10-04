@@ -16,6 +16,9 @@ const rpc = vi.hoisted(() => ({
 vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: rpc }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 vi.mock("@/app/store/wps", () => ({ waveEventSubscribeSingle: vi.fn(() => () => {}) }));
+vi.mock("@/builder/store/builder-term-model", () => ({
+    BuilderTermModel: { getInstance: () => ({ markSwitching: vi.fn() }) },
+}));
 vi.mock("@/store/global", async () => {
     const { atom } = await import("jotai");
     return {
