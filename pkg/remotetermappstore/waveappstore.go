@@ -125,11 +125,7 @@ func copyDir(src, dst string) error {
 		if !d.Type().IsRegular() {
 			return nil
 		}
-		data, _, err := readRegularFileInRoot(srcRoot, rel, MaxAppFileReadSize)
-		if err != nil {
-			return err
-		}
-		return createFileExclusiveInRoot(dstRoot, rel, data)
+		return copyRegularFileBetweenRoots(srcRoot, dstRoot, rel)
 	})
 }
 

@@ -344,14 +344,45 @@ func TestCopyDirSkipsSymlinksAndCopiesFiles(t *testing.T) {
 	}
 }
 
-func TestCopyDirRefusesOversizeFile(t *testing.T) {
+func TestCopyDirCopiesLargeFileAndKeepsMode(t *testing.T) {
 	home := setupAppStoreTest(t)
 	dir := makeAppDir(t, home, "draft", "demo")
-	if err := os.WriteFile(filepath.Join(dir, "big.bin"), bytes.Repeat([]byte("a"), MaxAppFileReadSize+1), 0644); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "static"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := PublishDraft("draft/demo"); err == nil {
-		t.Fatal("expected an error copying a file over 2 MiB")
+	big := bytes.Repeat([]byte("0123456789abcdef"), 3*1024*1024/16)
+	if err := os.WriteFile(filepath.Join(dir, "static", "big.bin"), big, 0644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "run.sh")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(exe, 0755); err != nil {
+		t.Fatal(err)
+	}
+	grp := filepath.Join(dir, "shared.txt")
+	if err := os.WriteFile(grp, []byte("x"), 0664); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(grp, 0664); err != nil {
+		t.Fatal(err)
+	}
+	localAppId, err := PublishDraft("draft/demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	localDir, _ := GetAppDir(localAppId)
+	got, err := os.ReadFile(filepath.Join(localDir, "static", "big.bin"))
+	if err != nil || !bytes.Equal(got, big) {
+		t.Fatalf("3 MiB file not copied intact: %d bytes, %v", len(got), err)
+	}
+	info, err := os.Stat(filepath.Join(localDir, "run.sh"))
+	if err != nil || info.Mode().Perm() != 0755 {
+		t.Fatalf("mode: %v, %v", info, err)
+	}
+	if info, err := os.Stat(filepath.Join(localDir, "shared.txt")); err != nil || info.Mode().Perm() != 0664 {
+		t.Fatalf("mode of group-writable file: %v, %v", info, err)
 	}
 }
 

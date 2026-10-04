@@ -115,6 +115,42 @@ func readRegularFileInRoot(root *os.Root, rel string, maxSize int64) ([]byte, in
 	return data, info.ModTime().UnixMilli(), nil
 }
 
+// Streams a regular file between roots with no size cap: the regular-file and SameFile checks
+// already keep /dev/zero-style sources out, and apps may hold large static assets.
+func copyRegularFileBetweenRoots(srcRoot *os.Root, dstRoot *os.Root, rel string) error {
+	before, err := srcRoot.Lstat(rel)
+	if err != nil {
+		return fmt.Errorf("failed to stat file: %w", err)
+	}
+	src, err := srcRoot.OpenFile(rel, os.O_RDONLY|nonBlockFlag, 0)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer src.Close()
+	info, err := src.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to stat file: %w", err)
+	}
+	if !info.Mode().IsRegular() || !os.SameFile(before, info) {
+		return fmt.Errorf("%s is not a regular file", filepath.Base(rel))
+	}
+	perm := info.Mode().Perm()
+	dst, err := dstRoot.OpenFile(rel, os.O_CREATE|os.O_EXCL|os.O_WRONLY, perm)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		dst.Close()
+		return fmt.Errorf("failed to copy %s: %w", filepath.Base(rel), err)
+	}
+	// The create mode is filtered by the umask; chmod restores the source's bits.
+	if err := dst.Chmod(perm); err != nil {
+		dst.Close()
+		return fmt.Errorf("failed to set mode on %s: %w", filepath.Base(rel), err)
+	}
+	return dst.Close()
+}
+
 func createFileExclusiveInRoot(root *os.Root, rel string, contents []byte) error {
 	f, err := root.OpenFile(rel, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 	if err != nil {
