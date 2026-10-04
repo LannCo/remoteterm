@@ -21,8 +21,8 @@ type WshRpcBuilderInterface interface {
 	WriteAppSecretBindingsCommand(ctx context.Context, data CommandWriteAppSecretBindingsData) error
 	DeleteBuilderCommand(ctx context.Context, builderId string) error
 	StartBuilderCommand(ctx context.Context, data CommandStartBuilderData) error
+	RequestBuilderRebuildCommand(ctx context.Context, data CommandRequestBuilderRebuildData) error
 	StopBuilderCommand(ctx context.Context, builderId string) error
-	RestartBuilderAndWaitCommand(ctx context.Context, data CommandRestartBuilderAndWaitData) (*RestartBuilderAndWaitResult, error)
 	GetBuilderStatusCommand(ctx context.Context, builderId string) (*BuilderStatusData, error)
 	GetBuilderOutputCommand(ctx context.Context, builderId string) ([]string, error)
 	CheckGoVersionCommand(ctx context.Context) (*CommandCheckGoVersionRtnData, error)
@@ -106,14 +106,8 @@ type CommandStartBuilderData struct {
 	BuilderId string `json:"builderid"`
 }
 
-type CommandRestartBuilderAndWaitData struct {
+type CommandRequestBuilderRebuildData struct {
 	BuilderId string `json:"builderid"`
-}
-
-type RestartBuilderAndWaitResult struct {
-	Success      bool   `json:"success"`
-	ErrorMessage string `json:"errormessage,omitempty"`
-	BuildOutput  string `json:"buildoutput"`
 }
 
 type AppMeta struct {

@@ -35,6 +35,9 @@ const (
 	BuilderStatus_Running  = "running"
 	BuilderStatus_Error    = "error"
 	BuilderStatus_Stopped  = "stopped"
+
+	BuildLogFileName    = remotetermappstore.BuildLogFile
+	BuildLogStatusError = "status: error"
 )
 
 type BuilderProcess struct {
@@ -63,6 +66,14 @@ type BuilderController struct {
 	port          int
 	exitCode      int
 	errorMsg      string
+
+	closed             bool
+	building           bool
+	rebuildPending     bool
+	pendingAppId       string
+	pendingEnv         map[string]string
+	lastBuildInputHash string
+	runBuildFn         func(ctx context.Context, appId string, builderEnv map[string]string)
 }
 
 var (
@@ -79,13 +90,20 @@ func GetOrCreateController(builderId string) *BuilderController {
 		return bc
 	}
 
-	bc = &BuilderController{
-		builderId:     builderId,
-		status:        BuilderStatus_Init,
-		statusVersion: 0,
-	}
+	bc = makeBuilderController(builderId)
 	controllerMap[builderId] = bc
 
+	return bc
+}
+
+func makeBuilderController(builderId string) *BuilderController {
+	bc := &BuilderController{
+		builderId: builderId,
+		status:    BuilderStatus_Init,
+	}
+	bc.runBuildFn = func(ctx context.Context, appId string, builderEnv map[string]string) {
+		bc.buildAndRun(ctx, appId, builderEnv, nil)
+	}
 	return bc
 }
 
@@ -102,6 +120,7 @@ func DeleteController(builderId string) {
 	mapLock.Unlock()
 
 	if bc != nil {
+		bc.markClosed()
 		bc.Stop()
 	}
 }
@@ -132,6 +151,7 @@ func Shutdown() {
 	mapLock.Unlock()
 
 	for _, bc := range controllers {
+		bc.markClosed()
 		bc.Stop()
 	}
 }
@@ -144,11 +164,7 @@ func (bc *BuilderController) waitForBuildDone(ctx context.Context) error {
 		default:
 		}
 
-		bc.statusLock.Lock()
-		status := bc.status
-		bc.statusLock.Unlock()
-
-		if status != BuilderStatus_Building {
+		if !bc.isBuilding() {
 			return nil
 		}
 
@@ -157,37 +173,229 @@ func (bc *BuilderController) waitForBuildDone(ctx context.Context) error {
 }
 
 func (bc *BuilderController) Start(ctx context.Context, appId string, builderEnv map[string]string) error {
-	if err := bc.waitForBuildDone(ctx); err != nil {
-		return err
+	bc.RequestRebuild(appId, builderEnv)
+	return nil
+}
+
+// RequestRebuild never waits for a build, so the RPC that calls it returns at once and
+// the RPC timeout never applies to a build. Requests that arrive during a build
+// collapse into a single follow-up build.
+func (bc *BuilderController) RequestRebuild(appId string, builderEnv map[string]string) {
+	bc.recordInputHash(appId)
+	if !bc.queueBuild(appId, builderEnv) {
+		return
 	}
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				panichandler.PanicHandler(fmt.Sprintf("buildercontroller[%s].buildLoop", bc.builderId), r)
+				// Stop() waits for building to clear; a panicked loop would hang it forever.
+				bc.abandonBuildLoop()
+			}
+		}()
+		bc.buildLoop()
+	}()
+}
+
+func (bc *BuilderController) queueBuild(appId string, builderEnv map[string]string) bool {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
+	if bc.closed {
+		return false
+	}
+	bc.pendingAppId = appId
+	bc.pendingEnv = builderEnv
+	if bc.building {
+		bc.rebuildPending = true
+		return false
+	}
+	bc.building = true
+	return true
+}
 
-	if bc.appId != appId && bc.process != nil {
+func (bc *BuilderController) buildLoop() {
+	for {
+		appId, builderEnv, ok := bc.beginBuild()
+		if !ok {
+			return
+		}
+		bc.recordInputHash(appId)
+		bc.runOneBuild(appId, builderEnv)
+		if !bc.endBuild() {
+			return
+		}
+	}
+}
+
+func (bc *BuilderController) runOneBuild(appId string, builderEnv map[string]string) {
+	buildCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	bc.runBuildFn(buildCtx, appId, builderEnv)
+}
+
+func (bc *BuilderController) beginBuild() (string, map[string]string, bool) {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	if bc.closed {
+		bc.building = false
+		return "", nil, false
+	}
+	bc.rebuildPending = false
+	if bc.process != nil {
 		log.Printf("BuilderController: stopping previous app %s for builder %s", bc.appId, bc.builderId)
 		bc.stopProcess_nolock()
 	}
-
-	bc.appId = appId
+	bc.appId = bc.pendingAppId
 	bc.outputBuffer = utilds.MakeMultiReaderLineBuffer(1000)
 	bc.setStatus_nolock(BuilderStatus_Building, 0, 0, "")
-
 	bc.publishOutputLine("", true)
-
 	bc.outputBuffer.SetLineCallback(func(line string) {
 		bc.publishOutputLine(line, false)
 	})
+	return bc.pendingAppId, bc.pendingEnv, true
+}
 
-	buildCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	go func() {
-		defer cancel()
-		defer func() {
-			panichandler.PanicHandler(fmt.Sprintf("buildercontroller[%s].buildAndRun", bc.builderId), recover())
-		}()
-		bc.buildAndRun(buildCtx, appId, builderEnv, nil)
-	}()
+func (bc *BuilderController) endBuild() bool {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	if bc.rebuildPending && !bc.closed {
+		return true
+	}
+	bc.building = false
+	return false
+}
 
-	return nil
+func (bc *BuilderController) abandonBuildLoop() {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	bc.building = false
+	bc.rebuildPending = false
+}
+
+// Closing is permanent: a controller being torn down must not start a queued build
+// or act on a late watcher callback, either of which would leave an orphan app process.
+func (bc *BuilderController) markClosed() {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	bc.closed = true
+	bc.rebuildPending = false
+}
+
+func (bc *BuilderController) isClosed() bool {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	return bc.closed
+}
+
+func (bc *BuilderController) clearPendingRebuild() {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	bc.rebuildPending = false
+}
+
+func (bc *BuilderController) isBuilding() bool {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	return bc.building
+}
+
+func (bc *BuilderController) hasProcess() bool {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	return bc.process != nil
+}
+
+func (bc *BuilderController) getAppId() string {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	return bc.appId
+}
+
+// The hash is taken when a build is requested as well as when it starts: a save that
+// lands during a running build is then recognised as ours, not as an outside change.
+func (bc *BuilderController) recordInputHash(appId string) {
+	appDir, err := remotetermappstore.GetAppDir(appId)
+	if err != nil {
+		return
+	}
+	hash, err := ComputeAppInputHash(appDir)
+	if err != nil {
+		return
+	}
+	bc.setLastBuildInputHash(hash)
+}
+
+// RecordAppInputHash is called after the builder itself writes app files (a Code-tab
+// save), so the watcher treats that write as ours whichever RPC reaches us first.
+func RecordAppInputHash(appId string) {
+	controllers := getControllersForApp(appId)
+	if len(controllers) == 0 {
+		return
+	}
+	appDir, err := remotetermappstore.GetAppDir(appId)
+	if err != nil {
+		return
+	}
+	hash, err := ComputeAppInputHash(appDir)
+	if err != nil {
+		return
+	}
+	for _, bc := range controllers {
+		bc.setLastBuildInputHash(hash)
+	}
+}
+
+func getControllersForApp(appId string) []*BuilderController {
+	mapLock.Lock()
+	controllers := make([]*BuilderController, 0, len(controllerMap))
+	for _, bc := range controllerMap {
+		controllers = append(controllers, bc)
+	}
+	mapLock.Unlock()
+
+	var matching []*BuilderController
+	for _, bc := range controllers {
+		if bc.getAppId() == appId {
+			matching = append(matching, bc)
+		}
+	}
+	return matching
+}
+
+func (bc *BuilderController) setLastBuildInputHash(hash string) {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	bc.lastBuildInputHash = hash
+}
+
+func (bc *BuilderController) getLastBuildInputHash() string {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	return bc.lastBuildInputHash
+}
+
+// AGENTS.md in the starter files quotes these two status lines, so a change here
+// has to change that file too.
+func runningBuildLogStatus(port int) string {
+	return fmt.Sprintf("status: running on port %d", port)
+}
+
+// Agents working in the app folder cannot see the Build panel; this file is how they
+// read compile errors. Failing to write it must never change the build result.
+func writeBuildLog(appId string, lines []string, statusLine string) {
+	if appId == "" {
+		return
+	}
+	var buf strings.Builder
+	for _, line := range lines {
+		buf.WriteString(line)
+		buf.WriteString("\n")
+	}
+	buf.WriteString(statusLine)
+	buf.WriteString("\n")
+	if err := remotetermappstore.WriteAppBuildLog(appId, []byte(buf.String())); err != nil {
+		log.Printf("BuilderController: cannot write build log for %s: %v", appId, err)
+	}
 }
 
 func (bc *BuilderController) buildAndRun(ctx context.Context, appId string, builderEnv map[string]string, resultCh chan<- *BuildResult) {
@@ -275,6 +483,8 @@ func (bc *BuilderController) buildAndRun(ctx context.Context, appId string, buil
 	bc.process = process
 	bc.setStatus_nolock(BuilderStatus_Running, process.Port, 0, "")
 	bc.lock.Unlock()
+
+	writeBuildLog(appId, outputCapture.GetLines(), runningBuildLogStatus(process.Port))
 
 	time.Sleep(1 * time.Second)
 
@@ -417,74 +627,35 @@ func (bc *BuilderController) runBuilderApp(ctx context.Context, appId string, ap
 }
 
 func (bc *BuilderController) handleBuildError(err error, resultCh chan<- *BuildResult) {
+	appId, lines := bc.recordBuildError(err, resultCh)
+	writeBuildLog(appId, lines, BuildLogStatusError)
+}
+
+func (bc *BuilderController) recordBuildError(err error, resultCh chan<- *BuildResult) (string, []string) {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
 	bc.setStatus_nolock(BuilderStatus_Error, 0, 1, err.Error())
+	var lines []string
 	if bc.outputBuffer != nil {
 		bc.outputBuffer.AddLine("[error] " + err.Error())
+		lines = bc.outputBuffer.GetLines()
 	}
 
 	if resultCh != nil {
-		buildOutput := ""
-		if bc.outputBuffer != nil {
-			lines := bc.outputBuffer.GetLines()
-			buildOutput = strings.Join(lines, "\n")
-		}
 		select {
 		case resultCh <- &BuildResult{
 			Success:      false,
 			ErrorMessage: err.Error(),
-			BuildOutput:  buildOutput,
+			BuildOutput:  strings.Join(lines, "\n"),
 		}:
 		default:
 		}
 	}
-}
-
-func (bc *BuilderController) RestartAndWaitForBuild(ctx context.Context, appId string, builderEnv map[string]string) (*BuildResult, error) {
-	if err := bc.waitForBuildDone(ctx); err != nil {
-		return nil, err
-	}
-
-	resultCh := make(chan *BuildResult, 1)
-
-	bc.lock.Lock()
-	if bc.appId != appId && bc.process != nil {
-		log.Printf("BuilderController: stopping previous app %s for builder %s", bc.appId, bc.builderId)
-		bc.stopProcess_nolock()
-	}
-
-	bc.appId = appId
-	bc.outputBuffer = utilds.MakeMultiReaderLineBuffer(1000)
-	bc.setStatus_nolock(BuilderStatus_Building, 0, 0, "")
-
-	bc.publishOutputLine("", true)
-
-	bc.outputBuffer.SetLineCallback(func(line string) {
-		bc.publishOutputLine(line, false)
-	})
-	bc.lock.Unlock()
-
-	time.Sleep(500 * time.Millisecond)
-
-	buildCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	go func() {
-		defer cancel()
-		defer func() {
-			panichandler.PanicHandler(fmt.Sprintf("buildercontroller[%s].buildAndRun", bc.builderId), recover())
-		}()
-		bc.buildAndRun(buildCtx, appId, builderEnv, resultCh)
-	}()
-
-	select {
-	case result := <-resultCh:
-		return result, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
+	return bc.appId, lines
 }
 
 func (bc *BuilderController) Stop() error {
+	bc.clearPendingRebuild()
 	if err := bc.waitForBuildDone(context.Background()); err != nil {
 		return err
 	}
@@ -513,6 +684,7 @@ func (bc *BuilderController) stopProcess_nolock() {
 }
 
 func (bc *BuilderController) GetStatus() wshrpc.BuilderStatusData {
+	appId := bc.getAppId()
 	bc.statusLock.Lock()
 	defer bc.statusLock.Unlock()
 
@@ -525,8 +697,8 @@ func (bc *BuilderController) GetStatus() wshrpc.BuilderStatusData {
 		Version:  bc.statusVersion,
 	}
 
-	if bc.appId != "" {
-		manifest, err := remotetermappstore.ReadAppManifest(bc.appId)
+	if appId != "" {
+		manifest, err := remotetermappstore.ReadAppManifest(appId)
 		if err == nil && manifest != nil {
 			wshrpcManifest := &wshrpc.AppManifest{
 				AppMeta: wshrpc.AppMeta{
@@ -546,13 +718,13 @@ func (bc *BuilderController) GetStatus() wshrpc.BuilderStatusData {
 			statusData.Manifest = wshrpcManifest
 		}
 
-		secretBindings, err := remotetermappstore.ReadAppSecretBindings(bc.appId)
+		secretBindings, err := remotetermappstore.ReadAppSecretBindings(appId)
 		if err == nil {
 			statusData.SecretBindings = secretBindings
 		}
 
 		if manifest != nil && secretBindings != nil {
-			_, err := remotetermappstore.BuildAppSecretEnv(bc.appId, manifest, secretBindings)
+			_, err := remotetermappstore.BuildAppSecretEnv(appId, manifest, secretBindings)
 			statusData.SecretBindingsComplete = (err == nil)
 		}
 	}
