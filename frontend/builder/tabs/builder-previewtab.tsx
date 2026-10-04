@@ -181,6 +181,7 @@ const BuilderPreviewTab = memo(() => {
     const builderStatus = useAtomValue(model.builderStatusAtom);
     const builderId = useAtomValue(atoms.builderId);
     const appGoMissing = useAtomValue(model.appGoMissingAtom);
+    const isResizing = useAtomValue(model.resizeDraggingAtom);
     const fileExists = originalContent.length > 0;
     const [lastKnownUrl, setLastKnownUrl] = useState<string>(null);
 
@@ -219,7 +220,7 @@ const BuilderPreviewTab = memo(() => {
                     className="w-full h-full"
                     style={{
                         visibility: isWebViewActive ? "visible" : "hidden",
-                        pointerEvents: isWebViewActive ? "auto" : "none",
+                        pointerEvents: isWebViewActive && !isResizing ? "auto" : "none",
                     }}
                 />
             )}

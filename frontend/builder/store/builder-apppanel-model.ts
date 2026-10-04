@@ -48,6 +48,7 @@ export class BuilderAppPanelModel {
     noticeAtom: PrimitiveAtom<string> = BuilderNoticeAtom;
     builderStatusAtom = atom<BuilderStatusData>(null) as PrimitiveAtom<BuilderStatusData>;
     hasSecretsAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
+    resizeDraggingAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
     saveNeededAtom!: Atom<boolean>;
     focusElemRef: { current: HTMLInputElement | null } = { current: null };
     monacoEditorRef: { current: MonacoTypes.editor.IStandaloneCodeEditor | null } = { current: null };

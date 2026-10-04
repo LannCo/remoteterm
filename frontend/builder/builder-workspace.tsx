@@ -6,11 +6,12 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { BuilderAppPanel } from "@/builder/builder-apppanel";
 import { BuilderBuildPanel } from "@/builder/builder-buildpanel";
 import { BuilderTermPanel } from "@/builder/builder-termpanel";
+import { BuilderAppPanelModel } from "@/builder/store/builder-apppanel-model";
 import { BuilderFocusManager } from "@/builder/store/builder-focusmanager";
 import { type BuilderLayout, mergeBuilderLayout, MinTerminalPercent } from "@/builder/store/builder-layout";
 import { atoms } from "@/store/global";
 import { cn } from "@/util/util";
-import { useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { debounce } from "throttle-debounce";
@@ -21,6 +22,7 @@ const BuilderWorkspace = memo(() => {
     const layoutRef = useRef<BuilderLayout>(null);
     const focusType = useAtomValue(BuilderFocusManager.getInstance().focusType);
     const isAppFocused = focusType === "app";
+    const setResizeDragging = useSetAtom(BuilderAppPanelModel.getInstance().resizeDraggingAtom);
 
     useEffect(() => {
         const loadLayout = async () => {
@@ -94,7 +96,10 @@ const BuilderWorkspace = memo(() => {
                 <Panel defaultSize={initialLayout.terminal} minSize={MinTerminalPercent}>
                     <BuilderTermPanel />
                 </Panel>
-                <PanelResizeHandle className="w-0.5 bg-transparent hover:bg-gray-500/20 transition-colors" />
+                <PanelResizeHandle
+                    className="w-0.5 bg-transparent hover:bg-gray-500/20 transition-colors"
+                    onDragging={setResizeDragging}
+                />
                 <Panel defaultSize={100 - initialLayout.terminal} minSize={20}>
                     <div
                         className={cn(
@@ -111,7 +116,10 @@ const BuilderWorkspace = memo(() => {
                             <Panel defaultSize={initialLayout.app} minSize={20}>
                                 <BuilderAppPanel />
                             </Panel>
-                            <PanelResizeHandle className="h-0.5 bg-transparent hover:bg-gray-500/20 transition-colors" />
+                            <PanelResizeHandle
+                                className="h-0.5 bg-transparent hover:bg-gray-500/20 transition-colors"
+                                onDragging={setResizeDragging}
+                            />
                             <Panel
                                 defaultSize={initialLayout.build}
                                 minSize={20}
