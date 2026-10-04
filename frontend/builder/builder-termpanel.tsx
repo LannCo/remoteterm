@@ -47,10 +47,16 @@ const BuilderTermLayout = memo(({ tabId }: { tabId: string }) => {
     const contents = useMemo(() => makeBuilderTileContents(tabId, tileGapSize), [tabId, tileGapSize]);
     const layoutModel = getLayoutModelForStaticTab();
     const numLeafs = useAtomValue(layoutModel?.numLeafs ?? ZeroAtom);
+    const tab = useAtomValue(tabAtom);
+    // numLeafs stays 0 until TileLayout's mount effect has run; blockids is already filled on first render.
+    const isEmpty = numLeafs === 0 && (tab?.blockids?.length ?? 0) === 0;
 
     useEffect(() => {
+        if (numLeafs === 0 && !isEmpty) {
+            return;
+        }
         BuilderTermModel.getInstance().handlePaneCount(numLeafs);
-    }, [numLeafs]);
+    }, [numLeafs, isEmpty]);
 
     // The count is only reported while mounted; without this, leaving "ready" (vanished, switching) would keep
     // terminal focus and a stale pane count.
@@ -67,7 +73,7 @@ const BuilderTermLayout = memo(({ tabId }: { tabId: string }) => {
                     tabAtom={tabAtom}
                     getCursorPoint={getApi().getCursorPoint}
                 />
-                {numLeafs === 0 && (
+                {isEmpty && (
                     <div className="absolute inset-0 bg-main-bg">
                         <PanelMessage
                             message="No terminals"

@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
     layoutModel: null as any,
+    tab: null as any,
     open: vi.fn(() => Promise.resolve("")),
 }));
 
@@ -17,7 +18,7 @@ vi.mock("@/store/global", async () => {
     return {
         atoms: { builderAppId: atom("draft/app"), staticTabId: atom(null), settingsAtom: atom({}) },
         getApi: () => ({ getCursorPoint: vi.fn() }),
-        WOS: { makeORef: (otype: string, oid: string) => `${otype}:${oid}`, getWaveObjectAtom: () => atom(null) },
+        WOS: { makeORef: (otype: string, oid: string) => `${otype}:${oid}`, getWaveObjectAtom: () => atom(h.tab) },
     };
 });
 vi.mock("@/layout/index", () => ({
@@ -58,6 +59,7 @@ describe("BuilderTermPanel", () => {
     beforeEach(() => {
         BuilderTermModel.resetInstance();
         h.layoutModel = null;
+        h.tab = null;
         h.open.mockClear();
         BuilderFocusManager.getInstance().setAppFocused();
     });
@@ -97,6 +99,26 @@ describe("BuilderTermPanel", () => {
         fireEvent.click(screen.getByText("Open terminal"));
         expect(h.open).toHaveBeenCalledWith("", null);
         expect(BuilderFocusManager.getInstance().getFocusType()).toBe("app");
+    });
+
+    it("shows no empty state and reports no pane count while the tab has blocks the layout has not mounted yet", () => {
+        h.layoutModel = { numLeafs: atom(0) };
+        h.tab = { otype: "tab", oid: "tab-1", blockids: ["b1"] };
+        const model = BuilderTermModel.getInstance();
+        const handlePaneCount = vi.spyOn(model, "handlePaneCount");
+        renderPanel("ready", () => globalStore.set(model.tabIdAtom, "tab-1"));
+        expect(screen.queryByText("No terminals")).toBeNull();
+        expect(handlePaneCount).not.toHaveBeenCalled();
+    });
+
+    it("shows the empty state and reports zero panes when the tab has no blocks and no leafs", () => {
+        h.layoutModel = { numLeafs: atom(0) };
+        h.tab = { otype: "tab", oid: "tab-1", blockids: [] };
+        const model = BuilderTermModel.getInstance();
+        const handlePaneCount = vi.spyOn(model, "handlePaneCount");
+        renderPanel("ready", () => globalStore.set(model.tabIdAtom, "tab-1"));
+        expect(screen.getByText("No terminals")).toBeTruthy();
+        expect(handlePaneCount).toHaveBeenCalledWith(0);
     });
 
     it("hides the empty state and takes terminal focus once a pane exists", async () => {
