@@ -1054,24 +1054,6 @@ async function showQuakeWindow(window: RemoteTermBrowserWindow) {
     }
 }
 
-// Same path as the quake hotkey, so a hidden quake window comes back on the cursor's
-// display and restores fullscreen exactly as the hotkey would.
-export async function revealQuakeWindow() {
-    if (quakeToggleInProgress) {
-        return;
-    }
-    quakeToggleInProgress = true;
-    try {
-        const window = quakeWindow;
-        if (window == null || window.isDestroyed() || window.isVisible()) {
-            return;
-        }
-        await showQuakeWindow(window);
-    } finally {
-        quakeToggleInProgress = false;
-    }
-}
-
 async function quakeToggle() {
     if (quakeToggleInProgress) {
         return;
