@@ -6,6 +6,7 @@ import { ContextMenuModel } from "@/app/store/contextmenu";
 import { modalsModel } from "@/app/store/modalmodel";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { BuilderAppHeader } from "@/builder/builder-appheader";
 import { BuilderAppPanelModel, type TabType } from "@/builder/store/builder-apppanel-model";
 import { BuilderFocusManager } from "@/builder/store/builder-focusmanager";
 import { BuilderCodeTab } from "@/builder/tabs/builder-codetab";
@@ -363,6 +364,7 @@ const BuilderAppPanel = memo(() => {
                     </div>
                 </div>
             </div>
+            <BuilderAppHeader />
             <ErrorStrip />
             <div className="flex-1 overflow-auto py-1">
                 <div className="w-full h-full" style={{ display: activeTab === "preview" ? "block" : "none" }}>
