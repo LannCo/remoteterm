@@ -32,6 +32,9 @@ import (
 const (
 	DefaultMinGoVersion = "1.22"
 	goVersionTimeout    = 10 * time.Second
+	// Killing go leaves its compile and link children holding the output pipe; without a
+	// bound, Wait would sit on them after the context is cancelled.
+	buildCmdWaitDelay = 1 * time.Second
 
 	GoStatus_Ok         = "ok"
 	GoStatus_NotFound   = "notfound"
@@ -114,6 +117,21 @@ type BuildOpts struct {
 	MinGoVersion   string
 	MoveFileBack   bool
 	OutputCapture  *OutputCapture
+	// Ctx bounds every command the build runs; nil means no bound (the CLI).
+	Ctx context.Context
+}
+
+func (opts BuildOpts) context() context.Context {
+	if opts.Ctx == nil {
+		return context.Background()
+	}
+	return opts.Ctx
+}
+
+func (opts BuildOpts) command(name string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(opts.context(), name, args...)
+	cmd.WaitDelay = buildCmdWaitDelay
+	return cmd
 }
 
 func GetAppName(appPath string) string {
@@ -339,7 +357,7 @@ func createGoMod(tempDir, appNS, appName string, buildEnv *BuildEnv, opts BuildO
 	}
 
 	// Run go mod tidy to clean up dependencies
-	tidyCmd := exec.Command(buildEnv.GoPath, "mod", "tidy")
+	tidyCmd := opts.command(buildEnv.GoPath, "mod", "tidy")
 	tidyCmd.Dir = tempDir
 	tidyCmd.Env = goCmdEnv()
 
@@ -681,7 +699,7 @@ func runGoBuild(tempDir string, buildEnv *BuildEnv, opts BuildOpts) (string, err
 
 	// Build command with explicit go files
 	args := append([]string{"build", "-o", outputPath}, ".")
-	buildCmd := exec.Command(buildEnv.GoPath, args...)
+	buildCmd := opts.command(buildEnv.GoPath, args...)
 	buildCmd.Dir = tempDir
 	buildCmd.Env = goCmdEnv()
 
@@ -715,7 +733,7 @@ func runGoBuild(tempDir string, buildEnv *BuildEnv, opts BuildOpts) (string, err
 func generateManifest(tempDir, exePath string, opts BuildOpts) error {
 	oc := opts.OutputCapture
 
-	manifestCmd := exec.Command(exePath, "--manifest")
+	manifestCmd := opts.command(exePath, "--manifest")
 	manifestCmd.Dir = tempDir
 
 	if opts.Verbose {
@@ -759,7 +777,7 @@ func generateAppTailwindCss(tempDir string, verbose bool, opts BuildOpts) error 
 	oc := opts.OutputCapture
 	// tailwind.css is already in tempDir from scaffold copy
 	tailwindOutput := filepath.Join(tempDir, "static", "tw.css")
-	tailwindCmd := exec.Command(opts.getNodePath(), "--preserve-symlinks-main", "--preserve-symlinks",
+	tailwindCmd := opts.command(opts.getNodePath(), "--preserve-symlinks-main", "--preserve-symlinks",
 		"node_modules/@tailwindcss/cli/dist/index.mjs",
 		"-i", "./tailwind.css",
 		"-o", tailwindOutput)

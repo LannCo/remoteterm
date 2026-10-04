@@ -476,6 +476,11 @@ func (bc *BuilderController) buildAndRun(ctx context.Context, appId string, buil
 		return
 	}
 
+	if err := checkAppBuildInputs(appPath); err != nil {
+		bc.handleBuildError(err, resultCh)
+		return
+	}
+
 	settings := rtconfig.GetWatcher().GetFullConfig().Settings
 	buildEnv, err := remotetermapputil.PrepareTsunamiBuild(settings)
 	if err != nil {
@@ -516,6 +521,7 @@ func (bc *BuilderController) buildAndRun(ctx context.Context, appId string, buil
 		GoPath:         buildEnv.GoPath,
 		OutputCapture:  outputCapture,
 		MoveFileBack:   true,
+		Ctx:            ctx,
 	})
 
 	for _, line := range outputCapture.GetLines() {
