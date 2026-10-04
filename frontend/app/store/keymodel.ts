@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { openBuilderTerminal } from "@/app/store/builder-terminal";
 import { FocusManager } from "@/app/store/focusManager";
 import {
     atoms,
@@ -21,6 +22,8 @@ import {
 import { UserInputService } from "@/app/store/services";
 import { getActiveTabModel } from "@/app/store/tab-model";
 import { WorkspaceLayoutModel } from "@/app/workspace/workspace-layout-model";
+import { BuilderFocusManager } from "@/builder/store/builder-focusmanager";
+import { makeBuilderKeyTables } from "@/builder/store/builder-keys";
 import { deleteLayoutModelForTab, getLayoutModelForStaticTab, NavigateDirection } from "@/layout/index";
 import * as keyutil from "@/util/keyutil";
 import { isWindows } from "@/util/platformutil";
@@ -149,6 +152,16 @@ function simpleCloseStaticTab() {
 }
 
 function uxCloseBlock(blockId: string) {
+    // In a builder window the last pane closes like any other: the server keeps the builder tab and the
+    // panel shows its empty state. Closing the tab would close nothing the user can see.
+    if (isBuilderWindow()) {
+        const layoutModel = getLayoutModelForStaticTab();
+        const node = layoutModel?.getNodeByBlockId(blockId);
+        if (node) {
+            fireAndForget(() => layoutModel.closeNode(node.id));
+        }
+        return;
+    }
     // If this is the last block, closing it will close the tab — route through simpleCloseStaticTab
     // so the tab:confirmclose setting is respected.
     if (getStaticTabBlockCount() === 1) {
@@ -164,6 +177,14 @@ function uxCloseBlock(blockId: string) {
 }
 
 function genericClose() {
+    if (isBuilderWindow()) {
+        const layoutModel = getLayoutModelForStaticTab();
+        if (layoutModel == null) {
+            return;
+        }
+        fireAndForget(layoutModel.closeFocusedNode.bind(layoutModel));
+        return;
+    }
     const blockCount = getStaticTabBlockCount();
     if (blockCount === 0) {
         simpleCloseStaticTab();
@@ -398,6 +419,10 @@ function checkKeyMap<T>(waveEvent: WaveKeyboardEvent, keyMap: Map<string, T>): [
     return [null, null];
 }
 
+function isBuilderTerminalFocused(): boolean {
+    return isBuilderWindow() && BuilderFocusManager.getInstance().getFocusType() === "terminal";
+}
+
 function appHandleKeyDown(waveEvent: WaveKeyboardEvent): boolean {
     if (globalKeybindingsDisabled) {
         return false;
@@ -434,7 +459,7 @@ function appHandleKeyDown(waveEvent: WaveKeyboardEvent): boolean {
             return true;
         }
     }
-    if (isTabWindow()) {
+    if (isTabWindow() || isBuilderTerminalFocused()) {
         const layoutModel = getLayoutModelForStaticTab();
         const focusedNode = layoutModel == null ? null : globalStore.get(layoutModel.focusedNode);
         const blockId = focusedNode?.data?.blockId;
@@ -726,13 +751,28 @@ function registerGlobalKeys() {
 }
 
 function registerBuilderGlobalKeys() {
-    globalKeyMap.set("Cmd:w", () => {
-        getApi().closeBuilderWindow();
-        return true;
+    const tables = makeBuilderKeyTables({
+        getFocusType: () => BuilderFocusManager.getInstance().getFocusType(),
+        closeBuilderWindow: () => getApi().closeBuilderWindow(),
+        closeFocusedPane: () => genericClose(),
+        openTerminal: (action, targetBlockId) => fireAndForget(() => openBuilderTerminal(action, targetBlockId)),
+        getFocusedBlockId: () => getFocusedBlockInStaticTab(),
+        isFocusMoveDisabled: () => !!globalStore.get(getSettingsKeyAtom("app:disablectrlshiftarrows")),
+        switchBlockInDirection: (direction) => switchBlockInDirection(direction),
+        switchBlockByBlockNum: (blockNum) => switchBlockByBlockNum(blockNum),
+        magnifyFocused: () => magnifyFocusedNode(),
+        activateSearch: (waveEvent) => activateSearch(waveEvent),
+        handleEscape: () => modalsModel.popModal() || deactivateSearch(),
     });
-    const allKeys = Array.from(globalKeyMap.keys());
-    getApi().registerGlobalWebviewKeys(allKeys);
+    for (const [key, handler] of tables.keyMap) {
+        globalKeyMap.set(key, handler);
+    }
+    for (const [key, chordKeys] of tables.chordMap) {
+        globalChordMap.set(key, chordKeys);
+    }
+    getApi().registerGlobalWebviewKeys(tables.webviewKeys);
 }
+
 
 function getAllGlobalKeyBindings(): string[] {
     const allKeys = Array.from(globalKeyMap.keys());

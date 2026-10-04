@@ -12,6 +12,7 @@ import { ConnectionButton } from "@/app/block/connectionbutton";
 import { DurableSessionFlyover } from "@/app/block/durable-session-flyover";
 import { PortForwardStatusIndicator } from "@/app/block/port-forward-status";
 import { getBlockBadgeAtom } from "@/app/store/badge";
+import { showConnectionUi } from "@/app/store/builder-terminal";
 import {
     createBlockSplitHorizontally,
     createBlockSplitVertically,
@@ -269,7 +270,7 @@ const BlockFrame_Header = React.memo(
                         </div>
                     </>
                 )}
-                {manageConnection && (
+                {manageConnection && showConnectionUi() && (
                     <ConnectionButton
                         ref={connBtnRef}
                         key="connbutton"
