@@ -71,7 +71,7 @@ func (bc *BuilderController) installWatcher(watcher *AppWatcher) wshrpc.BuilderW
 func (bc *BuilderController) swapWatcher(watcher *AppWatcher) (*AppWatcher, wshrpc.BuilderWatchStatusData) {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
-	if bc.closed {
+	if bc.closed.Load() {
 		return watcher, makeUnavailableStatus(watchClosedReason)
 	}
 	cur := bc.watcher

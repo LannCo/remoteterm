@@ -15,6 +15,21 @@ import (
 	"github.com/LannCo/remoteterm/pkg/utilds"
 )
 
+// Secret bindings live in the data dir; without one a build fails before it would start
+// its app, and the start check goes untested. It is set once here, before any test runs:
+// writing it inside a test races with status goroutines left over from earlier tests.
+func TestMain(m *testing.M) {
+	dataDir, err := os.MkdirTemp("", "buildercontroller-data-*")
+	if err != nil {
+		fmt.Printf("cannot create a test data dir: %v\n", err)
+		os.Exit(1)
+	}
+	remotetermbase.DataHome_VarCache = dataDir
+	code := m.Run()
+	os.RemoveAll(dataDir)
+	os.Exit(code)
+}
+
 func setupBuilderTest(t *testing.T) (string, string) {
 	t.Helper()
 	home := t.TempDir()

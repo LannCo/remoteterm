@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/LannCo/remoteterm/pkg/panichandler"
@@ -68,7 +69,9 @@ type BuilderController struct {
 	exitCode      int
 	errorMsg      string
 
-	closed             bool
+	// Atomic so the publish paths, some of which run under bc.lock, can read it lock-free.
+	closed             atomic.Bool
+	buildCancel        context.CancelFunc
 	stopping           int
 	building           bool
 	rebuildPending     bool
@@ -223,7 +226,7 @@ func (bc *BuilderController) RequestRebuild(appId string, builderEnv map[string]
 func (bc *BuilderController) queueBuild(appId string, builderEnv map[string]string) bool {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
-	if bc.closed || bc.stopping > 0 {
+	if bc.closed.Load() || bc.stopping > 0 {
 		return false
 	}
 	bc.pendingAppId = appId
@@ -253,13 +256,15 @@ func (bc *BuilderController) buildLoop() {
 func (bc *BuilderController) runOneBuild(appId string, builderEnv map[string]string) {
 	buildCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
+	bc.setBuildCancel(cancel)
+	defer bc.setBuildCancel(nil)
 	bc.runBuildFn(buildCtx, appId, builderEnv)
 }
 
 func (bc *BuilderController) beginBuild() (string, map[string]string, bool) {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
-	if bc.closed {
+	if bc.closed.Load() {
 		bc.building = false
 		return "", nil, false
 	}
@@ -281,7 +286,7 @@ func (bc *BuilderController) beginBuild() (string, map[string]string, bool) {
 func (bc *BuilderController) endBuild() bool {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
-	if bc.rebuildPending && !bc.closed {
+	if bc.rebuildPending && !bc.closed.Load() {
 		return true
 	}
 	bc.building = false
@@ -300,17 +305,30 @@ func (bc *BuilderController) abandonBuildLoop(panicVal any) {
 
 // Closing is permanent: a controller being torn down must not start a queued build
 // or act on a late watcher callback, either of which would leave an orphan app process.
+// Cancelling the running build matters once DeleteController stops waiting for it: the
+// build would otherwise run to the end and start an app nobody will see.
 func (bc *BuilderController) markClosed() {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
-	bc.closed = true
+	bc.closed.Store(true)
 	bc.rebuildPending = false
+	if bc.buildCancel != nil {
+		bc.buildCancel()
+	}
 }
 
 func (bc *BuilderController) isClosed() bool {
+	return bc.closed.Load()
+}
+
+// A controller closed between beginBuild and here gets its build cancelled at once.
+func (bc *BuilderController) setBuildCancel(cancel context.CancelFunc) {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
-	return bc.closed
+	bc.buildCancel = cancel
+	if cancel != nil && bc.closed.Load() {
+		cancel()
+	}
 }
 
 // A request that arrived while Stop() waits would re-arm rebuildPending and keep the
@@ -337,7 +355,7 @@ func (bc *BuilderController) isStopping() bool {
 func (bc *BuilderController) acceptsRequests() bool {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
-	return !bc.closed && bc.stopping == 0
+	return !bc.closed.Load() && bc.stopping == 0
 }
 
 func (bc *BuilderController) isBuilding() bool {
@@ -506,55 +524,13 @@ func (bc *BuilderController) buildAndRun(ctx context.Context, appId string, buil
 		return
 	}
 
-	settings := rtconfig.GetWatcher().GetFullConfig().Settings
-	buildEnv, err := remotetermapputil.PrepareTsunamiBuild(settings)
-	if err != nil {
-		bc.handleBuildError(err, resultCh)
-		return
-	}
-
-	cachePath, err := GetBuilderAppExecutablePath(appPath)
-	if err != nil {
-		bc.handleBuildError(fmt.Errorf("failed to get builder executable path: %w", err), resultCh)
-		return
-	}
-
-	nodePath := remotetermbase.GetWaveAppElectronExecPath()
-	if nodePath == "" {
-		bc.handleBuildError(fmt.Errorf("electron executable path not set"), resultCh)
-		return
-	}
-
-	sdkVersion := settings.TsunamiSdkVersion
-	if sdkVersion == "" {
-		sdkVersion = remotetermapputil.DefaultTsunamiSdkVersion
-	}
-
 	outputCapture := build.MakeOutputCapture()
-	_, err = build.TsunamiBuildInternal(build.BuildOpts{
-		AppPath:        appPath,
-		AppNS:          appNS,
-		Verbose:        true,
-		Open:           false,
-		KeepTemp:       false,
-		OutputFile:     cachePath,
-		ScaffoldPath:   buildEnv.ScaffoldPath,
-		SdkReplacePath: buildEnv.SdkReplacePath,
-		MinGoVersion:   buildEnv.MinGoVersion,
-		SdkVersion:     sdkVersion,
-		NodePath:       nodePath,
-		GoPath:         buildEnv.GoPath,
-		OutputCapture:  outputCapture,
-		MoveFileBack:   true,
-		Ctx:            ctx,
-	})
-
+	cachePath, err := compileApp(ctx, appNS, appPath, outputCapture)
 	for _, line := range outputCapture.GetLines() {
 		bc.outputBuffer.AddLine(line)
 	}
-
 	if err != nil {
-		bc.handleBuildError(fmt.Errorf("build failed: %w", err), resultCh)
+		bc.handleBuildError(err, resultCh)
 		return
 	}
 
@@ -611,6 +587,57 @@ func (bc *BuilderController) buildAndRun(ctx context.Context, appId string, buil
 	}()
 }
 
+// startAppProcess is a seam so tests can see whether an app would have started.
+var startAppProcess = func(cmd *exec.Cmd) error {
+	return cmd.Start()
+}
+
+// compileApp runs the toolchain; tests replace it to stand in for a build without one.
+var compileApp = func(ctx context.Context, appNS string, appPath string, outputCapture *build.OutputCapture) (string, error) {
+	settings := rtconfig.GetWatcher().GetFullConfig().Settings
+	buildEnv, err := remotetermapputil.PrepareTsunamiBuild(settings)
+	if err != nil {
+		return "", err
+	}
+
+	cachePath, err := GetBuilderAppExecutablePath(appPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to get builder executable path: %w", err)
+	}
+
+	nodePath := remotetermbase.GetWaveAppElectronExecPath()
+	if nodePath == "" {
+		return "", fmt.Errorf("electron executable path not set")
+	}
+
+	sdkVersion := settings.TsunamiSdkVersion
+	if sdkVersion == "" {
+		sdkVersion = remotetermapputil.DefaultTsunamiSdkVersion
+	}
+
+	_, err = build.TsunamiBuildInternal(build.BuildOpts{
+		AppPath:        appPath,
+		AppNS:          appNS,
+		Verbose:        true,
+		Open:           false,
+		KeepTemp:       false,
+		OutputFile:     cachePath,
+		ScaffoldPath:   buildEnv.ScaffoldPath,
+		SdkReplacePath: buildEnv.SdkReplacePath,
+		MinGoVersion:   buildEnv.MinGoVersion,
+		SdkVersion:     sdkVersion,
+		NodePath:       nodePath,
+		GoPath:         buildEnv.GoPath,
+		OutputCapture:  outputCapture,
+		MoveFileBack:   true,
+		Ctx:            ctx,
+	})
+	if err != nil {
+		return "", fmt.Errorf("build failed: %w", err)
+	}
+	return cachePath, nil
+}
+
 func (bc *BuilderController) runBuilderApp(ctx context.Context, appId string, appBinPath string, builderEnv map[string]string) (*BuilderProcess, error) {
 	manifest, err := remotetermappstore.ReadAppManifest(appId)
 	if err != nil {
@@ -645,6 +672,12 @@ func (bc *BuilderController) runBuilderApp(ctx context.Context, appId string, ap
 		cmd.Env = append(cmd.Env, key+"="+value)
 	}
 
+	// A build that finished after its controller was deleted must not start an app: no
+	// panel shows it and nothing would stop it until the background Stop got round to it.
+	if bc.closed.Load() || ctx.Err() != nil {
+		return nil, fmt.Errorf("the builder was closed before the app started")
+	}
+
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create stdout pipe: %w", err)
@@ -673,7 +706,7 @@ func (bc *BuilderController) runBuilderApp(ctx context.Context, appId string, ap
 		bc.publishOutputLine(line, false)
 	})
 
-	err = cmd.Start()
+	err = startAppProcess(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start process: %w", err)
 	}
@@ -854,7 +887,13 @@ func (bc *BuilderController) setStatus_nolock(status string, port int, exitCode 
 	go bc.publishStatus()
 }
 
+// A deleted controller shares its builder oref scope with the controller that replaced it,
+// so anything it published after closing (a late "running", "stopped" or output line) would
+// land in the new controller's panel.
 func (bc *BuilderController) publishStatus() {
+	if bc.closed.Load() {
+		return
+	}
 	status := bc.GetStatus()
 	wps.Broker.Publish(wps.WaveEvent{
 		Event:  wps.Event_BuilderStatus,
@@ -864,6 +903,9 @@ func (bc *BuilderController) publishStatus() {
 }
 
 func (bc *BuilderController) publishOutputLine(line string, reset bool) {
+	if bc.closed.Load() {
+		return
+	}
 	wps.Broker.Publish(wps.WaveEvent{
 		Event:  wps.Event_BuilderOutput,
 		Scopes: []string{remotetermobj.MakeORef(remotetermobj.OType_Builder, bc.builderId).String()},
