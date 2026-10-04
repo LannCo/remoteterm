@@ -29,7 +29,7 @@ vi.mock("@/store/global", async () => {
     };
 });
 
-import { BuilderAppPanelModel } from "./builder-apppanel-model";
+import { BuilderAppPanelModel, getBuilderPreviewPartition } from "./builder-apppanel-model";
 
 function diskFile(content: string | null) {
     return content == null ? { notfound: true } : { data64: stringToBase64(content) };
@@ -175,5 +175,13 @@ describe("BuilderAppPanelModel reload glue", () => {
 describe("BuilderAppPanelModel notice", () => {
     it("shares the builder notice atom, so Open terminal errors from any path show in the header", () => {
         expect(BuilderAppPanelModel.getInstance().noticeAtom).toBe(BuilderNoticeAtom);
+    });
+});
+
+describe("getBuilderPreviewPartition", () => {
+    it("gives each builder its own in-memory partition", () => {
+        expect(getBuilderPreviewPartition("b1")).toBe("builder-preview-b1");
+        expect(getBuilderPreviewPartition("b1").startsWith("persist:")).toBe(false);
+        expect(getBuilderPreviewPartition("b2")).not.toBe(getBuilderPreviewPartition("b1"));
     });
 });

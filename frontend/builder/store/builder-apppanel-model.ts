@@ -22,6 +22,12 @@ export type EnvVar = {
     visible?: boolean;
 };
 
+// In-memory (no "persist:" prefix) and per builder: the preview must not share cookies or storage with
+// web blocks in the builder tab (persist:webblock) or with other builders' previews.
+export function getBuilderPreviewPartition(builderId: string): string {
+    return `builder-preview-${builderId}`;
+}
+
 export class BuilderAppPanelModel {
     private static instance: BuilderAppPanelModel | null = null;
 

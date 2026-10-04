@@ -1,7 +1,7 @@
 // Copyright 2025, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { BuilderAppPanelModel } from "@/builder/store/builder-apppanel-model";
+import { BuilderAppPanelModel, getBuilderPreviewPartition } from "@/builder/store/builder-apppanel-model";
 import { atoms } from "@/store/global";
 import { useAtomValue } from "jotai";
 import { memo, useState } from "react";
@@ -215,6 +215,7 @@ const BuilderPreviewTab = memo(() => {
                 <webview
                     ref={model.webviewRef}
                     src={lastKnownUrl}
+                    partition={getBuilderPreviewPartition(builderId)}
                     className="w-full h-full"
                     style={{
                         visibility: isWebViewActive ? "visible" : "hidden",
