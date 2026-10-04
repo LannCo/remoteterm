@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -129,18 +130,19 @@ func TestDeleteControllerDuringBuildLeavesNoProcess(t *testing.T) {
 	started := make(chan struct{}, 4)
 	release := make(chan struct{})
 	var calls atomic.Int32
-	var appProcess *exec.Cmd
+	attached := make(chan *exec.Cmd, 1)
 	bc.runBuildFn = func(ctx context.Context, appId string, builderEnv map[string]string) {
 		calls.Add(1)
 		started <- struct{}{}
 		<-release
 		// what a successful buildAndRun leaves behind: a running app attached to the controller
-		appProcess = exec.Command("sleep", "30")
+		appProcess := exec.Command("sleep", "30")
 		if err := appProcess.Start(); err != nil {
 			t.Error(err)
 			return
 		}
 		attachTestProcess(bc, appProcess)
+		attached <- appProcess
 	}
 	bc.RequestRebuild("draft/teardown-build", nil)
 	waitSignal(t, started, "the first build")
@@ -156,12 +158,16 @@ func TestDeleteControllerDuringBuildLeavesNoProcess(t *testing.T) {
 	release <- struct{}{}
 	waitSignal(t, deleted, "DeleteController to return")
 
+	var appProcess *exec.Cmd
+	select {
+	case appProcess = <-attached:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the build did not attach its app process")
+	}
+	waitUntil(t, 2*time.Second, func() bool { return !bc.hasProcess() }, "the app process to be detached after teardown")
 	time.Sleep(200 * time.Millisecond)
 	if n := calls.Load(); n != 1 {
 		t.Fatalf("%d builds ran, want 1: a queued build ran after teardown", n)
-	}
-	if bc.hasProcess() {
-		t.Fatal("an app process is still attached after teardown")
 	}
 	exited := make(chan struct{})
 	go func() {
@@ -191,10 +197,9 @@ func TestRequestRebuildAfterSaveBuildsOnSavingControllerOnly(t *testing.T) {
 	bystander.runBuildFn = func(ctx context.Context, appId string, builderEnv map[string]string) { bystanderCalls.Add(1) }
 
 	RequestRebuildAfterSave("", "draft/saved", nil)
-	RequestRebuildAfterSave("test-save-missing", "draft/saved", nil)
 	time.Sleep(100 * time.Millisecond)
 	if saverCalls.Load() != 0 || bystanderCalls.Load() != 0 {
-		t.Fatal("a save without a known builder started a build")
+		t.Fatal("a save without a builder id started a build")
 	}
 
 	RequestRebuildAfterSave("test-save-saver", "draft/saved", nil)
@@ -312,5 +317,79 @@ func TestGetOutputDuringRebuildsIsRaceFree(t *testing.T) {
 	<-readerDone
 	if calls.Load() == 0 {
 		t.Fatal("no builds ran")
+	}
+}
+
+// An app switch deletes the controller while a build may be running. The delete must
+// return before the frontend's RPC timeout, the build's app must still be killed, and a
+// later save from the same window must get a controller that builds.
+func TestDeleteControllerDuringBlockedBuildReturnsAndSaveRecovers(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses the sleep command")
+	}
+	home, _ := setupBuilderTest(t)
+	makeTestApp(t, home, "switch")
+	var freshBuilds atomic.Int32
+	origRun := runBuildAndRun
+	runBuildAndRun = func(bc *BuilderController, ctx context.Context, appId string, builderEnv map[string]string) {
+		freshBuilds.Add(1)
+	}
+	t.Cleanup(func() { runBuildAndRun = origRun })
+
+	bc := GetOrCreateController("test-switch")
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseBuild := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(releaseBuild)
+	appProcess := make(chan *exec.Cmd, 1)
+	bc.runBuildFn = func(ctx context.Context, appId string, builderEnv map[string]string) {
+		started <- struct{}{}
+		<-release
+		cmd := exec.Command("sleep", "30")
+		if err := cmd.Start(); err != nil {
+			t.Error(err)
+			return
+		}
+		attachTestProcess(bc, cmd)
+		appProcess <- cmd
+	}
+	bc.RequestRebuild("draft/switch", nil)
+	waitSignal(t, started, "the build")
+
+	deleted := make(chan struct{})
+	go func() {
+		DeleteController("test-switch")
+		close(deleted)
+	}()
+	waitSignal(t, deleted, "DeleteController to return while the build is blocked")
+	if GetController("test-switch") != nil {
+		t.Fatal("the deleted controller is still registered")
+	}
+
+	RequestRebuildAfterSave("test-switch", "draft/switch", nil)
+	fresh := GetController("test-switch")
+	t.Cleanup(func() { DeleteController("test-switch") })
+	if fresh == nil || fresh == bc {
+		t.Fatalf("a save after the delete got controller %p, want a fresh one (old %p)", fresh, bc)
+	}
+	waitUntil(t, 2*time.Second, func() bool { return freshBuilds.Load() == 1 && !fresh.isBuilding() }, "the save's build")
+
+	releaseBuild()
+	var cmd *exec.Cmd
+	select {
+	case cmd = <-appProcess:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the blocked build did not finish after release")
+	}
+	exited := make(chan struct{})
+	go func() {
+		cmd.Wait()
+		close(exited)
+	}()
+	waitSignal(t, exited, "the deleted controller's app process to be killed")
+	time.Sleep(100 * time.Millisecond)
+	if n := freshBuilds.Load(); n != 1 {
+		t.Fatalf("the fresh controller ran %d builds, want 1", n)
 	}
 }

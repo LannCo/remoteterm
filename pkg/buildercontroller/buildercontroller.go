@@ -85,6 +85,11 @@ var (
 	mapLock       sync.Mutex
 )
 
+// Tests swap this to count or block the builds of controllers the package creates itself.
+var runBuildAndRun = func(bc *BuilderController, ctx context.Context, appId string, builderEnv map[string]string) {
+	bc.buildAndRun(ctx, appId, builderEnv, nil)
+}
+
 func GetOrCreateController(builderId string) *BuilderController {
 	mapLock.Lock()
 	defer mapLock.Unlock()
@@ -105,8 +110,9 @@ func makeBuilderController(builderId string) *BuilderController {
 		builderId: builderId,
 		status:    BuilderStatus_Init,
 	}
+	runBuild := runBuildAndRun
 	bc.runBuildFn = func(ctx context.Context, appId string, builderEnv map[string]string) {
-		bc.buildAndRun(ctx, appId, builderEnv, nil)
+		runBuild(bc, ctx, appId, builderEnv)
 	}
 	return bc
 }
@@ -123,11 +129,20 @@ func DeleteController(builderId string) {
 	delete(controllerMap, builderId)
 	mapLock.Unlock()
 
-	if bc != nil {
-		bc.markClosed()
-		bc.StopWatching()
-		bc.Stop()
+	if bc == nil {
+		return
 	}
+	bc.markClosed()
+	bc.StopWatching()
+	// Stop waits for a running build, which can outlast the caller's RPC timeout; the
+	// controller is already out of the map and closed, so the caller need not wait. The
+	// app process is still killed once the build ends.
+	go func() {
+		defer func() {
+			panichandler.PanicHandler(fmt.Sprintf("buildercontroller[%s].Stop", builderId), recover())
+		}()
+		bc.Stop()
+	}()
 }
 
 func GetBuilderAppExecutablePath(appPath string) (string, error) {
@@ -365,10 +380,9 @@ func RequestRebuildAfterSave(builderId string, appId string, builderEnv map[stri
 	if builderId == "" {
 		return
 	}
-	bc := GetController(builderId)
-	if bc == nil {
-		return
-	}
+	// A controller deleted by an app switch that timed out on the frontend must not leave
+	// this window's saves building nothing.
+	bc := GetOrCreateController(builderId)
 	// The editor already holds what it just wrote, so the save itself is never announced.
 	bc.recordAnnouncedHash(appId)
 	bc.RequestRebuild(appId, builderEnv)
