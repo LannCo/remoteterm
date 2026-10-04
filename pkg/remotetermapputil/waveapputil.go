@@ -39,11 +39,11 @@ func ResolveGoFmtPath() (string, error) {
 	goPath := settings.TsunamiGoPath
 
 	if goPath == "" {
-		var err error
-		goPath, err = build.FindGoExecutable()
-		if err != nil {
-			return "", err
+		gofmtPath := build.GetCachedGoFmtPath()
+		if gofmtPath == "" {
+			return "", fmt.Errorf("go toolchain has not been located yet (the first build locates it)")
 		}
+		return gofmtPath, nil
 	}
 
 	goDir := filepath.Dir(goPath)

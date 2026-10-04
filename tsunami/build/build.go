@@ -7,6 +7,7 @@ import (
 	"archive/zip"
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -143,43 +144,6 @@ type GoVersionCheckResult struct {
 	ErrorString string
 }
 
-func FindGoExecutable() (string, error) {
-	// First try the standard PATH lookup
-	if goPath, err := exec.LookPath("go"); err == nil {
-		return goPath, nil
-	}
-
-	// Define platform-specific paths to check
-	var pathsToCheck []string
-
-	if runtime.GOOS == "windows" {
-		pathsToCheck = []string{
-			`c:\go\bin\go.exe`,
-			`c:\program files\go\bin\go.exe`,
-		}
-	} else {
-		// Unix-like systems (macOS, Linux, etc.)
-		pathsToCheck = []string{
-			"/opt/homebrew/bin/go", // Homebrew on Apple Silicon
-			"/usr/local/bin/go",    // Traditional Homebrew or manual install
-			"/usr/local/go/bin/go", // Official Go installation
-			"/usr/bin/go",          // System package manager
-		}
-	}
-
-	// Check each path
-	for _, path := range pathsToCheck {
-		if _, err := os.Stat(path); err == nil {
-			// File exists, check if it's executable
-			if info, err := os.Stat(path); err == nil && !info.IsDir() {
-				return path, nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("go command not found in PATH or common installation locations")
-}
-
 func CheckGoVersion(customGoPath string, minGoVersion string) GoVersionCheckResult {
 	if minGoVersion == "" {
 		minGoVersion = DefaultMinGoVersion
@@ -190,7 +154,16 @@ func CheckGoVersion(customGoPath string, minGoVersion string) GoVersionCheckResu
 			return GoVersionCheckResult{GoStatus: GoStatus_NotFound, GoPath: goPath}
 		}
 	} else {
-		found, err := FindGoExecutable()
+		found, err := FindGoExecutable(minGoVersion)
+		var tooOld *GoTooOldError
+		if errors.As(err, &tooOld) {
+			return GoVersionCheckResult{
+				GoStatus:  GoStatus_BadVersion,
+				GoPath:    tooOld.GoPath,
+				GoVersion: "go" + tooOld.Version,
+				Version:   tooOld.Version,
+			}
+		}
 		if err != nil {
 			return GoVersionCheckResult{GoStatus: GoStatus_NotFound}
 		}
