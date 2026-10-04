@@ -1,9 +1,10 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-type BuilderWindowLike = { builderId: string; builderAppId?: string };
+type BuilderWindowLike = { builderId: string; builderAppId?: string; tearingDown?: boolean };
 
-// One window per app keeps one controller, one watcher and one build per app folder.
+// One window per app keeps one controller, one watcher and one build per app folder. A window that is
+// tearing down is hidden and about to be destroyed, so it never counts as the window for an app.
 export function findBuilderWindowForApp<T extends BuilderWindowLike>(
     windows: T[],
     appId: string,
@@ -12,7 +13,10 @@ export function findBuilderWindowForApp<T extends BuilderWindowLike>(
     if (!appId) {
         return null;
     }
-    return windows.find((win) => win.builderId !== excludeBuilderId && win.builderAppId === appId) ?? null;
+    return (
+        windows.find((win) => win.builderId !== excludeBuilderId && !win.tearingDown && win.builderAppId === appId) ??
+        null
+    );
 }
 
 export const OpenPathGraceMs = 250;

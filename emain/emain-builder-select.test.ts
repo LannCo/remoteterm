@@ -24,6 +24,12 @@ describe("findBuilderWindowForApp", () => {
         expect(findBuilderWindowForApp(windows, "draft/one", "b1")).toBeNull();
     });
 
+    it("skips a window that is tearing down", () => {
+        const closing = [...windows, { builderId: "b4", builderAppId: "draft/one", tearingDown: true }];
+        expect(findBuilderWindowForApp(closing, "draft/one", "b2")).toBe(windows[0]);
+        expect(findBuilderWindowForApp([closing[3]], "draft/one", "b2")).toBeNull();
+    });
+
     it("never matches an empty app id", () => {
         expect(findBuilderWindowForApp(windows, "", "b1")).toBeNull();
         expect(findBuilderWindowForApp(windows, null, "b1")).toBeNull();

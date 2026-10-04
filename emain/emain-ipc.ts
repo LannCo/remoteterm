@@ -60,7 +60,9 @@ let webviewKeys: string[] = [];
 export function openBuilderWindow(appId?: string) {
     const normalizedAppId = appId || "";
     const existingBuilderWindows = getAllBuilderWindows();
-    const existingWindow = existingBuilderWindows.find((win) => win.builderAppId === normalizedAppId);
+    const existingWindow = existingBuilderWindows.find(
+        (win) => !win.tearingDown && win.builderAppId === normalizedAppId
+    );
     if (existingWindow) {
         existingWindow.focus();
         return;
@@ -553,6 +555,9 @@ export function initIpcHandlers() {
         if (bw == null) {
             return { error: "This action is only available in a builder window." };
         }
+        if (bw.tearingDown) {
+            return { error: "This builder window is closing." };
+        }
         if (!bw.builderAppId) {
             return { error: "No app is open in this builder window." };
         }
@@ -571,6 +576,9 @@ export function initIpcHandlers() {
         const bw = getBuilderWindowByWebContentsId(event.sender.id);
         if (bw == null) {
             return "This action is only available in a builder window.";
+        }
+        if (bw.tearingDown) {
+            return "This builder window is closing.";
         }
         const parsed = parseBuilderTerminalTarget(target);
         if (parsed.error) {
