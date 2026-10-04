@@ -16,7 +16,10 @@ import (
 	"github.com/LannCo/remoteterm/tsunami/build"
 )
 
-const DefaultTsunamiSdkVersion = "v0.12.4"
+const (
+	DefaultTsunamiSdkVersion = "v0.12.4"
+	TsunamiSdkDirName        = "tsunamisdk"
+)
 
 func GetTsunamiScaffoldPath() string {
 	settings := rtconfig.GetWatcher().GetFullConfig().Settings
@@ -25,6 +28,10 @@ func GetTsunamiScaffoldPath() string {
 		scaffoldPath = filepath.Join(remotetermbase.GetWaveAppResourcesPath(), "tsunamiscaffold")
 	}
 	return scaffoldPath
+}
+
+func GetTsunamiSdkPath() string {
+	return filepath.Join(remotetermbase.GetWaveAppResourcesPath(), TsunamiSdkDirName)
 }
 
 func ResolveGoFmtPath() (string, error) {

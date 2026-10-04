@@ -152,6 +152,21 @@ var packageCmd = &cobra.Command{
 	},
 }
 
+var sdkBundleCmd = &cobra.Command{
+	Use:          "sdkbundle [dstdir]",
+	Short:        "Copy the Tsunami SDK runtime packages into a directory",
+	Long:         `Copy go.mod, go.sum and the runtime packages of the Tsunami SDK into a directory that app builds can use as a replace target.`,
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	Run: func(cmd *cobra.Command, args []string) {
+		srcDir, _ := cmd.Flags().GetString("src")
+		if err := build.CopySdkBundle(srcDir, args[0]); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(versionCmd)
 
@@ -168,6 +183,9 @@ func init() {
 	packageCmd.Flags().BoolP("verbose", "v", false, "Enable verbose output")
 	packageCmd.Flags().StringP("output", "o", "", "Output file path for the package (default: [appname].tsapp in apppath)")
 	rootCmd.AddCommand(packageCmd)
+
+	sdkBundleCmd.Flags().String("src", ".", "Tsunami SDK source directory (the one containing go.mod)")
+	rootCmd.AddCommand(sdkBundleCmd)
 }
 
 func main() {
