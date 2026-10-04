@@ -23,6 +23,11 @@ const (
 	WatchStatus_Active      = "active"
 	WatchStatus_Unavailable = "unavailable"
 	MaxAppWatchers          = 8
+
+	// Close waits this long for the watcher's goroutines. On Windows a queued fsnotify Add
+	// may never get its reply once the watcher is closed, so an unbounded wait could hang
+	// DeleteController and Shutdown; leaking one stuck goroutine is the lesser harm.
+	WatcherCloseWaitTimeout = 2 * time.Second
 )
 
 var (
@@ -119,10 +124,23 @@ func (w *AppWatcher) shutdown(wait bool) {
 		w.fsw.Close()
 	}
 	if wait {
-		w.wg.Wait()
+		w.waitBounded()
 	}
 	if first {
 		releaseWatcherSlot()
+	}
+}
+
+func (w *AppWatcher) waitBounded() {
+	done := make(chan struct{})
+	go func() {
+		w.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(WatcherCloseWaitTimeout):
+		log.Printf("app watcher %s: goroutines still running %v after Close; not waiting for them\n", w.appDir, WatcherCloseWaitTimeout)
 	}
 }
 
@@ -181,7 +199,9 @@ func (w *AppWatcher) addTree() error {
 func (w *AppWatcher) addDirTree(root string) error {
 	return filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			if path == root {
+			// A directory that vanished mid-scan (an editor's temp directory, renamed
+			// away) is not a reason to stop watching.
+			if path == root && !errors.Is(walkErr, fs.ErrNotExist) {
 				return walkErr
 			}
 			return nil
@@ -223,6 +243,9 @@ func (w *AppWatcher) addWatch(dir string) error {
 	}
 	if err := addFn(dir); err != nil {
 		w.releaseWatch(dir)
+		if dir != w.appDir && errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
 		return fmt.Errorf("cannot watch %s: %w", dir, err)
 	}
 	return nil
@@ -382,6 +405,15 @@ func (w *AppWatcher) pollRoot() {
 		if info, err := os.Lstat(w.appDir); err == nil && info.IsDir() {
 			w.setRootPresent()
 			if err := w.addTree(); err != nil {
+				if errors.Is(err, fs.ErrNotExist) {
+					// The folder vanished again before the scan finished. Keep polling, unless
+					// its removal event already started another poller.
+					if w.markRootMissing() {
+						w.forgetWatches(w.appDir)
+						continue
+					}
+					return
+				}
 				w.abort(err.Error())
 				return
 			}

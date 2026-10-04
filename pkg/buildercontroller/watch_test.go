@@ -15,6 +15,7 @@ import (
 
 	"github.com/LannCo/remoteterm/pkg/remotetermobj"
 	"github.com/LannCo/remoteterm/pkg/rtstore"
+	"github.com/LannCo/remoteterm/pkg/wshrpc"
 )
 
 func setBuilderRtInfoForTest(t *testing.T, builderId string, appId string, env map[string]any) {
@@ -174,6 +175,37 @@ func TestInstallWatcherOnControllerClosedMeanwhileReleasesSlot(t *testing.T) {
 	}
 	if status := bc.StartWatching("draft/racedelete"); status.Status != WatchStatus_Unavailable || activeWatcherCount() != 0 {
 		t.Fatalf("StartWatching on a closed controller: %+v, %d active", status, activeWatcherCount())
+	}
+}
+
+func TestReplacedWatcherCannotPublishStaleStatus(t *testing.T) {
+	home, _ := setupBuilderTest(t)
+	makeTestApp(t, home, "replace")
+	var lock sync.Mutex
+	var got []string
+	orig := publishBuilderWatchStatus
+	publishBuilderWatchStatus = func(builderId string, data wshrpc.BuilderWatchStatusData) {
+		lock.Lock()
+		defer lock.Unlock()
+		got = append(got, data.Reason)
+	}
+	t.Cleanup(func() { publishBuilderWatchStatus = orig })
+	bc := makeBuilderController("test-replace")
+	if status := bc.StartWatching("draft/replace"); status.Status != WatchStatus_Active {
+		t.Fatalf("first start: %+v", status)
+	}
+	old := bc.watcher
+	if status := bc.StartWatching("draft/replace"); status.Status != WatchStatus_Active {
+		t.Fatalf("second start: %+v", status)
+	}
+	t.Cleanup(bc.StopWatching)
+	// The old watcher reports while it shuts down, after the new one is installed.
+	old.onStatus(WatchStatus_Unavailable, "stale")
+	bc.watcher.onStatus(WatchStatus_Unavailable, "current")
+	lock.Lock()
+	defer lock.Unlock()
+	if len(got) != 1 || got[0] != "current" {
+		t.Fatalf("published reasons = %v, want only [current]", got)
 	}
 }
 

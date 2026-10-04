@@ -5,6 +5,7 @@ package buildercontroller
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -306,5 +307,108 @@ func TestWatcherDirCapOnCreatedDirReleasesSlot(t *testing.T) {
 	waitUntil(t, 3*time.Second, func() bool { return activeWatcherCount() == 0 }, "the slot to be released")
 	if rec.lastStatus() != WatchStatus_Unavailable || !strings.Contains(rec.lastReason(), "more than 3") {
 		t.Fatalf("status %q reason %q, want unavailable over the cap", rec.lastStatus(), rec.lastReason())
+	}
+}
+
+func setAddFnForTest(w *AppWatcher, wrap func(realAdd func(string) error) func(string) error) {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	w.addFn = wrap(w.addFn)
+}
+
+func TestWatcherSurvivesDirectoryThatVanishesBeforeItsWatchIsAdded(t *testing.T) {
+	shortWatchTimings(t)
+	home, _ := setupBuilderTest(t)
+	appDir := makeTestApp(t, home, "ghost")
+	writeAppFileForTest(t, appDir, "static/keep.txt", "x")
+	rec, w := startTestWatcherWithHandle(t, appDir)
+	setAddFnForTest(w, func(realAdd func(string) error) func(string) error {
+		return func(dir string) error {
+			if strings.HasSuffix(dir, "ghost") {
+				return &fs.PathError{Op: "add", Path: dir, Err: fs.ErrNotExist}
+			}
+			return realAdd(dir)
+		}
+	})
+	if err := os.Mkdir(filepath.Join(appDir, "static", "ghost"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(3 * watchDebounce)
+	if w.isClosed() || activeWatcherCount() != 1 || rec.lastStatus() == WatchStatus_Unavailable {
+		t.Fatalf("a vanished directory stopped the watcher (closed=%v, slots=%d, status=%q)", w.isClosed(), activeWatcherCount(), rec.lastStatus())
+	}
+	before := rec.changeCount()
+	writeAppFileForTest(t, appDir, "app.go", "package main // later\n")
+	waitUntil(t, 2*time.Second, func() bool { return rec.changeCount() > before }, "a change after the vanished directory")
+}
+
+func TestWatcherSurvivesTempDirectoriesCreatedAndRenamedAway(t *testing.T) {
+	shortWatchTimings(t)
+	home, _ := setupBuilderTest(t)
+	appDir := makeTestApp(t, home, "tempdirs")
+	writeAppFileForTest(t, appDir, "static/keep.txt", "x")
+	rec, w := startTestWatcherWithHandle(t, appDir)
+	for i := 0; i < 30; i++ {
+		tmp := filepath.Join(appDir, "static", fmt.Sprintf("d%d.tmp", i))
+		if err := os.MkdirAll(filepath.Join(tmp, "sub"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if i%2 == 0 {
+			os.RemoveAll(tmp)
+		} else if err := os.Rename(tmp, filepath.Join(home, fmt.Sprintf("moved%d", i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	time.Sleep(4 * watchDebounce)
+	if w.isClosed() || rec.lastStatus() == WatchStatus_Unavailable {
+		t.Fatalf("temp directories stopped the watcher (closed=%v, status=%q, reason=%q)", w.isClosed(), rec.lastStatus(), rec.lastReason())
+	}
+	before := rec.changeCount()
+	writeAppFileForTest(t, appDir, "app.go", "package main // after temp dirs\n")
+	waitUntil(t, 2*time.Second, func() bool { return rec.changeCount() > before }, "a change after the temp directories")
+}
+
+// Windows can leave a queued Add without a reply once the watcher is closed; Close must
+// still return, and still release the slot exactly once.
+func TestWatcherCloseDoesNotHangOnStuckAdd(t *testing.T) {
+	shortWatchTimings(t)
+	home, _ := setupBuilderTest(t)
+	appDir := makeTestApp(t, home, "stuck")
+	writeAppFileForTest(t, appDir, "static/keep.txt", "x")
+	_, w := startTestWatcherWithHandle(t, appDir)
+	entered := make(chan struct{})
+	never := make(chan struct{})
+	t.Cleanup(func() { close(never) })
+	setAddFnForTest(w, func(realAdd func(string) error) func(string) error {
+		return func(dir string) error {
+			if strings.HasSuffix(dir, "stuck") {
+				close(entered)
+				<-never
+			}
+			return realAdd(dir)
+		}
+	})
+	if err := os.Mkdir(filepath.Join(appDir, "static", "stuck"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	waitSignal(t, entered, "the stuck Add")
+	closed := make(chan struct{})
+	start := time.Now()
+	go func() {
+		w.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-time.After(WatcherCloseWaitTimeout + 3*time.Second):
+		t.Fatal("Close hung on a goroutine stuck in Add")
+	}
+	t.Logf("Close returned after %v", time.Since(start))
+	if n := activeWatcherCount(); n != 0 {
+		t.Fatalf("%d slots held after Close, want 0", n)
+	}
+	w.Close()
+	if n := activeWatcherCount(); n != 0 {
+		t.Fatalf("slot count %d after a second Close, want 0", n)
 	}
 }

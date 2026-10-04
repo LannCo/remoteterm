@@ -4,6 +4,8 @@
 package buildercontroller
 
 import (
+	"sync/atomic"
+
 	"github.com/LannCo/remoteterm/pkg/remotetermappstore"
 	"github.com/LannCo/remoteterm/pkg/remotetermobj"
 	"github.com/LannCo/remoteterm/pkg/rtconfig"
@@ -35,12 +37,16 @@ func (bc *BuilderController) StartWatching(appId string) wshrpc.BuilderWatchStat
 		return makeUnavailableStatus(watchClosedReason)
 	}
 	bc.StopWatching()
+	var self atomic.Pointer[AppWatcher]
 	watcher, err := MakeAppWatcher(appDir, func() {
 		bc.handleAppFilesChanged(appId)
-	}, bc.publishWatchStatus)
+	}, func(status string, reason string) {
+		bc.publishWatchStatusFrom(&self, status, reason)
+	})
 	if err != nil {
 		return makeUnavailableStatus(err.Error())
 	}
+	self.Store(watcher)
 	return bc.installWatcher(watcher)
 }
 
@@ -117,10 +123,26 @@ func (bc *BuilderController) handleAppFilesChanged(appId string) {
 	bc.RequestRebuild(appId, builderEnv)
 }
 
-func (bc *BuilderController) publishWatchStatus(status string, reason string) {
+// A watcher that has been replaced can still report as it shuts down; its "unavailable"
+// must not overwrite the "active" of the watcher that replaced it. self is empty only
+// while the watcher is being built, before it can be anyone's predecessor.
+func (bc *BuilderController) publishWatchStatusFrom(self *atomic.Pointer[AppWatcher], status string, reason string) {
+	if w := self.Load(); w != nil && !bc.isCurrentWatcher(w) {
+		return
+	}
+	publishBuilderWatchStatus(bc.builderId, wshrpc.BuilderWatchStatusData{Status: status, Reason: reason})
+}
+
+func (bc *BuilderController) isCurrentWatcher(w *AppWatcher) bool {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+	return bc.watcher == w
+}
+
+var publishBuilderWatchStatus = func(builderId string, data wshrpc.BuilderWatchStatusData) {
 	wps.Broker.Publish(wps.WaveEvent{
 		Event:  wps.Event_BuilderWatchStatus,
-		Scopes: []string{remotetermobj.MakeORef(remotetermobj.OType_Builder, bc.builderId).String()},
-		Data:   wshrpc.BuilderWatchStatusData{Status: status, Reason: reason},
+		Scopes: []string{remotetermobj.MakeORef(remotetermobj.OType_Builder, builderId).String()},
+		Data:   data,
 	})
 }
