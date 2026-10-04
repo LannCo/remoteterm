@@ -37,6 +37,7 @@ Every task's requirements include this section.
   ```
 - Commits: stage only the files the task names (`git add <paths>`); the worktree has untracked `golang-1.26.2` and `zig-0.14.0`, never add them. Commit messages put user-facing impact first. End every commit message with the line `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Do not push.
 - Prose in British English except identifiers. No em-dashes anywhere (use `-`, commas, colons or parentheses).
+- Expected-failure steps name which tests or builds must fail and why. Quoted messages are exact when they come from this plan's code (test messages, `builder terminal not ready`, and so on); compiler, TypeScript and library messages are given as examples, so a different wording of the same failure is not a mismatch.
 - If a step's expected output differs from what you see, stop and report the difference with the command output instead of adapting silently. If a cited line has shifted, find the code by the quoted text and say so in your report.
 
 ## Plan deviations from spec
@@ -52,23 +53,24 @@ Every task's requirements include this section.
 9. **Ensure deletes every non-matching tab of the builder, also when a matching one exists** ("Others ... are deleted first" read as all of them).
 10. **Empty state overlays a mounted tile layout.** `TabContent` unmounts `TileLayout` at zero blocks (`frontend/app/tab/tabcontent.tsx:57-58`); the builder panel keeps it mounted and overlays "No terminals" when `layoutModel.numLeafs` is 0, so the model keeps processing backend actions.
 11. **Builder ids must be canonical UUID strings** (`uuid.Parse` and `parsed.String() == builderId`). Electron mints them with `randomUUID()` (`emain/emain-builder.ts:37`), which is canonical.
-12. **The header "Open terminal" button is enabled only after Ensure succeeded and its `appid` matched**; on a mismatch nothing is mounted, so enabling Open would add a pane nobody sees.
+12. **The header "Open terminal" button is enabled only while the panel is ready** (Ensure succeeded, its `appid` matched, the tab and layout loaded); it is disabled again on an error, while switching, and when the tab vanishes. In any other state Open would add a pane nobody sees. The spec says "until bootstrap step 1 has succeeded"; this is stricter.
 13. **Retry on an Ensure error re-runs the bootstrap in place** (no layout model exists yet). Retry after the tab vanished reloads the renderer, as the spec says.
 14. **`openBuilderTerminal` (ElectronApi) takes an optional `{ targetblockid, targetaction }`**, and a new `ensureBuilderTab()` returns `{ tabid?, appid?, error? }`. The old pick-a-main-window helpers (`pickTerminalWindow`, `bringWindowToFront`) lose their only caller and are deleted with their tests.
 15. **`data-builder-focus` attribute** on the builder workspace root (`"app"` or `"terminal"`), the E2E observable for which side is focused.
-16. **Block-to-tab lookup in the local-only check never returns an error.** Inside `UpdateObjectMeta`'s transaction a nested store error marks the shared `TxWrap` failed (`txwrap.WithTx` sets `txWrap.Err`), which would turn an unrelated failure into a rolled-back write. The check uses a quiet lookup that treats a broken parent chain as "not a builder block".
-17. **E2E substitutions.** Xvfb has no window manager, so Task 18 closes the window with the renderer's `window.close()`, which takes the same BrowserWindow `close`/`closed` path as a title-bar close (`emain/emain-builder.ts:89-127`), not `destroyBuilderWindow`. "Switch App" is an item in a native context menu (`frontend/builder/builder-apppanel.tsx:282-285`), so the E2E replays `switchBuilderApp`'s calls from the builder renderer (same RPCs, same `builder:<id>` route); the "Switching app…" state is covered by unit tests (Tasks 14, 15). Native context menus cannot be driven there either; the context-menu split is covered by the `createBlockSplit*` intercept unit test, because both menus call those functions (`frontend/app/view/term/term-model.ts:894-913`, `frontend/app/block/blockframe-header.tsx:138-165`).
+16. **In the local-only check, the parent-chain lookup never fails the transaction; a DB error inside `IsBuilderTab` still fails it closed (the write is refused).** Inside `UpdateObjectMeta`'s transaction a nested store error marks the shared `TxWrap` failed (`txwrap.WithTx` sets `txWrap.Err`). A broken or missing parent chain is not a DB error, so the block-to-tab walk uses a quiet lookup that treats it as "not a builder block" and lets the write's own result (for example `ErrNotFound`) stand. A real read error inside `IsBuilderTab` does mark the transaction failed, so the write is refused rather than allowed.
+17. **Accepted risk (D7): a stale tab that cannot be deleted blocks that builder until restart.** If a block of a previous app's tab cannot be deleted, `DeleteBuilderTab` keeps the tab (D1). Ensure then fails for that builder (it deletes stale tabs before returning or creating one), and Open reports `builder terminal not ready` (it requires exactly one tab). The startup sweep removes the tab on the next start.
+18. **E2E substitutions.** Xvfb has no window manager, so Task 18 closes the window with the renderer's `window.close()`, which takes the same BrowserWindow `close`/`closed` path as a title-bar close (`emain/emain-builder.ts:89-127`), not `destroyBuilderWindow`. "Switch App" is an item in a native context menu (`frontend/builder/builder-apppanel.tsx:282-285`), so the E2E replays `switchBuilderApp`'s calls from the builder renderer (same RPCs, same `builder:<id>` route); the "Switching app…" state is covered by unit tests (Tasks 14, 15). Native context menus cannot be driven there either; the context-menu split is covered by the `createBlockSplit*` intercept unit test, because both menus call those functions (`frontend/app/view/term/term-model.ts:894-913`, `frontend/app/block/blockframe-header.tsx:138-165`).
 
 ## Spec items confirmed in the plan
 
 - **Durable meta key:** `remotetermobj.MetaKey_TermDurable = "term:durable"` (`pkg/remotetermobj/metaconsts.go:111`). Local blocks are never durable anyway (`pkg/jobcontroller/jobcontroller.go:2611-2615`), so the pin is defence in depth. Task 4.
 - **keymodel key strings** (from `frontend/app/store/keymodel.ts:451-697`): close `Cmd:w`; new pane `Cmd:n`; split right `Cmd:d`; split down `Shift:Cmd:d`; chord `Ctrl:Shift:s` then `ArrowUp`/`ArrowDown`/`ArrowLeft`/`ArrowRight`; focus moves `Ctrl:Shift:ArrowUp/Down/Left/Right` and `Ctrl:Shift:k/j/h/l`; magnify `Cmd:m`; block number `Ctrl:Shift:c{Digit1..9}` and `Ctrl:Shift:c{Numpad1..9}`; search `Cmd:f`, `Escape`. Unbound in builder: `Cmd:t`, `Cmd:Shift:w`, `Cmd:[`, `Shift:Cmd:[`, `Cmd:]`, `Shift:Cmd:]`, `Cmd:1..9`, `F2`, `Ctrl:Shift:i`, `Ctrl:Shift:x`, `Cmd:g`, `Cmd:i`. Task 16.
-- **`getLayoutModelForStaticTab()` callers reachable in builder windows**, all made null-tolerant (Task 11): `keymodel.ts:67-71` (`getFocusedBlockInStaticTab`), `:146-159` (`uxCloseBlock`), `:161-177` (`genericClose`), `:190-196` (`switchBlockInDirection`), `:371-385` (block dispatch, now also in builder), `:498-510` (`Cmd:m`); `focusManager.ts:16-20, 34-48`; `global.ts:493-496` (`setNodeFocus`), `:720-737` (`refocusNode`, called from `blockframe-header.tsx:193`), and the create family `global.ts:377-460`. Already null-safe: `global.ts:627-656, 658-718`, `tabrpcclient.ts:21-24, 64-67, 78-81`, `keymodel.ts:179-188`. Not reachable in builder windows: `keymodel.ts:244-261` (returns early for builders), `:263-320` (tab-window `Cmd:n`/splits, replaced by the builder table), `app.tsx:292`, `widgets.tsx:59, 98`.
+- **`getLayoutModelForStaticTab()` callers reachable in builder windows**, all made null-tolerant (Task 11): `keymodel.ts:67-71` (`getFocusedBlockInStaticTab`), `:146-159` (`uxCloseBlock`), `:161-177` (`genericClose`), `:190-196` (`switchBlockInDirection`), `:371-385` (block dispatch, now also in builder), `:498-510` (`Cmd:m`); `focusManager.ts:16-20, 34-48`; `global.ts:493-496` (`setNodeFocus`), `:720-740` (`refocusNode`, called from `blockframe-header.tsx:193`), and the create family `global.ts:377-460`. Already null-safe: `global.ts:627-656, 658-718`, `tabrpcclient.ts:21-24, 64-67, 78-81`, `keymodel.ts:179-188`. Not reachable in builder windows: `keymodel.ts:244-261` (returns early for builders), `:263-320` (tab-window `Cmd:n`/splits, replaced by the builder table), `app.tsx:292`, `widgets.tsx:59, 98`.
 - **Builder-init gating of `ensure-builder-tab`:** `createBuilderWindow` sets `builderAppId` (`emain/emain-builder.ts:86`) before pushing the window (`:129`); `builder-init` is sent only for a window found by `getBuilderWindowByWebContentsId` (`emain/emain-ipc.ts:492-497`), so only after that push. The app-selection modal awaits `setBuilderWindowAppId` before it sets `atoms.builderAppId` (`frontend/builder/app-selection-modal.tsx:138-148`, `154-172`), and `BuilderWorkspace` (which holds the panel) renders only once `builderAppId` is a draft id (`frontend/builder/builder-app.tsx:37-55`). The panel cannot call the IPC before Electron knows the app id.
 - **Create-family callers and their return values:** no caller uses the returned block id (`keymodel.ts:299, 309, 319, 581`; `blockframe-header.tsx:149, 163`; `term-model.ts:829, 901, 911, 935`; `termsticker.tsx:91`; `previewutil.ts:55, 70`; `launcher.tsx:127`; `app.tsx:129`; `connectiondropdown.tsx:180`; `widgets.tsx` and `webview.tsx:765` through `WaveEnv.createBlock`, `frontend/app/remotetermenv/remotetermenvimpl.ts:34`). Returning `null` from the builder branch is safe. Task 13.
 - **Risk: `focusedNodeId` not cleared on root delete.** Confirmed harmless for the atom (`focusedNode` resolves through `findNode`, which returns `undefined` for an empty tree, `frontend/layout/lib/layoutNode.ts:113-122`) but `getFocusedBlockInStaticTab` then throws on `focusedNode.data` (`keymodel.ts:69-70`). Task 11 adds optional chaining and a test.
 - **Risk: layout save vs. backend queue race** (`frontend/layout/lib/layoutModel.ts:581-599`). Not fixed pre-emptively; Task 18's two-rapid-splits check is the detector, and its report must say whether it reproduced.
-- **Cites re-checked** (current lines): `wstore.go:57-75` `UpdateObjectMeta`; `block.go:119-157` `DeleteBlock`, cascade at `:142-154`, `sendBlockCloseEvent` at `:155`; `workspace.go:453-461` `UpdateWorkspaceTabIds`; `blockcontroller.go:618-630` workspace env; `appdir.go:38-47` block def; `wshserver.go:1164-1229` builder RPCs; `main-server.go:308-310` controller init and durable reconnect, `:323-346` listeners, `:344` `WAVESRV-ESTART`; `global.ts:55-96` and `:753-790` subscriptions; `global-atoms.ts:19-25` and `:66` atoms; `layoutModel.ts:515-570` split handlers; `builder-apppanel-model.ts:308-324` `switchBuilderApp`; `builder-previewtab.tsx:213-223` webview; `emain-ipc.ts:226-251` `destroyBuilderWindow`, `:547-571` `open-builder-terminal`; `emain-websecurity.ts:91-93` partition default.
+- **Cites re-checked** (current lines): `wstore.go:57-75` `UpdateObjectMeta`; `block.go:119-157` `DeleteBlock`, cascade at `:142-154`, `sendBlockCloseEvent` at `:155`; `workspace.go:453-461` `UpdateWorkspaceTabIds`; `blockcontroller.go:618-630` workspace env; `appdir.go:38-47` block def; `wshserver.go:1164-1229` builder RPCs; `main-server.go:308-310` controller init and durable reconnect, `:323-346` listeners, `:344` `WAVESRV-ESTART`; `global.ts:55-96` and `:753-790` subscriptions; `global-atoms.ts:19-25` and `:66` atoms; `layoutModel.ts:515-570` split handlers; `builder-apppanel-model.ts:308-324` `switchBuilderApp`; `builder-previewtab.tsx:215-223` webview; `emain-ipc.ts:226-251` `destroyBuilderWindow`, `:547-571` `open-builder-terminal`; `emain-websecurity.ts:91-93` partition default.
 
 ## Review Focus
 
@@ -120,9 +122,9 @@ Five conditions the spec implies but no spec-derived test exercises; each has a 
 | `frontend/builder/builder-termcontents.tsx`, `.test.tsx` | Create | Tile contents with `onNodeDelete` |
 | `frontend/builder/builder-termpanel.tsx` | Create | Panel UI and states |
 | `frontend/builder/builder-workspace.tsx` | Modify | Horizontal split, focus borders, `data-builder-focus` |
-| `frontend/builder/builder-appheader.tsx` | Modify `:131-159` | Button disabled until Ensure |
+| `frontend/builder/builder-appheader.tsx` | Modify `:132-159` (button `:138-144`) | Button disabled until the panel is ready |
 | `frontend/builder/store/builder-apppanel-model.ts`, `.test.ts` | Modify | Shared notice; `openTerminal`; `switchBuilderApp`; preview partition helper |
-| `frontend/builder/tabs/builder-previewtab.tsx` | Modify `:213-223` | Preview partition |
+| `frontend/builder/tabs/builder-previewtab.tsx` | Modify `:215-223` | Preview partition |
 | `frontend/builder/store/builder-keys.ts`, `.test.ts` | Create | Builder key tables |
 | `frontend/app/block/blockframe-header.tsx` | Modify `:272-280` | No connection button in builder windows |
 | `frontend/app/store/*.test.ts` (several), `frontend/app/static-tab-writers.test.ts` | Create | Store, keymodel, intercept and source-scan tests |
@@ -356,7 +358,7 @@ func TestUpdateObjectMetaConnectionOnMissingBlockIsNotFound(t *testing.T) {
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `export PATH=$PWD/golang-1.26.2/bin:$PATH && go test ./pkg/rtstore/... -count=1`
-Expected: build failure, `undefined: MetaKey_BuilderOwner` (and the other new names).
+Expected: the build fails because the new names do not exist yet (for example `undefined: MetaKey_BuilderOwner`).
 
 - [ ] **Step 3: Implement**
 
@@ -561,7 +563,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `FindBuilderTabs(ctx context.Context, builderId string) ([]*remotetermobj.Tab, error)` (`""` = every builder tab)
   - `DeleteBuilderTab(ctx context.Context, tabId string, expectedOwner string) error` (`expectedOwner ""` = any owner)
   - `SweepBuilderTabs(ctx context.Context) int` (logs `[startup] builder sweep: removed N tabs`)
-  - test helpers in package `rtcore` (`_test.go`): `blockCloses` recorder with `closed(blockId string) bool`; `insertTestTab`, `insertTestWorkspace`, `makeTestBuilderTab`, `addTestTermBlock`, `objExists`
+  - test helpers in package `rtcore` (`_test.go`): `blockCloses` recorder with `closed(blockId string) bool` and `setHook(func(blockId string))`; `insertTestTab`, `insertTestWorkspace`, `makeTestBuilderTab`, `addTestTermBlock`, `objExists`
 
 - [ ] **Step 1: Write the DB fixture**
 
@@ -589,9 +591,12 @@ import (
 	"github.com/google/uuid"
 )
 
+// Publish is synchronous, so a hook set with setHook runs on the deleting goroutine, between that
+// block's delete and the rest of the caller's work (pattern: jobcontroller_reconnect_test.go:43-75).
 type blockCloseRecorder struct {
 	lock     sync.Mutex
 	blockIds []string
+	hook     func(blockId string)
 }
 
 var blockCloses = &blockCloseRecorder{}
@@ -604,9 +609,22 @@ func (r *blockCloseRecorder) SendEvent(routeId string, ev wps.WaveEvent) {
 	if !ok {
 		return
 	}
+	if hook := r.record(blockId); hook != nil {
+		hook(blockId)
+	}
+}
+
+func (r *blockCloseRecorder) record(blockId string) func(string) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	r.blockIds = append(r.blockIds, blockId)
+	return r.hook
+}
+
+func (r *blockCloseRecorder) setHook(hook func(blockId string)) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	r.hook = hook
 }
 
 func (r *blockCloseRecorder) closed(blockId string) bool {
@@ -870,6 +888,40 @@ func TestDeleteBuilderTabKeepsTabWhenABlockFails(t *testing.T) {
 	}
 }
 
+func TestDeleteBuilderTabKeepsTabThatGainedABlock(t *testing.T) {
+	ctx := context.Background()
+	owner := uuid.NewString()
+	tab := makeTestBuilderTab(t, owner)
+	block := addTestTermBlock(t, tab.OID)
+	var late *remotetermobj.Block
+	// A creator that does not hold the builder lock adds a pane while the teardown is running.
+	blockCloses.setHook(func(blockId string) {
+		if blockId != block.OID || late != nil {
+			return
+		}
+		late = addTestTermBlock(t, tab.OID)
+	})
+	t.Cleanup(func() { blockCloses.setHook(nil) })
+
+	if err := DeleteBuilderTab(ctx, tab.OID, owner); err == nil {
+		t.Fatal("expected an error: the tab gained a block during the teardown")
+	}
+	blockCloses.setHook(nil)
+	if late == nil {
+		t.Fatal("the hook never ran")
+	}
+	if !objExists(t, remotetermobj.OType_Tab, tab.OID) || !objExists(t, remotetermobj.OType_LayoutState, tab.LayoutState) {
+		t.Fatal("the tab was deleted under a live block")
+	}
+	if !objExists(t, remotetermobj.OType_Block, late.OID) {
+		t.Fatal("the late block is gone")
+	}
+	SweepBuilderTabs(ctx)
+	if objExists(t, remotetermobj.OType_Tab, tab.OID) || objExists(t, remotetermobj.OType_Block, late.OID) {
+		t.Fatal("the sweep did not remove the tab and its late block")
+	}
+}
+
 func TestSweepBuilderTabsRemovesBuilderTabsOnly(t *testing.T) {
 	ctx := context.Background()
 	makeTestBuilderTab(t, uuid.NewString())
@@ -911,7 +963,7 @@ func TestSweepBuilderTabsRemovesBuilderTabsOnly(t *testing.T) {
 - [ ] **Step 3: Run the tests to verify they fail**
 
 Run: `export PATH=$PWD/golang-1.26.2/bin:$PATH && go test ./pkg/rtcore/... -count=1`
-Expected: build failure, `undefined: CreateBuilderTab`.
+Expected: the build fails because `CreateBuilderTab` and its siblings do not exist yet (for example `undefined: CreateBuilderTab`).
 
 - [ ] **Step 4: Implement**
 
@@ -983,7 +1035,9 @@ func FindBuilderTabs(ctx context.Context, builderId string) ([]*remotetermobj.Ta
 }
 
 // A missing tab is a no-op. If any block cannot be deleted, the tab and its layout state are kept,
-// so a later delete or the startup sweep can retry.
+// so a later delete or the startup sweep can retry. Creators that skip the builder lock (wsh's
+// CreateBlockCommand) can add a block mid-teardown; the final transaction re-reads the tab and keeps
+// it in that case, rather than leaving the new block without a tab.
 func DeleteBuilderTab(ctx context.Context, tabId string, expectedOwner string) error {
 	tab, err := rtstore.DBGet[*remotetermobj.Tab](ctx, tabId)
 	if err != nil {
@@ -1013,7 +1067,17 @@ func DeleteBuilderTab(ctx context.Context, tabId string, expectedOwner string) e
 		return firstErr
 	}
 	return rtstore.WithTx(ctx, func(tx *rtstore.TxWrap) error {
-		if err := rtstore.DBDelete(tx.Context(), remotetermobj.OType_LayoutState, tab.LayoutState); err != nil {
+		current, err := rtstore.DBGet[*remotetermobj.Tab](tx.Context(), tabId)
+		if err != nil {
+			return err
+		}
+		if current == nil {
+			return nil
+		}
+		if len(current.BlockIds) > 0 {
+			return fmt.Errorf("tab %s gained blocks while it was being deleted", tabId)
+		}
+		if err := rtstore.DBDelete(tx.Context(), remotetermobj.OType_LayoutState, current.LayoutState); err != nil {
 			return err
 		}
 		return rtstore.DBDelete(tx.Context(), remotetermobj.OType_Tab, tabId)
@@ -1482,7 +1546,7 @@ func TestMakeBuilderTerminalBlockDefPinsDurableOff(t *testing.T) {
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `export PATH=$PWD/golang-1.26.2/bin:$PATH && go test ./pkg/blockcontroller/... ./pkg/buildercontroller/... -count=1`
-Expected: build failures, `undefined: addTabAndWorkspaceEnv` and `undefined: ResolveAppDirForAppId`.
+Expected: both packages fail to build because `addTabAndWorkspaceEnv` and `ResolveAppDirForAppId` do not exist yet.
 
 - [ ] **Step 3: Implement the env helper**
 
@@ -1570,6 +1634,17 @@ func MakeBuilderTerminalBlockDef(appDir string) *remotetermobj.BlockDef {
 
 Run: `go test ./pkg/blockcontroller/... ./pkg/buildercontroller/... -count=1 && go test -race ./pkg/blockcontroller/... -count=1`
 Expected: `ok` for both packages, then `ok` for `pkg/blockcontroller` under `-race`.
+
+The test drives the helper, so also check that `makeSwapToken` really uses it and kept no lookup of its own:
+
+```bash
+awk '/^func makeSwapToken\(/,/^}/' pkg/blockcontroller/blockcontroller.go | grep -c 'addTabAndWorkspaceEnv(ctx, token.Env, blockId)'
+awk '/^func makeSwapToken\(/,/^}/' pkg/blockcontroller/blockcontroller.go | grep -c 'DBFindTabForBlockId\|DBFindWorkspaceForTabId'
+grep -c 'DBFindTabForBlockId\|DBFindWorkspaceForTabId' pkg/blockcontroller/blockcontroller.go
+awk '/^func addTabAndWorkspaceEnv\(/,/^}/' pkg/blockcontroller/blockcontroller.go | grep -c 'DBFindTabForBlockId\|DBFindWorkspaceForTabId'
+```
+
+Expected: `1`, `0`, `2`, `2` (the two lookups exist only inside the helper).
 
 - [ ] **Step 6: Commit**
 
@@ -1769,7 +1844,7 @@ func TestMakeBuilderLayoutAction(t *testing.T) {
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `export PATH=$PWD/golang-1.26.2/bin:$PATH && go test ./pkg/wshutil/... ./pkg/wshrpc/wshserver/... -count=1`
-Expected: build failures, `undefined: MakeRpcSourceContextForTest` and `undefined: checkBuilderCaller`.
+Expected: both packages fail to build because `MakeRpcSourceContextForTest` and `checkBuilderCaller` do not exist yet.
 
 - [ ] **Step 3: Implement the test helper**
 
@@ -1940,7 +2015,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `wshrpc.CommandEnsureBuilderTabData{BuilderId string "builderid"; AppId string "appid"}`, `wshrpc.CommandEnsureBuilderTabRtnData{TabId string "tabid"; AppId string "appid"}`
   - `(*WshServer).EnsureBuilderTabCommand(ctx, data) (*wshrpc.CommandEnsureBuilderTabRtnData, error)`; generated `RpcApi.EnsureBuilderTabCommand(client, data, opts?)` (TS) and `wshclient.EnsureBuilderTabCommand` (Go)
   - package `wshserver`: `var queueBuilderLayoutAction = rtcore.QueueLayoutActionForTab` (test seam); `sendBuilderUpdates(writeCtx context.Context)`; `ensureBuilderTab(ctx, builderId, appId string) (*wshrpc.CommandEnsureBuilderTabRtnData, error)`; `addBuilderTermBlock(ctx context.Context, tabId string, appDir string, targetBlockId string, targetAction string) (string, error)`
-  - test helpers (package `wshserver`, `_test.go`): `wpsEvents` (`reset()`, `objUpdates() []remotetermobj.WaveObjUpdate`, `blockClosed(blockId string) bool`), `electronCtx()`, `sourceCtx(source string)`, `setupBuilderApps(t, names ...string) string` (returns HOME), `appDirFor(home, name string) string`, `countRows(t) [3]int`, `tabBlocks(t, tabId) []*remotetermobj.Block`, `pendingActions(t, tabId) []remotetermobj.LayoutActionData`, `ensureTab(t, builderId, appId) *wshrpc.CommandEnsureBuilderTabRtnData`, `failQueue(t)`
+  - test helpers (package `wshserver`, `_test.go`): `wpsEvents` (`reset()`, `objUpdates() []remotetermobj.WaveObjUpdate`, `blockClosed(blockId string) bool`), `electronCtx()`, `sourceCtx(source string)`, `setupBuilderApps(t, names ...string) string` (returns HOME), `appDirFor(home, name string) string`, `countRows(t) [3]int`, `tabBlocks(t, tabId) []*remotetermobj.Block`, `pendingActions(t, tabId) []remotetermobj.LayoutActionData`, `ensureTab(t, builderId, appId) *wshrpc.CommandEnsureBuilderTabRtnData`, `failQueue(t)`, `runWhileBuilderLocked(t, builderId string, op func() error) error`
 
 - [ ] **Step 1: Add the RPC types and generate bindings**
 
@@ -1989,6 +2064,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/LannCo/remoteterm/pkg/filestore"
 	"github.com/LannCo/remoteterm/pkg/remotetermbase"
@@ -2150,6 +2226,38 @@ func ensureTab(t *testing.T, builderId string, appId string) *wshrpc.CommandEnsu
 		t.Fatalf("EnsureBuilderTabCommand(%s, %s): %v", builderId, appId, err)
 	}
 	return rtn
+}
+
+// runWhileBuilderLocked holds the builder's lock, starts op, and checks that op neither returns nor writes
+// a row within 100 ms; then it releases the lock and returns op's result. A handler that skipped the lock
+// fails here deterministically.
+func runWhileBuilderLocked(t *testing.T, builderId string, op func() error) error {
+	t.Helper()
+	lock := getBuilderLock(builderId)
+	lock.Lock()
+	rows := countRows(t)
+	done := make(chan error, 1)
+	go func() {
+		done <- op()
+	}()
+	select {
+	case err := <-done:
+		lock.Unlock()
+		t.Fatalf("returned while the builder lock was held (err: %v)", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if got := countRows(t); got != rows {
+		lock.Unlock()
+		t.Fatalf("rows changed while the builder lock was held: %v -> %v", rows, got)
+	}
+	lock.Unlock()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(5 * time.Second):
+		t.Fatal("did not finish within 5 s of the lock being released")
+	}
+	return nil
 }
 
 func failQueue(t *testing.T) {
@@ -2353,6 +2461,22 @@ func TestEnsureBuilderTabReturnsWhenRpcContextIsDone(t *testing.T) {
 	}
 }
 
+func TestEnsureBuilderTabWaitsForBuilderLock(t *testing.T) {
+	setupBuilderApps(t, "demo")
+	builderId := uuid.NewString()
+	err := runWhileBuilderLocked(t, builderId, func() error {
+		_, err := WshServerImpl.EnsureBuilderTabCommand(electronCtx(), wshrpc.CommandEnsureBuilderTabData{BuilderId: builderId, AppId: "draft/demo"})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tabs, _ := rtcore.FindBuilderTabs(context.Background(), builderId)
+	if len(tabs) != 1 {
+		t.Fatalf("builder tabs after the lock was released = %d, want 1", len(tabs))
+	}
+}
+
 func TestEnsureBuilderTabBroadcastsUpdates(t *testing.T) {
 	setupBuilderApps(t, "demo")
 	wpsEvents.reset()
@@ -2468,7 +2592,7 @@ func TestBuilderBlocksStayLocalThroughRpcs(t *testing.T) {
 - [ ] **Step 4: Run the tests to verify they fail**
 
 Run: `go test ./pkg/wshrpc/wshserver/... -count=1`
-Expected: build failure, `WshServerImpl.EnsureBuilderTabCommand undefined (type WshServer has no field or method EnsureBuilderTabCommand)`.
+Expected: the test build fails because `WshServer` has no `EnsureBuilderTabCommand` method yet.
 
 - [ ] **Step 5: Implement Ensure**
 
@@ -2630,7 +2754,7 @@ Run: `./node_modules/.bin/task generate`
 Expected: exit 0; `frontend/types/gotypes.d.ts` now declares `CommandOpenBuilderTerminalData` with `builderid`, `targetblockid?`, `targetaction?` and no `tabid`.
 
 Run: `export PATH=$PWD/golang-1.26.2/bin:$PATH && go vet ./pkg/wshrpc/wshserver/`
-Expected: FAIL, `data.TabId undefined (type wshrpc.CommandOpenBuilderTerminalData has no field or method TabId)` in `wshserver.go`.
+Expected: vet fails because the old handler in `wshserver.go` still reads `data.TabId`, which the type no longer has.
 
 - [ ] **Step 2: Write the failing tests**
 
@@ -2854,6 +2978,18 @@ func TestOpenBuilderTerminalBroadcastsLayoutUpdate(t *testing.T) {
 	}
 }
 
+func TestOpenBuilderTerminalWaitsForBuilderLock(t *testing.T) {
+	setupBuilderApps(t, "demo")
+	builderId := uuid.NewString()
+	rtn := ensureTab(t, builderId, "draft/demo")
+	if err := runWhileBuilderLocked(t, builderId, func() error { return openTerm(builderId, "", "") }); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(tabBlocks(t, rtn.TabId)); n != 2 {
+		t.Fatalf("blocks after the lock was released = %d, want 2", n)
+	}
+}
+
 func TestOpenBuilderTerminalAppDirGone(t *testing.T) {
 	home := setupBuilderApps(t, "demo")
 	builderId := uuid.NewString()
@@ -2972,7 +3108,7 @@ Expected: `ok` for every `pkg/wshrpc` package; `ok` under `-race`.
 - [ ] **Step 5: Fix the Electron call site**
 
 Run: `npx tsc --noEmit`
-Expected: FAIL in `emain/emain-ipc.ts` at the `OpenBuilderTerminalCommand` call: `Object literal may only specify known properties, and 'tabid' does not exist in type 'CommandOpenBuilderTerminalData'`.
+Expected: tsc fails in `emain/emain-ipc.ts` at the `OpenBuilderTerminalCommand` call, because `tabid` is no longer part of `CommandOpenBuilderTerminalData` (the wording of the TypeScript error may vary).
 
 In `emain/emain-ipc.ts`, replace the `open-builder-terminal` handler (lines 547-571) with:
 
@@ -3148,9 +3284,25 @@ func TestDeleteBuilderCommandDeletesController(t *testing.T) {
 	}
 }
 
+func TestDeleteBuilderCommandWaitsForBuilderLock(t *testing.T) {
+	setupBuilderApps(t, "demo")
+	builderId := uuid.NewString()
+	ensureTab(t, builderId, "draft/demo")
+	err := runWhileBuilderLocked(t, builderId, func() error {
+		return WshServerImpl.DeleteBuilderCommand(electronCtx(), builderId)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := builderTabCount(t, builderId); n != 0 {
+		t.Fatalf("%d builder tabs left after the lock was released", n)
+	}
+}
+
 func TestBuilderLockSerialisesDeleteAndEnsures(t *testing.T) {
 	setupBuilderApps(t, "demo")
 	builderId := uuid.NewString()
+	base := countRows(t)
 	ensureTab(t, builderId, "draft/demo")
 	ensureOp := func() {
 		WshServerImpl.EnsureBuilderTabCommand(electronCtx(), wshrpc.CommandEnsureBuilderTabData{BuilderId: builderId, AppId: "draft/demo"})
@@ -3176,13 +3328,18 @@ func TestBuilderLockSerialisesDeleteAndEnsures(t *testing.T) {
 	if len(tabs) > 1 {
 		t.Fatalf("%d builder tabs after interleaved Ensure/Delete", len(tabs))
 	}
-	if len(tabs) == 1 && len(tabBlocks(t, tabs[0].OID)) != 1 {
-		t.Fatalf("surviving tab has %d blocks", len(tabBlocks(t, tabs[0].OID)))
+	// Every surviving tab owns exactly one block and one layout state; anything else is a leaked row.
+	k := len(tabs)
+	if got, want := countRows(t), [3]int{base[0] + k, base[1] + k, base[2] + k}; got != want {
+		t.Fatalf("rows after the interleave = %v, want %v (%d tabs)", got, want, k)
 	}
 	final := ensureTab(t, builderId, "draft/demo")
 	tabs, _ = rtcore.FindBuilderTabs(context.Background(), builderId)
 	if len(tabs) != 1 || tabs[0].OID != final.TabId || len(tabBlocks(t, final.TabId)) != 1 {
 		t.Fatalf("after a final Ensure: %d tabs", len(tabs))
+	}
+	if got, want := countRows(t), [3]int{base[0] + 1, base[1] + 1, base[2] + 1}; got != want {
+		t.Fatalf("rows after the final Ensure = %v, want %v", got, want)
 	}
 }
 
@@ -3234,7 +3391,7 @@ func TestDeleteBlockCommandOnLastBuilderPaneKeepsTab(t *testing.T) {
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `export PATH=$PWD/golang-1.26.2/bin:$PATH && go test ./pkg/wshrpc/wshserver/... -count=1 -run 'TestDeleteBuilderCommand|TestBuilderLockSerialises|TestDeleteBlockCommandOnLast'`
-Expected: FAIL. `TestDeleteBuilderCommandRemovesEveryOwnerTab` (`2 builder tabs left`), `TestDeleteBuilderCommandCompletesWhenCallerContextIsCancelled` (`1 builder tabs left after a cancelled caller`), `TestDeleteBuilderCommandAcceptsElectronAndOwnRendererOnly` (`source "proc:..." accepted`) and `TestDeleteBuilderCommandBroadcastsTabDelete` fail. The others pass already: the old handler deletes no tabs, so the lock test cannot see two, and `TestDeleteBlockCommandOnLastBuilderPaneKeepsTab` passes because of Task 3. They pin behaviour the new handler must keep.
+Expected: FAIL. `TestDeleteBuilderCommandRemovesEveryOwnerTab` (`2 builder tabs left`), `TestDeleteBuilderCommandCompletesWhenCallerContextIsCancelled` (`1 builder tabs left after a cancelled caller`), `TestDeleteBuilderCommandAcceptsElectronAndOwnRendererOnly` (`source "proc:..." accepted`), `TestDeleteBuilderCommandBroadcastsTabDelete` and `TestDeleteBuilderCommandWaitsForBuilderLock` (`returned while the builder lock was held`) fail. The others pass already: the old handler deletes no tabs, so the lock test cannot see two, and `TestDeleteBlockCommandOnLastBuilderPaneKeepsTab` passes because of Task 3. They pin behaviour the new handler must keep.
 
 - [ ] **Step 3: Implement**
 
@@ -3457,6 +3614,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `emain/emain-builder-select.ts` (add `MaxBuilderTargetLen`, `BuilderTeardownTimeoutMs`, `parseBuilderTerminalTarget`, `runBuilderTeardown`)
 - Test: `emain/emain-builder-select.test.ts` (append)
 - Modify: `emain/emain-ipc.ts:226-251` (`destroyBuilderWindow`), the `open-builder-terminal` handler (as left by Task 7), new `ensure-builder-tab` handler next to it
+- Modify: `emain/emain-builder.ts:15-19` (`BuilderWindowType` gains `tearingDown?: boolean`)
 - Modify: `emain/preload.ts:68` (and add `ensureBuilderTab`)
 - Modify: `frontend/types/custom.d.ts:71-75` (new global types after `BuilderInitOpts`), `:126` (`ElectronApi`)
 - Modify: `frontend/preview/mock/preview-electron-api.ts:55`
@@ -3466,12 +3624,20 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Produces:
   - global TS types `BuilderTerminalTarget = { targetblockid?: string; targetaction?: string }`, `BuilderTabInfo = { tabid?: string; appid?: string; error?: string }`
   - `ElectronApi.ensureBuilderTab(): Promise<BuilderTabInfo>` (IPC `ensure-builder-tab`), `ElectronApi.openBuilderTerminal(target?: BuilderTerminalTarget): Promise<string>` (IPC `open-builder-terminal`; `""` on success, else an error message)
-  - `emain-builder-select.ts`: `MaxBuilderTargetLen = 64`, `BuilderTeardownTimeoutMs = 20000`, `parseBuilderTerminalTarget(target: unknown): ParsedBuilderTerminalTarget` (`{ targetblockid: string; targetaction: string; error?: string }`), `runBuilderTeardown(steps: BuilderTeardownSteps): Promise<void>`
-  - `destroyBuilderWindow` awaits `DeleteBuilderCommand` (errors logged), then deletes the builder rtinfo, then destroys the window. The `closed` handler's no-response `DeleteBuilderCommand` (`emain/emain-builder.ts:116-127`) stays as the fallback for title-bar closes.
+  - `emain-builder-select.ts`: `MaxBuilderTargetLen = 64`, `BuilderTeardownTimeoutMs = 20000`, `parseBuilderTerminalTarget(target: unknown): ParsedBuilderTerminalTarget` (`{ targetblockid: string; targetaction: string; error?: string }`), `TeardownWindow = { tearingDown?: boolean; isDestroyed(): boolean; hide(): void }`, `runBuilderTeardown(win: TeardownWindow, steps: BuilderTeardownSteps): Promise<void>`
+  - `destroyBuilderWindow` returns at once if the window is already tearing down or destroyed; otherwise it marks it, hides it, awaits `DeleteBuilderCommand` (errors logged, up to 20 s), deletes the builder rtinfo, and destroys the window if nothing else has. The `closed` handler's no-response `DeleteBuilderCommand` (`emain/emain-builder.ts:116-127`) stays as the fallback for title-bar closes.
 
 `ensure-builder-tab` reads `bw.builderId` and `bw.builderAppId` from the calling window only. The panel cannot call it before the window knows its app id (see "Spec items confirmed in the plan").
 
 - [ ] **Step 1: Write the failing tests**
+
+First, from the repo root, make sure Vitest cannot write into a `node_modules` shared with another worktree (a symlinked one shares its `.vite` cache with the live tree; see `llm-wiki/wiki/concepts/remoteterm-fork-engineering-gotchas.md`, "A worktree that symlinks the live `node_modules`"):
+
+```bash
+test -L node_modules && { echo "shared node_modules: stop"; exit 1; }
+```
+
+Expected: no output. If it prints, stop and report.
 
 Append to `emain/emain-builder-select.test.ts` and add `parseBuilderTerminalTarget`, `runBuilderTeardown` to its import from `./emain-builder-select`:
 
@@ -3509,26 +3675,44 @@ describe("parseBuilderTerminalTarget", () => {
     });
 });
 
+function makeTeardownWindow() {
+    let destroyed = false;
+    return {
+        tearingDown: false,
+        hide: vi.fn(),
+        isDestroyed: () => destroyed,
+        destroy: vi.fn(() => {
+            destroyed = true;
+        }),
+    };
+}
+
 describe("runBuilderTeardown", () => {
-    it("deletes the builder, then its rtinfo, then destroys the window", async () => {
+    it("hides the window, deletes the builder, then its rtinfo, then destroys the window", async () => {
         const order: string[] = [];
-        await runBuilderTeardown({
+        const win = makeTeardownWindow();
+        win.hide.mockImplementation(() => order.push("hide"));
+        await runBuilderTeardown(win, {
             deleteBuilder: async () => {
                 order.push("delete");
             },
             deleteRtInfo: async () => {
                 order.push("rtinfo");
             },
-            destroyWindow: () => order.push("destroy"),
+            destroyWindow: () => {
+                order.push("destroy");
+                win.destroy();
+            },
             logError: vi.fn(),
         });
-        expect(order).toEqual(["delete", "rtinfo", "destroy"]);
+        expect(order).toEqual(["hide", "delete", "rtinfo", "destroy"]);
     });
 
     it("waits for the delete before going on", async () => {
         const order: string[] = [];
         let finish: () => void;
-        const done = runBuilderTeardown({
+        const win = makeTeardownWindow();
+        const done = runBuilderTeardown(win, {
             deleteBuilder: () =>
                 new Promise<void>((resolve) => {
                     finish = () => {
@@ -3552,7 +3736,7 @@ describe("runBuilderTeardown", () => {
     it("still destroys the window when both RPCs fail", async () => {
         const order: string[] = [];
         const logError = vi.fn();
-        await runBuilderTeardown({
+        await runBuilderTeardown(makeTeardownWindow(), {
             deleteBuilder: async () => {
                 order.push("delete");
                 throw new Error("server gone");
@@ -3567,13 +3751,47 @@ describe("runBuilderTeardown", () => {
         expect(order).toEqual(["delete", "rtinfo", "destroy"]);
         expect(logError).toHaveBeenCalledTimes(2);
     });
+
+    it("runs the teardown and destroys the window once when asked twice at the same time", async () => {
+        const win = makeTeardownWindow();
+        const deleteBuilder = vi.fn(() => new Promise<void>((resolve) => setTimeout(resolve, 10)));
+        const steps = {
+            deleteBuilder,
+            deleteRtInfo: vi.fn(async () => {}),
+            destroyWindow: () => win.destroy(),
+            logError: vi.fn(),
+        };
+        await Promise.all([runBuilderTeardown(win, steps), runBuilderTeardown(win, steps)]);
+        expect(deleteBuilder).toHaveBeenCalledTimes(1);
+        expect(steps.deleteRtInfo).toHaveBeenCalledTimes(1);
+        expect(win.hide).toHaveBeenCalledTimes(1);
+        expect(win.destroy).toHaveBeenCalledTimes(1);
+    });
+
+    it("leaves a window alone that is already destroyed, or destroyed during the teardown", async () => {
+        const gone = makeTeardownWindow();
+        gone.destroy();
+        const steps = {
+            deleteBuilder: vi.fn(async () => {}),
+            deleteRtInfo: vi.fn(async () => {}),
+            destroyWindow: vi.fn(),
+            logError: vi.fn(),
+        };
+        await runBuilderTeardown(gone, steps);
+        expect(steps.deleteBuilder).not.toHaveBeenCalled();
+        expect(gone.hide).not.toHaveBeenCalled();
+
+        const closing = makeTeardownWindow();
+        await runBuilderTeardown(closing, { ...steps, deleteBuilder: async () => closing.destroy() });
+        expect(steps.destroyWindow).not.toHaveBeenCalled();
+    });
 });
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `npx vitest run emain/emain-builder-select.test.ts`
-Expected: FAIL; the new suites report `parseBuilderTerminalTarget is not a function` / `runBuilderTeardown is not a function` (or the import fails to resolve them).
+Expected: the new suites fail because `parseBuilderTerminalTarget` and `runBuilderTeardown` are not exported yet (they throw on the first call); the older suites still pass.
 
 - [ ] **Step 3: Implement the helpers**
 
@@ -3615,6 +3833,12 @@ export function parseBuilderTerminalTarget(target: unknown): ParsedBuilderTermin
     return rtn;
 }
 
+export type TeardownWindow = {
+    tearingDown?: boolean;
+    isDestroyed(): boolean;
+    hide(): void;
+};
+
 export type BuilderTeardownSteps = {
     deleteBuilder: () => Promise<unknown>;
     deleteRtInfo: () => Promise<unknown>;
@@ -3622,9 +3846,15 @@ export type BuilderTeardownSteps = {
     logError: (message: string, err: unknown) => void;
 };
 
-// The builder's terminals are deleted while its rtinfo still exists, and the window goes last whatever
-// failed, so a dead server cannot keep a window open.
-export async function runBuilderTeardown(steps: BuilderTeardownSteps): Promise<void> {
+// The teardown can take up to BuilderTeardownTimeoutMs, so the window is hidden at once and a second close
+// request meanwhile (Alt+W again, set-builder-window-appid) is ignored. The builder's terminals are deleted
+// while its rtinfo still exists, and the window goes last whatever failed, so a dead server cannot keep it open.
+export async function runBuilderTeardown(win: TeardownWindow, steps: BuilderTeardownSteps): Promise<void> {
+    if (win.tearingDown || win.isDestroyed()) {
+        return;
+    }
+    win.tearingDown = true;
+    win.hide();
     try {
         await steps.deleteBuilder();
     } catch (e) {
@@ -3635,7 +3865,9 @@ export async function runBuilderTeardown(steps: BuilderTeardownSteps): Promise<v
     } catch (e) {
         steps.logError("Error deleting builder rtinfo:", e);
     }
-    steps.destroyWindow();
+    if (!win.isDestroyed()) {
+        steps.destroyWindow();
+    }
 }
 ```
 
@@ -3682,12 +3914,23 @@ In `frontend/preview/mock/preview-electron-api.ts`, replace line 55 with:
     openBuilderTerminal: (_target?: BuilderTerminalTarget) => Promise.resolve(""),
 ```
 
+In `emain/emain-builder.ts`, add a field to `BuilderWindowType` (lines 15-19):
+
+```ts
+export type BuilderWindowType = BrowserWindow & {
+    builderId: string;
+    builderAppId?: string;
+    savedInitOpts: BuilderInitOpts;
+    tearingDown?: boolean;
+};
+```
+
 In `emain/emain-ipc.ts`, add `BuilderTeardownTimeoutMs`, `parseBuilderTerminalTarget`, `runBuilderTeardown` to the `./emain-builder-select` import. Replace `destroyBuilderWindow` (lines 226-251) with:
 
 ```ts
 async function destroyBuilderWindow(bw: BuilderWindowType) {
     const builderId = bw.builderId;
-    await runBuilderTeardown({
+    await runBuilderTeardown(bw, {
         deleteBuilder: async () => {
             if (!builderId) {
                 return;
@@ -3775,13 +4018,13 @@ Expected: tsc exit 0; every `emain/*.test.ts` passes.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add emain/emain-builder-select.ts emain/emain-builder-select.test.ts emain/emain-ipc.ts emain/preload.ts frontend/types/custom.d.ts frontend/preview/mock/preview-electron-api.ts
+git add emain/emain-builder-select.ts emain/emain-builder-select.test.ts emain/emain-ipc.ts emain/emain-builder.ts emain/preload.ts frontend/types/custom.d.ts frontend/preview/mock/preview-electron-api.ts
 git commit -m "feat(builder): Electron bridges the builder terminal panel
 
 The builder window can now ask for its terminal tab (with its own
 builder and app ids, never the page's), open panes with a split target,
-and on close waits for the terminals to be deleted before removing the
-window.
+and on close hides the window at once, waits for the terminals to be
+deleted, then removes it; a second close request meanwhile is ignored.
 
 Miscellanea: ensure-builder-tab IPC; target strings capped at 64
 characters; teardown ordering helper with tests.
@@ -3796,7 +4039,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Files:**
 - Modify: `frontend/app/store/global-atoms.ts:14-25, 65-66`
 - Modify: `frontend/types/custom.d.ts:19` (`staticTabId` type)
-- Modify: `frontend/app/store/global.ts:55-94` (subscriptions), `:493-496` (`setNodeFocus`), `:720-737` (`refocusNode`), exports `:849-911`
+- Modify: `frontend/app/store/global.ts:55-94` (subscriptions), `:493-496` (`setNodeFocus`), `:720-740` (`refocusNode`), exports `:853-912`
 - Modify: `frontend/remoteterm.ts:252` (builder subscriptions)
 - Modify: `frontend/layout/lib/layoutModelHooks.ts:45-48`
 - Modify: `frontend/app/store/keymodel.ts:67-71, 146-196, 244-261, 371-385, 498-510, 633-660`
@@ -4053,7 +4296,7 @@ describe("keymodel without a layout model or with an empty tree", () => {
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `npx vitest run frontend/app/store/global-atoms.test.ts frontend/app/store/global-builder-subs.test.ts frontend/layout/tests/layoutModelHooks.test.ts frontend/app/store/keymodel-builder.test.ts`
-Expected: FAIL. `uiContext` reads `undefined` after the set (the closure ignores `staticTabId`); `initBuilderWaveEventSubs` is not exported; `setNodeFocus`/`refocusNode` throw `Cannot read properties of null`; `getLayoutModelForStaticTab` fails with `Invalid value used as weak map key` (it builds a `tab:null` object); the keymodel cases throw `Cannot read properties of null (reading 'focusedNode')` / `(reading 'data')`.
+Expected: FAIL. `uiContext` reads `undefined` after the set (the closure ignores `staticTabId`); `initBuilderWaveEventSubs` is not exported; `setNodeFocus`/`refocusNode` throw (they dereference a null layout model); `getLayoutModelForStaticTab` throws or the `not.toHaveBeenCalled` assertion fails (it builds a `tab:null` object); the keymodel cases fail their `not.toThrow` assertions.
 
 - [ ] **Step 3: Make `staticTabId` writable and `uiContext` live**
 
@@ -4170,7 +4413,7 @@ function setNodeFocus(nodeId: string) {
 }
 ```
 
-and in `refocusNode` (lines 720-737) replace
+and in `refocusNode` (lines 720-740) replace
 
 ```ts
     const layoutModel = getLayoutModelForStaticTab();
@@ -4494,7 +4737,7 @@ describe("makeBackendSplitAction", () => {
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run frontend/layout/tests/backendsplit.test.ts`
-Expected: FAIL, `Cannot find module '../lib/backendsplit'`.
+Expected: the suite fails to load because `../lib/backendsplit` does not exist yet.
 
 - [ ] **Step 3: Implement**
 
@@ -4815,7 +5058,7 @@ describe("BuilderAppPanelModel notice", () => {
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `npx vitest run frontend/app/store/builder-terminal.test.ts frontend/app/store/global-builder-create.test.ts frontend/builder/store/builder-apppanel-model.test.ts`
-Expected: FAIL. `builder-terminal.test.ts` and `global-builder-create.test.ts` cannot resolve `./builder-terminal`; the apppanel notice test cannot resolve `@/app/store/builder-terminal`.
+Expected: FAIL. `builder-terminal.test.ts`, `global-builder-create.test.ts` and `builder-apppanel-model.test.ts` fail to load because `builder-terminal.ts` does not exist yet.
 
 - [ ] **Step 3: Implement the helper module**
 
@@ -5039,7 +5282,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: Task 10 `ElectronApi.ensureBuilderTab(): Promise<BuilderTabInfo>`, `ElectronApi.doRefresh()`; Task 11 `atoms.staticTabId: PrimitiveAtom<string>`, `deleteLayoutModelForTab(tabId)` (`frontend/layout/lib/layoutModelHooks.ts:50-52`); `WOS.loadAndPinWaveObject`, `WOS.getWaveObjectAtom`, `WOS.makeORef` (`frontend/app/store/wos.ts:202-223, 51`).
 - Produces:
   - `BuilderFocusType = "app" | "terminal"`; `BuilderFocusManager.setTerminalFocused()` (plus existing `setAppFocused()`, `getFocusType()`, `focusType` atom)
-  - `BuilderTermModel` singleton (`getInstance()`, `resetInstance()`): atoms `stateAtom: PrimitiveAtom<BuilderTermState>` (`"idle" | "loading" | "ready" | "error" | "mismatch" | "vanished" | "switching"`), `errorAtom`, `tabIdAtom`, `ensureOkAtom`; methods `bootstrap()`, `retry()`, `markSwitching()`, `onTabValue(tabId, tab)`, `handlePaneCount(count)`, `hasPanes()`; const `BuilderTermMismatchMessage = "Terminal app and builder app differ; reopen the builder"`
+  - `BuilderTermModel` singleton (`getInstance()`, `resetInstance()`): atoms `stateAtom: PrimitiveAtom<BuilderTermState>` (`"idle" | "loading" | "ready" | "error" | "mismatch" | "vanished" | "switching"`), `errorAtom`, `tabIdAtom`, `ensureOkAtom` (true exactly while `stateAtom` is `"ready"`; every state change goes through `setState`); methods `bootstrap()`, `retry()`, `markSwitching()`, `setState(state)`, `setError(message)`, `onTabValue(tabId, tab)`, `handlePaneCount(count)`, `hasPanes()`; const `BuilderTermMismatchMessage = "Terminal app and builder app differ; reopen the builder"`
   - `BuilderLayout = { terminal: number; app: number; build: number }`, `DefaultBuilderLayout = { terminal: 40, app: 80, build: 20 }`, `MinTerminalPercent = 20`, `mergeBuilderLayout(saved: Record<string, number>): BuilderLayout`
   - `makeBuilderTileContents(tabId: string, gapSizePx: number): TileLayoutContents` (`onNodeDelete` = `ObjectService.DeleteBlock(blockId)`, as `frontend/app/tab/tabcontent.tsx:38-40`)
   - `switchBuilderApp` marks the panel "switching" before `DeleteBuilderCommand` and awaits `setBuilderWindowAppId(null)` before reloading
@@ -5171,6 +5414,15 @@ describe("BuilderTermModel", () => {
         expect(h.api.doRefresh).not.toHaveBeenCalled();
     });
 
+    it("keeps Open terminal disabled when loading the tab fails after Ensure", async () => {
+        h.objs.delete("tab:tab-1");
+        const model = BuilderTermModel.getInstance();
+        await model.bootstrap();
+        expect(globalStore.get(model.stateAtom)).toBe("error");
+        expect(globalStore.get(model.ensureOkAtom)).toBe(false);
+        expect(globalStore.get(atoms.staticTabId)).toBeNull();
+    });
+
     it("reloads the renderer if a different static tab is already set", async () => {
         globalStore.set(atoms.staticTabId, "tab-old");
         await BuilderTermModel.getInstance().bootstrap();
@@ -5183,6 +5435,7 @@ describe("BuilderTermModel", () => {
         await model.bootstrap();
         WOS.updateWaveObject(deleteTabUpdate());
         expect(globalStore.get(model.stateAtom)).toBe("vanished");
+        expect(globalStore.get(model.ensureOkAtom)).toBe(false);
         expect(h.deleteLayoutModelForTab).toHaveBeenCalledWith("tab-1");
         model.retry();
         expect(h.api.doRefresh).toHaveBeenCalledTimes(1);
@@ -5192,6 +5445,7 @@ describe("BuilderTermModel", () => {
         const model = BuilderTermModel.getInstance();
         await model.bootstrap();
         model.markSwitching();
+        expect(globalStore.get(model.ensureOkAtom)).toBe(false);
         WOS.updateWaveObject(deleteTabUpdate());
         expect(globalStore.get(model.stateAtom)).toBe("switching");
         expect(h.deleteLayoutModelForTab).toHaveBeenCalledWith("tab-1");
@@ -5390,7 +5644,7 @@ describe("staticTabIdAtom writers", () => {
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `npx vitest run frontend/builder/ frontend/app/static-tab-writers.test.ts`
-Expected: FAIL. The four new builder test files cannot resolve their modules (`./builder-term-model`, `./builder-layout`, `./builder-termcontents`) or, for the switch test, `markSwitching` is never called; the writers test finds `[]`.
+Expected: FAIL. The model, layout and tile-contents suites fail to load (their modules do not exist yet); the switch test fails its order assertion (`markSwitching` is never called); the writers test finds `[]`.
 
 - [ ] **Step 3: Implement the focus sides**
 
@@ -5549,17 +5803,16 @@ export class BuilderTermModel {
     // static tab subscribes to that LayoutState when it is created (layoutModelHooks.ts), so nothing may
     // build one before both are loaded.
     async runBootstrap(): Promise<void> {
-        globalStore.set(this.stateAtom, "loading");
+        this.setState("loading");
         const result = await getApi().ensureBuilderTab();
         if (result?.error || !result?.tabid) {
             this.setError(result?.error || "Could not start the terminals.");
             return;
         }
         if (result.appid !== globalStore.get(atoms.builderAppId)) {
-            globalStore.set(this.stateAtom, "mismatch");
+            this.setState("mismatch");
             return;
         }
-        globalStore.set(this.ensureOkAtom, true);
         try {
             const tab = await WOS.loadAndPinWaveObject<Tab>(WOS.makeORef("tab", result.tabid));
             if (tab == null) {
@@ -5581,12 +5834,19 @@ export class BuilderTermModel {
         }
         globalStore.set(this.tabIdAtom, result.tabid);
         this.watchTab(result.tabid);
-        globalStore.set(this.stateAtom, "ready");
+        this.setState("ready");
+    }
+
+    // The header's Open terminal button follows ensureOkAtom, so it is true exactly while the panel is
+    // ready: an Open in any other state would add a pane nobody can see.
+    setState(state: BuilderTermState) {
+        globalStore.set(this.stateAtom, state);
+        globalStore.set(this.ensureOkAtom, state === "ready");
     }
 
     setError(message: string) {
         globalStore.set(this.errorAtom, message);
-        globalStore.set(this.stateAtom, "error");
+        this.setState("error");
     }
 
     // Before the layout exists a failed bootstrap can simply run again; once a tab was mounted, only a
@@ -5600,7 +5860,7 @@ export class BuilderTermModel {
     }
 
     markSwitching() {
-        globalStore.set(this.stateAtom, "switching");
+        this.setState("switching");
     }
 
     watchTab(tabId: string) {
@@ -5618,9 +5878,7 @@ export class BuilderTermModel {
             return;
         }
         deleteLayoutModelForTab(tabId);
-        if (state === "ready") {
-            globalStore.set(this.stateAtom, "vanished");
-        }
+        this.setState(state === "ready" ? "vanished" : "switching");
     }
 
     handlePaneCount(count: number) {
@@ -5697,16 +5955,16 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Files:**
 - Create: `frontend/builder/builder-termpanel.tsx`, `frontend/builder/builder-termpanel.test.tsx`
-- Modify: `frontend/builder/builder-workspace.tsx` (whole file, 112 lines)
-- Modify: `frontend/builder/builder-appheader.tsx:4-9` (imports), `:131-159` (`BuilderAppHeader`)
+- Modify: `frontend/builder/builder-workspace.tsx` (whole file, 112 lines); Test: `frontend/builder/builder-workspace.test.tsx` (new)
+- Modify: `frontend/builder/builder-appheader.tsx:4-9` (imports), `:132-159` (`BuilderAppHeader`; the button is `:138-144`); Test: `frontend/builder/builder-appheader.test.tsx` (new)
 - Modify: `frontend/builder/store/builder-apppanel-model.ts` (add `getBuilderPreviewPartition`), `frontend/builder/store/builder-apppanel-model.test.ts` (append)
 - Modify: `frontend/builder/tabs/builder-previewtab.tsx:4` (import), `:215-223` (`<webview>`)
 
 **Interfaces:**
-- Consumes: Task 13 `openBuilderTerminal`; Task 14 `BuilderTermModel` (`stateAtom`, `errorAtom`, `tabIdAtom`, `ensureOkAtom`, `bootstrap()`, `retry()`, `handlePaneCount()`, `hasPanes()`), `BuilderTermMismatchMessage`, `BuilderFocusManager.setTerminalFocused()`, `mergeBuilderLayout`, `MinTerminalPercent`, `BuilderLayout`, `makeBuilderTileContents`; `TileLayout`, `getLayoutModelForStaticTab` (`@/layout/index`); `TabModelContext`, `getTabModelByTabId` (`frontend/app/store/tab-model.ts:54-80`).
+- Consumes: Task 13 `openBuilderTerminal`; Task 14 `BuilderTermModel` (`stateAtom`, `errorAtom`, `tabIdAtom`, `ensureOkAtom`, `bootstrap()`, `retry()`, `setState()`, `markSwitching()`, `handlePaneCount()`, `hasPanes()`), `BuilderTermMismatchMessage`, `BuilderFocusManager.setTerminalFocused()`, `mergeBuilderLayout`, `MinTerminalPercent`, `BuilderLayout`, `makeBuilderTileContents`; `TileLayout`, `getLayoutModelForStaticTab` (`@/layout/index`); `TabModelContext`, `getTabModelByTabId` (`frontend/app/store/tab-model.ts:54-80`).
 - Produces:
   - `BuilderTermPanel` (named export): runs the bootstrap on mount; renders `Starting terminals…`, the error with `Retry`, `BuilderTermMismatchMessage`, `Switching app…`, `The terminal tab is gone.` with `Retry`, or the tile layout inside `TabModelContext` with a `No terminals` / `Open terminal` overlay when `layoutModel.numLeafs` is 0; focus-capture or mouse-down inside sets builder focus to `"terminal"` when there are panes; accent border when the terminal side is focused
-  - `BuilderWorkspace`: horizontal `PanelGroup` (terminal `layout.terminal`, default 40, min 20 | app column), root `data-builder-focus="app"|"terminal"`, layout saved to rtinfo `builder:layout` with `terminal`
+  - `BuilderWorkspace`: horizontal `PanelGroup` (terminal `layout.terminal`, default 40, min 20 | app column), root `data-builder-focus="app"|"terminal"`, layout saved to rtinfo `builder:layout` with `terminal`; focus-capture or mouse-down anywhere in the app column (app panel or build panel) sets builder focus to `"app"`
   - Header "Open terminal" disabled until `ensureOkAtom` is true
   - `getBuilderPreviewPartition(builderId: string): string` = `builder-preview-<builderId>`; the Preview `<webview>` uses it
 
@@ -5834,10 +6092,125 @@ describe("getBuilderPreviewPartition", () => {
 });
 ```
 
+Create `frontend/builder/builder-appheader.test.tsx`:
+
+```tsx
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+// @vitest-environment happy-dom
+
+import { act, cleanup, render, screen } from "@testing-library/react";
+import { Provider } from "jotai";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: {} }));
+vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
+vi.mock("@/app/store/wps", () => ({ waveEventSubscribeSingle: vi.fn(() => () => {}) }));
+vi.mock("@/layout/index", () => ({ deleteLayoutModelForTab: vi.fn() }));
+vi.mock("@/store/global", async () => {
+    const { atom } = await import("jotai");
+    // One atom for every key: a component given a new atom on each render re-renders forever.
+    const settingAtom = atom(false);
+    return {
+        atoms: { builderId: atom("builder-1"), builderAppId: atom("draft/app"), staticTabId: atom(null) },
+        getApi: vi.fn(),
+        getSettingsKeyAtom: vi.fn(() => settingAtom),
+        WOS: { makeORef: (otype: string, oid: string) => `${otype}:${oid}` },
+    };
+});
+
+import { globalStore } from "@/app/store/jotaiStore";
+import { BuilderTermModel } from "@/builder/store/builder-term-model";
+import { BuilderAppHeader } from "./builder-appheader";
+
+describe("BuilderAppHeader Open terminal button", () => {
+    afterEach(() => {
+        cleanup();
+    });
+
+    it("is disabled until the terminal panel is ready, and again when it leaves ready", async () => {
+        const model = BuilderTermModel.getInstance();
+        model.setState("loading");
+        render(
+            <Provider store={globalStore}>
+                <BuilderAppHeader />
+            </Provider>
+        );
+        const button = screen.getByText("Open terminal").closest("button");
+        expect(button.disabled).toBe(true);
+        await act(async () => {
+            model.setState("ready");
+        });
+        expect(button.disabled).toBe(false);
+        await act(async () => {
+            model.markSwitching();
+        });
+        expect(button.disabled).toBe(true);
+    });
+});
+```
+
+Create `frontend/builder/builder-workspace.test.tsx`:
+
+```tsx
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+// @vitest-environment happy-dom
+
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { Provider } from "jotai";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/app/store/wshclientapi", () => ({
+    RpcApi: { GetRTInfoCommand: vi.fn(async () => ({})), SetRTInfoCommand: vi.fn(async () => {}) },
+}));
+vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
+vi.mock("@/store/global", async () => {
+    const { atom } = await import("jotai");
+    return { atoms: { builderId: atom("builder-1") } };
+});
+vi.mock("@/builder/builder-apppanel", async () => {
+    const { createElement } = await import("react");
+    return { BuilderAppPanel: () => createElement("div", null, "app panel") };
+});
+vi.mock("@/builder/builder-buildpanel", async () => {
+    const { createElement } = await import("react");
+    return { BuilderBuildPanel: () => createElement("div", null, "build output") };
+});
+vi.mock("@/builder/builder-termpanel", async () => {
+    const { createElement } = await import("react");
+    return { BuilderTermPanel: () => createElement("div", null, "terminals") };
+});
+
+import { globalStore } from "@/app/store/jotaiStore";
+import { BuilderFocusManager } from "@/builder/store/builder-focusmanager";
+import { BuilderWorkspace } from "./builder-workspace";
+
+describe("BuilderWorkspace", () => {
+    afterEach(() => {
+        cleanup();
+    });
+
+    it("moves builder focus to the app side when the build panel is clicked", async () => {
+        BuilderFocusManager.getInstance().setTerminalFocused();
+        render(
+            <Provider store={globalStore}>
+                <BuilderWorkspace />
+            </Provider>
+        );
+        fireEvent.mouseDown(await screen.findByText("build output"));
+        expect(BuilderFocusManager.getInstance().getFocusType()).toBe("app");
+        expect(document.querySelector("[data-builder-focus]").getAttribute("data-builder-focus")).toBe("app");
+    });
+});
+```
+
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `npx vitest run frontend/builder/builder-termpanel.test.tsx frontend/builder/store/builder-apppanel-model.test.ts`
-Expected: FAIL; `./builder-termpanel` cannot be resolved, and `getBuilderPreviewPartition is not a function`.
+Run: `npx vitest run frontend/builder/builder-termpanel.test.tsx frontend/builder/store/builder-apppanel-model.test.ts frontend/builder/builder-appheader.test.tsx frontend/builder/builder-workspace.test.tsx`
+Expected: FAIL: `builder-termpanel.test.tsx` fails to load (`./builder-termpanel` does not exist yet); the partition test fails (`getBuilderPreviewPartition` does not exist); the header test fails (throws, or the `disabled` assertion fails); the workspace test fails (throws, or the focus assertion fails).
 
 - [ ] **Step 3: Implement the panel**
 
@@ -6052,6 +6425,11 @@ const BuilderWorkspace = memo(() => {
         [updateLayout]
     );
 
+    // The app panel sets app focus itself; this also covers the build panel below it.
+    const handleAppColumnFocus = useCallback(() => {
+        BuilderFocusManager.getInstance().setAppFocused();
+    }, []);
+
     if (initialLayout == null) {
         return null;
     }
@@ -6072,6 +6450,8 @@ const BuilderWorkspace = memo(() => {
                         style={{
                             borderBottomRightRadius: 8,
                         }}
+                        onFocusCapture={handleAppColumnFocus}
+                        onMouseDownCapture={handleAppColumnFocus}
                     >
                         <PanelGroup direction="vertical" onLayout={handleVerticalLayout}>
                             <Panel defaultSize={initialLayout.app} minSize={20}>
@@ -6126,7 +6506,7 @@ In `frontend/builder/tabs/builder-previewtab.tsx`, change the import on line 4 t
                 />
 ```
 
-In `frontend/builder/builder-appheader.tsx`, add the imports `import { BuilderTermModel } from "@/builder/store/builder-term-model";` and `import { cn } from "@/util/util";`, then replace the "Open terminal" button inside `BuilderAppHeader` (lines 137-143) with:
+In `frontend/builder/builder-appheader.tsx`, add the imports `import { BuilderTermModel } from "@/builder/store/builder-term-model";` and `import { cn } from "@/util/util";`, then replace the "Open terminal" button inside `BuilderAppHeader` (lines 138-144) with:
 
 ```tsx
                 <button
@@ -6152,7 +6532,7 @@ Expected: all builder suites pass; tsc exit 0.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add frontend/builder/builder-termpanel.tsx frontend/builder/builder-termpanel.test.tsx frontend/builder/builder-workspace.tsx frontend/builder/builder-appheader.tsx frontend/builder/store/builder-apppanel-model.ts frontend/builder/store/builder-apppanel-model.test.ts frontend/builder/tabs/builder-previewtab.tsx
+git add frontend/builder/builder-termpanel.tsx frontend/builder/builder-termpanel.test.tsx frontend/builder/builder-workspace.tsx frontend/builder/builder-workspace.test.tsx frontend/builder/builder-appheader.tsx frontend/builder/builder-appheader.test.tsx frontend/builder/store/builder-apppanel-model.ts frontend/builder/store/builder-apppanel-model.test.ts frontend/builder/tabs/builder-previewtab.tsx
 git commit -m "feat(builder): terminal panel on the left of the builder window
 
 The builder window opens with a resizable terminal area beside the app,
@@ -6482,7 +6862,7 @@ describe("builder keys in keymodel", () => {
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `npx vitest run frontend/builder/store/builder-keys.test.ts frontend/app/store/keymodel-builder-keys.test.ts`
-Expected: FAIL. `./builder-keys` cannot be resolved. In the keymodel suite, the webview-keys and app-side `Cmd:w` cases pass already (that is today's builder behaviour), while the terminal-side `Cmd:w` (`closeFocusedNode` not called), `uxCloseBlock` on the last pane, `Cmd:d`, the focus move and the block hand-off fail.
+Expected: FAIL. `builder-keys.test.ts` fails to load (`./builder-keys` does not exist yet). In the keymodel suite, the webview-keys and app-side `Cmd:w` cases pass already (that is today's builder behaviour), while the terminal-side `Cmd:w` (`closeFocusedNode` not called), `uxCloseBlock` on the last pane, `Cmd:d`, the focus move and the block hand-off fail.
 
 - [ ] **Step 3: Implement the key tables**
 
@@ -6829,7 +7209,7 @@ The recipe is the one that held for the builder-by-hand run, with its addendum a
 - Never read from or write to the user's `~/.config`, `~/.local/share`, `~/waveapps`, dotfiles, or a running RemoteTerm (the user's dev profile is `~/.config/remoteterm-dev` and `~/.local/share/remoteterm-dev`; it may be running). Use `REMOTETERM_CONFIG_HOME`/`REMOTETERM_DATA_HOME`, never `REMOTETERM_HOME` (a legacy combined-home variable with different semantics).
 - Never run `task dev`, `electron-vite dev` or `npm run dev`.
 - `REMOTETERM_ISOLATED_PROFILE=1` is set as the recipe requires. Note in the report that nothing in this worktree reads it (`grep -rn ISOLATED_PROFILE emain frontend pkg cmd` finds nothing here); isolation rests on the config and data homes, `--user-data-dir`, and the scratch `HOME` and XDG dirs.
-- No window manager runs under Xvfb, so there is no title bar; the "title-bar close" check uses the renderer's `window.close()`, which takes the same BrowserWindow `close`/`closed` path. "Switch App" lives in a native context menu that cannot be clicked there; the check replays `switchBuilderApp`'s calls from the builder renderer (same RPCs, same `builder:<id>` route). Say both in the report.
+- No window manager runs under Xvfb, so there is no title bar; the "title-bar close" check uses the renderer's `window.close()`, which takes the same BrowserWindow `close`/`closed` path. "Switch App" lives in a native context menu that cannot be clicked there; the check replays `switchBuilderApp`'s calls from the builder renderer (same RPCs, same `builder:<id>` route). `BuilderTermModel` is a module singleton that the page does not expose on `window`, so the replay cannot call `markSwitching()` first; the report must say that the "Switching app…" state is covered by unit tests only (Tasks 14 and 15). Say both substitutions in the report.
 
 - [ ] **Step 1: Scratch root and baseline**
 
@@ -6846,7 +7226,8 @@ printf 'SCR=%q\nPORT=%q\nSTART=%q\nNODEBIN=%q\n' "$SCR" "$PORT" "$START" "$NODEB
 for d in ~/.config/remoteterm* ~/.local/share/remoteterm* ~/.config/RemoteTerm* ~/waveapps; do
     [ -e "$d" ] && find "$d" -maxdepth 3 -printf '%T@ %p\n' 2>/dev/null
 done | sort > "$SCR/logs/user-dirs-before.txt"
-stat -c '%Y %n' "$REPO/node_modules/.vite" "$REPO/node_modules/.vite-temp" 2>&1 > "$SCR/logs/vite-before.txt"
+stat -c '%Y %n' "$REPO/node_modules/.vite" "$REPO/node_modules/.vite-temp" > "$SCR/logs/vite-before.txt" 2>&1
+ls -d /tmp/xvfb-run.* 2>/dev/null | sort > "$SCR/logs/xvfb-before.txt"
 pgrep -a -f 'remoteterm|electron' > "$SCR/logs/live-processes-before.txt" || true
 ```
 
@@ -7037,6 +7418,8 @@ builder_tabs() { dbq "SELECT oid, json_extract(data,'\$.blockids') FROM db_tab W
 block_exists() { dbq "SELECT count(*) FROM db_block WHERE oid = ?" "$1"; }
 wait_file() { for _ in $(seq 100); do [ -s "$1" ] && return 0; sleep 0.1; done; echo "timeout waiting for $1"; return 1; }
 wait_dead() { for _ in $(seq 50); do kill -0 "$1" 2>/dev/null || return 0; sleep 0.1; done; echo "pid $1 still alive after 5s"; return 1; }
+# Session id of the launch that owns the debugging port; empty if nothing is listening for it.
+session_of_port() { local pid; pid=$(pgrep -o -f "remote-debugging-port=$PORT"); [ -n "$pid" ] && ps -o sid= -p "$pid" | tr -d ' '; }
 focused_block() { bcdp eval "document.activeElement?.closest('[data-blockid]')?.dataset.blockid ?? null"; }
 builder_focus() { bcdp eval "document.querySelector('[data-builder-focus]')?.dataset.builderFocus ?? null"; }
 dom_panes() { bcdp eval "document.querySelectorAll('[data-builder-term-panel] .block[data-blockid]').length"; }
@@ -7074,12 +7457,13 @@ exec env -i \
 Launch (run 1):
 
 ```bash
+source "$SCR/lib.sh"
 bash "$SCR/launch.sh" "$SCR" > "$SCR/logs/launch1.log" 2>&1 &
-LAUNCHER=$!
 sleep 20
-SID=$(ps -o sid= -p "$LAUNCHER" | tr -d ' ')
+SID=$(session_of_port)
+[ -n "$SID" ] || echo "ABORT: nothing runs with remote-debugging-port=$PORT; stop here and report launch1.log"
 ps -s "$SID" -o pid,ppid,args > "$SCR/logs/session1.txt"
-EL=$(pgrep -s "$SID" -f "remote-debugging-port=$PORT" | head -1)
+EL=$(pgrep -o -s "$SID" -x electron)
 SRV=$(pgrep -s "$SID" -f remotetermsrv | head -1)
 tr '\0' '\n' < /proc/$EL/environ | grep -E '^(DISPLAY|WAYLAND_DISPLAY|HOME|XDG_|REMOTETERM_)' > "$SCR/logs/preflight-environ.txt"
 tr '\0' '\n' < /proc/$SRV/environ | grep -E '^(DISPLAY|HOME|REMOTETERM_)' >> "$SCR/logs/preflight-environ.txt"
@@ -7240,7 +7624,7 @@ mcdp eval "window.api.openBuilder('draft/e2e1')"; sleep 8
 bcdp eval "(async () => { const id = window.globalStore.get(window.globalAtoms.builderId); await window.RpcApi.DeleteBuilderCommand(window.TabRpcClient, id); await new Promise((r) => setTimeout(r, 500)); await window.RpcApi.SetRTInfoCommand(window.TabRpcClient, { oref: 'builder:' + id, data: { 'builder:appid': null } }); await window.api.setBuilderWindowAppId(null); window.api.doRefresh(); return id; })()"
 ```
 
-Expected: all three paths PASS; after (a) and (b) the builder page is gone from `targets`; after (c) the window is still open and shows the app selection modal. (The tab bar of the app panel has a "Code" button, `frontend/builder/builder-apppanel.tsx`; any click inside the app column sets app focus.)
+Expected: all three paths PASS; after (a) and (b) the builder page is gone from `targets`; after (c) the window is still open and shows the app selection modal. For (c), before the replay, check `bcdp eval "typeof window.BuilderTermModel"`: it should print `"undefined"` (the model is not reachable), in which case record in the report that `markSwitching()` was not exercised end to end and is covered by unit tests only. If it is reachable, call `window.BuilderTermModel.getInstance().markSwitching()` first and record that instead. (The tab bar of the app panel has a "Code" button, `frontend/builder/builder-apppanel.tsx`; any click inside the app column sets app focus.)
 
 - [ ] **Step 10: S7 (sweep after a crash) and S10 (spoofed workspace tab survives)**
 
@@ -7260,8 +7644,10 @@ conn.execute("""UPDATE db_tab SET data = json_set(data, '$.meta."builder:owner"'
 conn.commit()
 PY
 bash "$SCR/launch.sh" "$SCR" > "$SCR/logs/launch2.log" 2>&1 &
-LAUNCHER=$!; sleep 20
-SID=$(ps -o sid= -p "$LAUNCHER" | tr -d ' ')
+sleep 20
+SID=$(session_of_port)
+[ -n "$SID" ] || echo "ABORT: the second launch is not running; stop here and report launch2.log"
+EL=$(pgrep -o -s "$SID" -x electron)
 SRV=$(pgrep -s "$SID" -f remotetermsrv | head -1)
 grep -n -e "builder sweep: removed" -e "WAVESRV-ESTART" "$SCR/data/rtapp.log" | tail -4
 builder_tabs
@@ -7274,7 +7660,7 @@ The direct DB write runs only while no process of the session is alive (the `ps 
 - [ ] **Step 11: Cleanup and isolation proof**
 
 ```bash
-kill -TERM "$(pgrep -s "$SID" -f "remote-debugging-port=$PORT" | head -1)"; sleep 5
+kill -TERM "$(pgrep -o -s "$SID" -x electron)"; sleep 5
 [ -n "$(ps -s "$SID" -o pid=)" ] && { kill -TERM -- -"$SID"; sleep 5; kill -KILL -- -"$SID" 2>/dev/null; }
 ps -s "$SID" -o pid,args
 for d in ~/.config/remoteterm* ~/.local/share/remoteterm* ~/.config/RemoteTerm* ~/waveapps; do
@@ -7284,9 +7670,10 @@ diff "$SCR/logs/user-dirs-before.txt" "$SCR/logs/user-dirs-after.txt" > "$SCR/lo
 ls -d ~/waveapps/draft/e2e1 2>/dev/null && echo "ISOLATION FAIL: app folder created in the real HOME"
 stat -c '%Y %n' "$REPO/node_modules/.vite" "$REPO/node_modules/.vite-temp" 2>&1 | diff "$SCR/logs/vite-before.txt" -
 journalctl --user --since "$START" --no-pager | grep -iE 'remoteterm|\.scope'
+ls -d /tmp/xvfb-run.* 2>/dev/null | sort | comm -13 "$SCR/logs/xvfb-before.txt" - | tee "$SCR/logs/xvfb-new.txt"
 ```
 
-Expected: the session is empty; `user-dirs-diff.txt` is empty. If the user's live dev instance was running (see `live-processes-before.txt`), its own database files may show new mtimes: list each changed path in the report and show, from the preflight fd snapshots, that none of this run's processes had it open; never touch those files. `~/waveapps/draft/e2e1` does not exist; the `.vite` stamps are unchanged; the journal has no new unit or scope from this run. Copy the evidence you cite (logs, PNGs) into the report or next to it under `$SCR`, then `chmod -R u+w "$SCR/gomod"` and `rm -rf "$SCR"` (Go marks its module cache read-only). Remove any `/tmp/xvfb-run.*` directory this run created.
+Expected: the session is empty; `user-dirs-diff.txt` is empty. If the user's live dev instance was running (see `live-processes-before.txt`), its own database files may show new mtimes: list each changed path in the report and show, from the preflight fd snapshots, that none of this run's processes had it open; never touch those files. `~/waveapps/draft/e2e1` does not exist; the `.vite` stamps are unchanged; the journal has no new unit or scope from this run. Copy the evidence you cite (logs, PNGs) into the report or next to it under `$SCR`, then `chmod -R u+w "$SCR/gomod"` and `rm -rf "$SCR"` (Go marks its module cache read-only). Remove only the `/tmp/xvfb-run.*` directories listed in `xvfb-new.txt` (created during this run; anything in `xvfb-before.txt` belongs to someone else), before deleting `$SCR`: `xargs -r rm -rf < "$SCR/logs/xvfb-new.txt"`.
 
 - [ ] **Step 12: Report**
 
@@ -7302,7 +7689,7 @@ Write `.planning/builder-terminal/E2E-REPORT.md`: the scratch root, launch comma
 |---|---|---|
 | D1 Create (`CreateBuilderTab`, meta at insert, no workspace) | 2 | `TestCreateBuilderTab` |
 | D1 Is-builder-tab predicate (owner + no workspace, errors = not builder, `tx.Context()`) | 1 | `TestIsBuilderTab`, `TestUpdateObjectMetaConnectionOnMissingBlockIsNotFound` |
-| D1 Delete (missing no-op, refusals, per-block errors keep tab) | 2 | `TestDeleteBuilderTab*` |
+| D1 Delete (missing no-op, refusals, per-block errors keep tab, re-read in the final transaction) | 2 | `TestDeleteBuilderTab*`, incl. `TestDeleteBuilderTabKeepsTabThatGainedABlock` |
 | D1 Find (SQL on owner, any-owner, predicate filter) | 1, 2 | `TestDBFindTabIdsByBuilderOwner`, `TestFindBuilderTabs` |
 | D1 Cascade skip; BlockClose right after delete | 3 | `TestDeleteBlockLastBlockOfBuilderTabKeepsTab`, `TestDeleteBlockPublishesBlockCloseWhenCascadeFails` |
 | D1 Reserved `builder:` tab meta in `UpdateObjectMeta` | 1, 6 | `TestUpdateObjectMetaRejectsBuilderKeysOnTabs`, `TestReservedTabMetaThroughSetMetaAndObjectService` |
@@ -7311,7 +7698,7 @@ Write `.planning/builder-terminal/E2E-REPORT.md`: the scratch root, launch comma
 | D1 Workspace env (`WORKSPACEID` omitted) | 4 | `TestAddTabAndWorkspaceEnvOmitsEmptyWorkspaceId` |
 | D1 Block def pins `term:durable` false | 4 | `TestMakeBuilderTerminalBlockDefPinsDurableOff` |
 | D2 Caller check (pure function, UUID, routes) + test helper | 5, 6, 7, 8 | `TestCheckBuilderCaller`, `TestMakeRpcSourceContextForTest`, `Test*RejectsNonElectronCallers`, `TestDeleteBuilderCommandAcceptsElectronAndOwnRendererOnly` |
-| D2 Keyed lock, entries kept, `ctx.Err()` after acquire | 5, 6, 8 | `TestBuilderLockIsPerBuilder`, `TestWithBuilderLockSerialises`, `TestEnsureBuilderTabReturnsWhenRpcContextIsDone`, `TestBuilderLockSerialisesDeleteAndEnsures` |
+| D2 Keyed lock, entries kept, `ctx.Err()` after acquire | 5, 6, 7, 8 | `TestBuilderLockIsPerBuilder`, `TestWithBuilderLockSerialises`, `TestEnsureBuilderTabWaitsForBuilderLock`, `TestOpenBuilderTerminalWaitsForBuilderLock`, `TestDeleteBuilderCommandWaitsForBuilderLock`, `TestEnsureBuilderTabReturnsWhenRpcContextIsDone`, `TestBuilderLockSerialisesDeleteAndEnsures` (row ledger) |
 | D2 Detached 15 s write context, one goroutine, broadcast once | 5, 6, 7, 8 | `TestMakeBuilderWriteContextIsDetachedAndTracksUpdates`, `Test*BroadcastsUpdates`/`*LayoutUpdate`/`*TabDelete` |
 | D2 `ResolveAppDirForAppId` | 4 | `TestResolveAppDirForAppId*` |
 | D2 `EnsureBuilderTabCommand` | 6 | `TestEnsureBuilderTab*` |
@@ -7321,7 +7708,7 @@ Write `.planning/builder-terminal/E2E-REPORT.md`: the scratch root, launch comma
 | D4 `ensure-builder-tab` IPC (window's own ids; gating confirmed) | 10 | tsc; E2E Step 5 |
 | D4 `switchBuilderApp` awaits `setBuilderWindowAppId(null)` | 14 | `switchBuilderApp` test in `builder-apppanel-switch.test.ts` |
 | D4 `open-builder-terminal` (no main window, 64-char strings) | 7, 10 | `parseBuilderTerminalTarget` tests; E2E Step 6 |
-| D4 `destroyBuilderWindow` order; `closed` fallback kept | 10 | `runBuilderTeardown` tests; E2E Step 9 |
+| D4 `destroyBuilderWindow` order (hidden at once, single teardown); `closed` fallback kept | 10 | `runBuilderTeardown` tests incl. the concurrent-calls test; E2E Step 9 |
 | D4 One switch path; modal unchanged | 14 | confirmed in "Spec items confirmed" |
 | D5 Subscriptions in `initBuilder` (no `userinput`) | 11 | `global-builder-subs.test.ts` |
 | D5 `staticTabIdAtom` writable, only builder writes; `uiContext` live | 11, 14 | `uiContext` tests, `static-tab-writers.test.ts` |
@@ -7330,10 +7717,10 @@ Write `.planning/builder-terminal/E2E-REPORT.md`: the scratch root, launch comma
 | D5 Tab vanishes; switching flag | 14, 15 | `drops the layout model and offers a reload...`, `shows switching...`, panel tests |
 | D5 Layout (horizontal split, default 40, min 20) | 14, 15 | `builder-layout.test.ts`; E2E Step 5 |
 | D5 Empty state | 15 | `shows the empty state over the layout...` |
-| D5 Header button disabled until Ensure | 14, 15 | `ensureOkAtom` assertions in the model tests |
+| D5 Header button disabled until Ensure (stricter: only while ready, deviation 12) | 14, 15 | `ensureOkAtom` assertions in the model tests, `builder-appheader.test.tsx` |
 | D5 Reload keeps panes | 6, 14 | `TestEnsureBuilderTabIsIdempotent`; E2E Step 5 |
 | D5 Preview partition | 15 | `getBuilderPreviewPartition` test; existing `keeps an explicit partition` (`emain/emain-websecurity.test.ts:169-173`) |
-| D6 Focus sides, initial focus, zero panes to app, borders | 14, 15 | `moves builder focus to the terminal...`, panel tests |
+| D6 Focus sides, initial focus, zero panes to app, borders | 14, 15 | `moves builder focus to the terminal...`, panel tests, `builder-workspace.test.tsx` |
 | D6 Key table, webview key list | 16 | `builder-keys.test.ts`, `keymodel-builder-keys.test.ts` |
 | D6 Close rule; keep-alive closed not hidden | 13, 16 | `closes the last pane ... never the tab`, `closes keep-alive blocks instead of hiding them` |
 | D6 Central create intercept, `replaceBlock` no-op, return `null` | 13 | `global-builder-create.test.ts` |
@@ -7374,10 +7761,10 @@ Write `.planning/builder-terminal/E2E-REPORT.md`: the scratch root, launch comma
 | Go: BlockClose despite cascade error | `TestDeleteBlockPublishesBlockCloseWhenCascadeFails` |
 | Go: UpdateWorkspaceTabIds | `TestUpdateWorkspaceTabIdsRejectsBuilderTab` |
 | Go: non-local connection via SetMeta, CreateBlock, CreateSubBlock | `TestBuilderBlocksStayLocalThroughRpcs` |
-| Go: Ensure cases | `TestEnsureBuilderTab*` (10 tests) |
-| Go: Open cases | `TestOpenBuilderTerminal*` (11 tests) |
+| Go: Ensure cases | `TestEnsureBuilderTab*` (11 tests) |
+| Go: Open cases | `TestOpenBuilderTerminal*` (12 tests) |
 | Go: DeleteBuilderCommand regardless of rtinfo; cancelled caller | `TestDeleteBuilderCommandRemovesEveryOwnerTab`, `TestDeleteBuilderCommandCompletesWhenCallerContextIsCancelled` |
-| Go: keyed lock under `-race` | `TestBuilderLockSerialisesDeleteAndEnsures` (Task 17 runs `-race`) |
+| Go: keyed lock under `-race` | `TestBuilderLockSerialisesDeleteAndEnsures` with its row ledger, and the three `*WaitsForBuilderLock` tests (Task 17 runs `-race`) |
 | Go: sweep | `TestSweepBuilderTabsRemovesBuilderTabsOnly`, `TestBuilderSweepRunsBetweenControllerInitAndReconnect` |
 | Go: makeSwapToken | `TestAddTabAndWorkspaceEnvOmitsEmptyWorkspaceId` |
 | Vitest: layout default/merge | `builder-layout.test.ts` |
@@ -7388,7 +7775,7 @@ Write `.planning/builder-terminal/E2E-REPORT.md`: the scratch root, launch comma
 | Vitest: create intercept | `global-builder-create.test.ts` |
 | Vitest: bootstrap order; no layout model before step 3 | `pins the tab and its layout before setting the static tab, and builds no layout model` |
 | Vitest: appid mismatch | `mounts nothing when Electron's app id differs...`, panel mismatch test |
-| Vitest: header disabled before Ensure | `ensureOkAtom` assertions (Task 14) |
+| Vitest: header disabled before Ensure | `ensureOkAtom` assertions (Task 14), `builder-appheader.test.tsx` (Task 15) |
 | Vitest: tab vanished via delete update | `drops the layout model and offers a reload when the tab is deleted` |
 | Vitest: split handlers honour `focused`, insert fallback | `backendsplit.test.ts` |
 | Vitest: main windows never write `staticTabIdAtom` | `static-tab-writers.test.ts` |
