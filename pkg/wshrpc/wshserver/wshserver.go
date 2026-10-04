@@ -1232,7 +1232,7 @@ func (ws *WshServer) CheckGoVersionCommand(ctx context.Context) (*wshrpc.Command
 	fullConfig := watcher.GetFullConfig()
 	goPath := fullConfig.Settings.TsunamiGoPath
 
-	result := build.CheckGoVersion(goPath)
+	result := build.CheckGoVersion(goPath, "")
 
 	return &wshrpc.CommandCheckGoVersionRtnData{
 		GoStatus:    result.GoStatus,

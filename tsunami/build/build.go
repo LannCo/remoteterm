@@ -6,6 +6,7 @@ package build
 import (
 	"archive/zip"
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
@@ -28,7 +29,16 @@ import (
 	"golang.org/x/mod/modfile"
 )
 
-const MinSupportedGoMinorVersion = 22
+const (
+	DefaultMinGoVersion = "1.22"
+	goVersionTimeout    = 10 * time.Second
+
+	GoStatus_Ok         = "ok"
+	GoStatus_NotFound   = "notfound"
+	GoStatus_BadVersion = "badversion"
+	GoStatus_Error      = "error"
+)
+
 const TsunamiUIImportPath = "github.com/LannCo/remoteterm/tsunami/ui"
 const MainAppFileName = "app.go"
 
@@ -101,6 +111,7 @@ type BuildOpts struct {
 	SdkVersion     string
 	NodePath       string
 	GoPath         string
+	MinGoVersion   string
 	MoveFileBack   bool
 	OutputCapture  *OutputCapture
 }
@@ -128,6 +139,7 @@ type GoVersionCheckResult struct {
 	GoStatus    string
 	GoPath      string
 	GoVersion   string
+	Version     string
 	ErrorString string
 }
 
@@ -168,85 +180,56 @@ func FindGoExecutable() (string, error) {
 	return "", fmt.Errorf("go command not found in PATH or common installation locations")
 }
 
-func CheckGoVersion(customGoPath string) GoVersionCheckResult {
-	var goPath string
-	var err error
-
-	if customGoPath != "" {
-		goPath = customGoPath
-	} else {
-		goPath, err = FindGoExecutable()
-		if err != nil {
-			return GoVersionCheckResult{
-				GoStatus:    "notfound",
-				GoPath:      "",
-				GoVersion:   "",
-				ErrorString: "",
-			}
+func CheckGoVersion(customGoPath string, minGoVersion string) GoVersionCheckResult {
+	if minGoVersion == "" {
+		minGoVersion = DefaultMinGoVersion
+	}
+	goPath := customGoPath
+	if goPath != "" {
+		if _, err := os.Stat(goPath); err != nil {
+			return GoVersionCheckResult{GoStatus: GoStatus_NotFound, GoPath: goPath}
 		}
+	} else {
+		found, err := FindGoExecutable()
+		if err != nil {
+			return GoVersionCheckResult{GoStatus: GoStatus_NotFound}
+		}
+		goPath = found
 	}
 
-	cmd := exec.Command(goPath, "version")
+	ctx, cancel := context.WithTimeout(context.Background(), goVersionTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, goPath, "version")
+	cmd.Env = goCmdEnv()
 	output, err := cmd.Output()
 	if err != nil {
 		return GoVersionCheckResult{
-			GoStatus:    "error",
+			GoStatus:    GoStatus_Error,
 			GoPath:      goPath,
-			GoVersion:   "",
-			ErrorString: fmt.Sprintf("failed to run 'go version': %v", err),
+			ErrorString: fmt.Sprintf("failed to run '%s version': %v", goPath, err),
 		}
 	}
 
 	versionStr := strings.TrimSpace(string(output))
-
-	versionRegex := regexp.MustCompile(`go(1\.\d+)`)
-	matches := versionRegex.FindStringSubmatch(versionStr)
-	if len(matches) < 2 {
+	goVer, ok := ParseGoVersionOutput(versionStr)
+	if !ok {
 		return GoVersionCheckResult{
-			GoStatus:    "error",
+			GoStatus:    GoStatus_Error,
 			GoPath:      goPath,
 			GoVersion:   versionStr,
 			ErrorString: fmt.Sprintf("unable to parse go version from: %s", versionStr),
 		}
 	}
 
-	goVersion := matches[1]
-
-	minorRegex := regexp.MustCompile(`1\.(\d+)`)
-	minorMatches := minorRegex.FindStringSubmatch(goVersion)
-	if len(minorMatches) < 2 {
-		return GoVersionCheckResult{
-			GoStatus:    "error",
-			GoPath:      goPath,
-			GoVersion:   versionStr,
-			ErrorString: fmt.Sprintf("unable to parse minor version from: %s", goVersion),
-		}
+	status := GoStatus_Ok
+	if CompareGoVersions(goVer, minGoVersion) < 0 {
+		status = GoStatus_BadVersion
 	}
-
-	minor, err := strconv.Atoi(minorMatches[1])
-	if err != nil {
-		return GoVersionCheckResult{
-			GoStatus:    "error",
-			GoPath:      goPath,
-			GoVersion:   versionStr,
-			ErrorString: fmt.Sprintf("failed to parse minor version: %v", err),
-		}
-	}
-
-	if minor < MinSupportedGoMinorVersion {
-		return GoVersionCheckResult{
-			GoStatus:    "badversion",
-			GoPath:      goPath,
-			GoVersion:   versionStr,
-			ErrorString: "",
-		}
-	}
-
 	return GoVersionCheckResult{
-		GoStatus:    "ok",
-		GoPath:      goPath,
-		GoVersion:   versionStr,
-		ErrorString: "",
+		GoStatus:  status,
+		GoPath:    goPath,
+		GoVersion: versionStr,
+		Version:   goVer,
 	}
 }
 
@@ -264,16 +247,20 @@ func verifyEnvironment(verbose bool, opts BuildOpts) (*BuildEnv, error) {
 		}
 	}
 
-	result := CheckGoVersion(opts.GoPath)
+	minGoVersion := opts.MinGoVersion
+	if minGoVersion == "" {
+		minGoVersion = DefaultMinGoVersion
+	}
+	result := CheckGoVersion(opts.GoPath, minGoVersion)
 
 	switch result.GoStatus {
-	case "notfound":
+	case GoStatus_NotFound:
 		return nil, fmt.Errorf("go command not found")
-	case "badversion":
-		return nil, fmt.Errorf("go version 1.%d or higher required, found: %s", MinSupportedGoMinorVersion, result.GoVersion)
-	case "error":
+	case GoStatus_BadVersion:
+		return nil, fmt.Errorf("go version %s or higher required, found: %s", minGoVersion, result.GoVersion)
+	case GoStatus_Error:
 		return nil, fmt.Errorf("%s", result.ErrorString)
-	case "ok":
+	case GoStatus_Ok:
 		if verbose {
 			if opts.GoPath != "" {
 				oc.Printf("[debug] Using custom go path: %s", result.GoPath)
@@ -286,12 +273,7 @@ func verifyEnvironment(verbose bool, opts BuildOpts) (*BuildEnv, error) {
 		return nil, fmt.Errorf("unexpected go status: %s", result.GoStatus)
 	}
 
-	versionRegex := regexp.MustCompile(`go(1\.\d+)`)
-	matches := versionRegex.FindStringSubmatch(result.GoVersion)
-	if len(matches) < 2 {
-		return nil, fmt.Errorf("unable to parse go version from: %s", result.GoVersion)
-	}
-	goVersion := matches[1]
+	goVersion := result.Version
 
 	var err error
 
@@ -419,6 +401,7 @@ func createGoMod(tempDir, appNS, appName string, buildEnv *BuildEnv, opts BuildO
 	// Run go mod tidy to clean up dependencies
 	tidyCmd := exec.Command(buildEnv.GoPath, "mod", "tidy")
 	tidyCmd.Dir = tempDir
+	tidyCmd.Env = goCmdEnv()
 
 	if verbose {
 		oc.Printf("[debug] Running go mod tidy")
@@ -760,6 +743,7 @@ func runGoBuild(tempDir string, buildEnv *BuildEnv, opts BuildOpts) (string, err
 	args := append([]string{"build", "-o", outputPath}, ".")
 	buildCmd := exec.Command(buildEnv.GoPath, args...)
 	buildCmd.Dir = tempDir
+	buildCmd.Env = goCmdEnv()
 
 	if oc != nil || opts.Verbose {
 		oc.Printf("[debug] Running: %s", strings.Join(buildCmd.Args, " "))
