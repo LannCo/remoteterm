@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { BuilderAppPanelModel, getBuilderPreviewPartition } from "@/builder/store/builder-apppanel-model";
-import { atoms } from "@/store/global";
+import { atoms, getApi } from "@/store/global";
 import { useAtomValue } from "jotai";
-import { memo, useState } from "react";
+import { memo, useEffect, useState } from "react";
 
 const EmptyStateView = memo(({ showCreate }: { showCreate: boolean }) => {
     const model = BuilderAppPanelModel.getInstance();
@@ -184,6 +184,36 @@ const BuilderPreviewTab = memo(() => {
     const isResizing = useAtomValue(model.resizeDraggingAtom);
     const fileExists = originalContent.length > 0;
     const [lastKnownUrl, setLastKnownUrl] = useState<string>(null);
+
+    const hasWebview = lastKnownUrl != null;
+
+    useEffect(() => {
+        const webview = model.webviewRef.current;
+        if (!hasWebview || webview == null) {
+            return;
+        }
+        let domReady = false;
+        const handleDomReady = () => {
+            domReady = true;
+        };
+        const handleFocus = () => {
+            if (!domReady) {
+                return;
+            }
+            getApi().setWebviewFocus(webview.getWebContentsId());
+        };
+        const handleBlur = () => {
+            getApi().setWebviewFocus(null);
+        };
+        webview.addEventListener("dom-ready", handleDomReady);
+        webview.addEventListener("focus", handleFocus);
+        webview.addEventListener("blur", handleBlur);
+        return () => {
+            webview.removeEventListener("dom-ready", handleDomReady);
+            webview.removeEventListener("focus", handleFocus);
+            webview.removeEventListener("blur", handleBlur);
+        };
+    }, [hasWebview]);
 
     const status = builderStatus?.status || "init";
     const isWebViewActive = status === "running" && builderStatus?.port && builderStatus.port !== 0;

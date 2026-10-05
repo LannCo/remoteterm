@@ -22,6 +22,7 @@ vi.mock("@/store/global", async () => {
 });
 
 import { globalStore } from "@/app/store/jotaiStore";
+import { getApi } from "@/store/global";
 import { BuilderAppPanelModel } from "@/builder/store/builder-apppanel-model";
 import { BuilderPreviewTab } from "./tabs/builder-previewtab";
 
@@ -53,5 +54,29 @@ describe("BuilderPreviewTab webview", () => {
             globalStore.set(model.resizeDraggingAtom, false);
         });
         expect(webview.style.pointerEvents).toBe("auto");
+    });
+
+    it("reports the preview webview focus to the main process so the builder keys are forwarded", async () => {
+        const setWebviewFocus = vi.fn();
+        vi.mocked(getApi).mockReturnValue({ setWebviewFocus } as unknown as ReturnType<typeof getApi>);
+        const model = BuilderAppPanelModel.getInstance();
+        globalStore.set(model.builderStatusAtom, { status: "running", port: 5555 } as BuilderStatusData);
+        const { container } = render(
+            <Provider store={globalStore}>
+                <BuilderPreviewTab />
+            </Provider>
+        );
+        const webview = container.querySelector("webview") as HTMLElement & { getWebContentsId: () => number };
+        webview.getWebContentsId = () => 42;
+
+        webview.dispatchEvent(new Event("focus"));
+        expect(setWebviewFocus).not.toHaveBeenCalled();
+
+        webview.dispatchEvent(new Event("dom-ready"));
+        webview.dispatchEvent(new Event("focus"));
+        expect(setWebviewFocus).toHaveBeenLastCalledWith(42);
+
+        webview.dispatchEvent(new Event("blur"));
+        expect(setWebviewFocus).toHaveBeenLastCalledWith(null);
     });
 });
