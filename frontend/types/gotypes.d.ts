@@ -653,6 +653,7 @@ declare global {
     // wshrpc.CommandRequestBuilderRebuildData
     type CommandRequestBuilderRebuildData = {
         builderid: string;
+        autorun?: boolean;
     };
 
     // wshrpc.CommandResolveIdsData

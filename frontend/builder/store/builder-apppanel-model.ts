@@ -16,6 +16,9 @@ import { decideReload, type ReloadDecision } from "./decide-reload";
 
 export type TabType = "preview" | "files" | "code" | "secrets" | "configdata";
 
+// Matches buildercontroller.AutoRunDeclinedCode.
+export const AutoRunDeclinedCode = "ERR-AUTORUN-DECLINED";
+
 export type EnvVar = {
     name: string;
     value: string;
@@ -43,6 +46,7 @@ export class BuilderAppPanelModel {
     appGoMissingAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
     diskChangedAtom = atom<string>(null) as PrimitiveAtom<string>;
     externalChangeAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
+    autoRunDeclinedAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
     watchStatusAtom = atom<BuilderWatchStatusData>(null) as PrimitiveAtom<BuilderWatchStatusData>;
     appDirAtom = atom<string>(null) as PrimitiveAtom<string>;
     noticeAtom: PrimitiveAtom<string> = BuilderNoticeAtom;
@@ -285,6 +289,7 @@ export class BuilderAppPanelModel {
     async requestRebuild() {
         const builderId = globalStore.get(atoms.builderId);
         globalStore.set(this.externalChangeAtom, false);
+        globalStore.set(this.autoRunDeclinedAtom, false);
         try {
             await RpcApi.RequestBuilderRebuildCommand(TabRpcClient, { builderid: builderId });
         } catch (err) {
@@ -295,6 +300,22 @@ export class BuilderAppPanelModel {
 
     async startBuilder() {
         return this.requestRebuild();
+    }
+
+    // Opening an app must not compile and run whatever is on disk. The server builds only inputs
+    // the user has started by hand before; for anything else the Start button is the way in.
+    async autoStartBuilder() {
+        const builderId = globalStore.get(atoms.builderId);
+        try {
+            await RpcApi.RequestBuilderRebuildCommand(TabRpcClient, { builderid: builderId, autorun: true });
+        } catch (err) {
+            if (String(err?.message ?? err).includes(AutoRunDeclinedCode)) {
+                globalStore.set(this.autoRunDeclinedAtom, true);
+                return;
+            }
+            console.error("Failed to start the app:", err);
+            globalStore.set(this.errorAtom, `Failed to rebuild: ${err.message || "Unknown error"}`);
+        }
     }
 
     async restartBuilder() {
@@ -382,7 +403,7 @@ export class BuilderAppPanelModel {
                 if (decoded.trim() !== "") {
                     const currentStatus = globalStore.get(this.builderStatusAtom);
                     if (currentStatus?.status !== "running" && currentStatus?.status !== "building") {
-                        await this.startBuilder();
+                        await this.autoStartBuilder();
                     }
                 }
             }

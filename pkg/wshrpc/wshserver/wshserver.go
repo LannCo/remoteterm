@@ -1199,7 +1199,11 @@ func (ws *WshServer) RequestBuilderRebuildCommand(ctx context.Context, data wshr
 	if err != nil {
 		return err
 	}
-	buildercontroller.GetOrCreateController(data.BuilderId).RequestRebuild(appId, builderEnv)
+	bc := buildercontroller.GetOrCreateController(data.BuilderId)
+	if data.AutoRun {
+		return bc.RequestAutoRun(appId, builderEnv)
+	}
+	bc.RequestUserRebuild(appId, builderEnv)
 	return nil
 }
 

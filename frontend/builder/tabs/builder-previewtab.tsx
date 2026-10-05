@@ -145,6 +145,30 @@ const StoppedStateView = memo(({ onStart }: { onStart: () => void }) => {
 
 StoppedStateView.displayName = "StoppedStateView";
 
+const AutoRunDeclinedView = memo(({ onStart }: { onStart: () => void }) => {
+    return (
+        <div className="w-full h-full flex items-center justify-center bg-background">
+            <div className="flex flex-col items-center gap-6 max-w-[500px] text-center px-8">
+                <div className="flex flex-col gap-3">
+                    <h2 className="text-2xl font-semibold text-primary">Review before starting</h2>
+                    <p className="text-base text-secondary leading-relaxed">
+                        This app has changed since you last started it, so it was not started automatically. Building
+                        runs the app with its bound secrets: check the code, then start it.
+                    </p>
+                </div>
+                <button
+                    onClick={onStart}
+                    className="px-6 py-2 bg-accent text-primary font-semibold rounded hover:bg-accent/80 transition-colors cursor-pointer"
+                >
+                    Start App
+                </button>
+            </div>
+        </div>
+    );
+});
+
+AutoRunDeclinedView.displayName = "AutoRunDeclinedView";
+
 const MissingAppGoView = memo(() => {
     const model = BuilderAppPanelModel.getInstance();
     const isSeeding = useAtomValue(model.isSeedingAtom);
@@ -181,6 +205,7 @@ const BuilderPreviewTab = memo(() => {
     const builderStatus = useAtomValue(model.builderStatusAtom);
     const builderId = useAtomValue(atoms.builderId);
     const appGoMissing = useAtomValue(model.appGoMissingAtom);
+    const autoRunDeclined = useAtomValue(model.autoRunDeclinedAtom);
     const isResizing = useAtomValue(model.resizeDraggingAtom);
     const fileExists = originalContent.length > 0;
     const [lastKnownUrl, setLastKnownUrl] = useState<string>(null);
@@ -231,6 +256,8 @@ const BuilderPreviewTab = memo(() => {
     } else if (!isLoading && !isWebViewActive) {
         if (builderStatus?.status === "error") {
             overlay = <ErrorStateView errorMsg={builderStatus?.errormsg || ""} />;
+        } else if (fileExists && status === "init" && autoRunDeclined) {
+            overlay = <AutoRunDeclinedView onStart={() => model.startBuilder()} />;
         } else if (!fileExists || status === "init") {
             overlay = <EmptyStateView showCreate={!fileExists} />;
         } else if (status === "building") {

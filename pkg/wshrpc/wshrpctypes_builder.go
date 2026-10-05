@@ -113,6 +113,9 @@ type CommandStartBuilderData struct {
 
 type CommandRequestBuilderRebuildData struct {
 	BuilderId string `json:"builderid"`
+	// AutoRun marks the start the builder makes on opening an app. The server then builds only
+	// inputs the user has started by hand before, and otherwise answers ERR-AUTORUN-DECLINED.
+	AutoRun bool `json:"autorun,omitempty"`
 }
 
 type CommandWatchBuilderAppData struct {
