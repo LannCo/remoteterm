@@ -263,16 +263,35 @@ func DeleteApp(appId string) error {
 		return err
 	}
 
+	// A symlinked namespace or app folder would send the recursive delete outside the app
+	// store, so the refusal comes before anything is removed.
+	if err := CheckNoSymlinks(appDir); err != nil {
+		return err
+	}
+
 	// Bindings go first: if their removal fails the app is still there to retry, whereas
 	// a surviving file with no app would be inherited by the next app with this id.
 	if err := deleteSecretBindings(appId); err != nil {
 		return err
 	}
 
-	if err := os.RemoveAll(appDir); err != nil {
+	return removeAppDir(appDir)
+}
+
+// The namespace folder is opened as a root, so a symlink swapped in after the check can
+// only be removed as a link; RemoveAll through the root never follows it out.
+func removeAppDir(appDir string) error {
+	nsRoot, err := openAppRoot(filepath.Dir(appDir))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
 		return fmt.Errorf("failed to delete app directory: %w", err)
 	}
-
+	defer nsRoot.Close()
+	if err := nsRoot.RemoveAll(filepath.Base(appDir)); err != nil {
+		return fmt.Errorf("failed to delete app directory: %w", err)
+	}
 	return nil
 }
 
