@@ -5,6 +5,7 @@ package wshserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"slices"
@@ -32,6 +33,9 @@ const (
 	BuilderTargetAction_SplitDown  = "splitdown"
 )
 
+// Wrapped by every caller-check refusal, so callers and tests can tell it from a later failure.
+var ErrBuilderCallerRefused = errors.New("not available to this caller")
+
 var (
 	builderLocksLock sync.Mutex
 	builderLocks     = make(map[string]*sync.Mutex)
@@ -53,7 +57,16 @@ func checkBuilderCaller(source string, builderId string, allowRenderer bool) err
 	if allowRenderer && source == wshutil.MakeBuilderRouteId(builderId) {
 		return nil
 	}
-	return fmt.Errorf("builder terminal commands are not available to %q", source)
+	return fmt.Errorf("builder commands are %w (%q)", ErrBuilderCallerRefused, source)
+}
+
+// Builder rtinfo holds the app id and environment variables a build runs with, so only the
+// builder's own window and Electron may touch it. Other objects' rtinfo stays open.
+func checkRTInfoCaller(source string, oref remotetermobj.ORef) error {
+	if oref.OType != remotetermobj.OType_Builder {
+		return nil
+	}
+	return checkBuilderCaller(source, oref.OID, true)
 }
 
 // Entries are never removed: there is one per builder window per process, and the caller check stops

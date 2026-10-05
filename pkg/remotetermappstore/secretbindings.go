@@ -10,10 +10,20 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 
 	"github.com/LannCo/remoteterm/pkg/remotetermbase"
 )
+
+const (
+	// The bindings used to be <app folder>/secret-bindings.json.
+	legacySecretBindingsFileName = "secret-bindings.json"
+	maxSecretBindingsSize        = 1024 * 1024
+)
+
+// Serialises first-access migrations so two readers cannot both move the same file.
+var legacyBindingsMigrationLock sync.Mutex
 
 // Bindings live outside the app folder so a process that can write the folder (an
 // agent, an editor plugin) cannot bind the user's stored secrets into its own code.
@@ -34,6 +44,7 @@ func ReadAppSecretBindings(appId string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	migrateLegacySecretBindings(appId)
 	data, err := os.ReadFile(bindingsPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return make(map[string]string), nil
@@ -56,6 +67,8 @@ func WriteAppSecretBindings(appId string, bindings map[string]string) error {
 	if err != nil {
 		return err
 	}
+	// Moves a legacy file out of the app folder before the write supersedes it.
+	migrateLegacySecretBindings(appId)
 	if bindings == nil {
 		bindings = make(map[string]string)
 	}
@@ -106,6 +119,7 @@ func copySecretBindings(fromAppId string, toAppId string) error {
 	if err != nil {
 		return err
 	}
+	migrateLegacySecretBindings(fromAppId)
 	data, err := os.ReadFile(fromPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return deleteSecretBindings(toAppId)
@@ -127,6 +141,7 @@ func moveSecretBindings(fromAppId string, toAppId string) error {
 	if err != nil {
 		return err
 	}
+	migrateLegacySecretBindings(fromAppId)
 	if _, err := os.Lstat(fromPath); errors.Is(err, fs.ErrNotExist) {
 		return deleteSecretBindings(toAppId)
 	}

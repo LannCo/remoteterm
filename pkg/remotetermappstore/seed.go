@@ -26,6 +26,9 @@ func SeedApp(appId string) ([]string, error) {
 	if err := CheckNoSymlinks(appDir); err != nil {
 		return nil, err
 	}
+	if err := checkNoCaseCollision(appId, ""); err != nil {
+		return nil, err
+	}
 	_, statErr := os.Lstat(appDir)
 	if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
 		return nil, fmt.Errorf("cannot inspect %s: %w", appDir, statErr)
@@ -35,6 +38,9 @@ func SeedApp(appId string) ([]string, error) {
 	// the mkdir, a retry would see an existing app and keep the stale bindings.
 	if errors.Is(statErr, fs.ErrNotExist) {
 		if err := deleteSecretBindings(appId); err != nil {
+			return nil, err
+		}
+		if err := DeleteTrustedBuildHash(appId); err != nil {
 			return nil, err
 		}
 	}

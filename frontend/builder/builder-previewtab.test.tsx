@@ -32,11 +32,13 @@ describe("BuilderPreviewTab webview", () => {
         const model = BuilderAppPanelModel.getInstance();
         globalStore.set(model.resizeDraggingAtom, false);
         globalStore.set(model.builderStatusAtom, null);
+        globalStore.set(model.previewAuthAtom, null);
     });
 
     it("ignores pointer events while a builder divider is being dragged, and restores them after", async () => {
         const model = BuilderAppPanelModel.getInstance();
         globalStore.set(model.builderStatusAtom, { status: "running", port: 5555 } as BuilderStatusData);
+        globalStore.set(model.previewAuthAtom, { port: 5555, token: "tok" });
         const { container } = render(
             <Provider store={globalStore}>
                 <BuilderPreviewTab />
@@ -61,6 +63,7 @@ describe("BuilderPreviewTab webview", () => {
         vi.mocked(getApi).mockReturnValue({ setWebviewFocus } as unknown as ReturnType<typeof getApi>);
         const model = BuilderAppPanelModel.getInstance();
         globalStore.set(model.builderStatusAtom, { status: "running", port: 5555 } as BuilderStatusData);
+        globalStore.set(model.previewAuthAtom, { port: 5555, token: "tok" });
         const { container } = render(
             <Provider store={globalStore}>
                 <BuilderPreviewTab />

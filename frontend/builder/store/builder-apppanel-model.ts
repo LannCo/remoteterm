@@ -16,6 +16,9 @@ import { decideReload, type ReloadDecision } from "./decide-reload";
 
 export type TabType = "preview" | "files" | "code" | "secrets" | "configdata";
 
+// Matches buildercontroller.AutoRunDeclinedCode.
+export const AutoRunDeclinedCode = "ERR-AUTORUN-DECLINED";
+
 export type EnvVar = {
     name: string;
     value: string;
@@ -43,6 +46,9 @@ export class BuilderAppPanelModel {
     appGoMissingAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
     diskChangedAtom = atom<string>(null) as PrimitiveAtom<string>;
     externalChangeAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
+    autoRunDeclinedAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
+    previewAuthAtom = atom<BuilderPreviewAuthData>(null) as PrimitiveAtom<BuilderPreviewAuthData>;
+    previewAuthSeq = 0;
     watchStatusAtom = atom<BuilderWatchStatusData>(null) as PrimitiveAtom<BuilderWatchStatusData>;
     appDirAtom = atom<string>(null) as PrimitiveAtom<string>;
     noticeAtom: PrimitiveAtom<string> = BuilderNoticeAtom;
@@ -106,6 +112,7 @@ export class BuilderAppPanelModel {
                 if (!currentStatus || !currentStatus.version || status.version > currentStatus.version) {
                     globalStore.set(this.builderStatusAtom, status);
                     this.updateSecretsLatch(status);
+                    this.syncPreviewAuth(status);
                     if (status.status === "building") {
                         globalStore.set(this.externalChangeAtom, false);
                     }
@@ -117,6 +124,7 @@ export class BuilderAppPanelModel {
             const status = await RpcApi.GetBuilderStatusCommand(TabRpcClient, builderId);
             globalStore.set(this.builderStatusAtom, status);
             this.updateSecretsLatch(status);
+            this.syncPreviewAuth(status);
         } catch (err) {
             console.error("Failed to load builder status:", err);
         }
@@ -164,6 +172,30 @@ export class BuilderAppPanelModel {
         } catch (err) {
             console.error("Failed to watch the app folder:", err);
             globalStore.set(this.watchStatusAtom, { status: "unavailable", reason: err.message || "unknown error" });
+        }
+    }
+
+    // The running app only answers /api/* to a window that holds its token. The token is not part
+    // of the broadcast status: it is fetched here, for the run the status describes. A reply that
+    // lands after a newer status is dropped.
+    async syncPreviewAuth(status: BuilderStatusData) {
+        const seq = ++this.previewAuthSeq;
+        if (status?.status !== "running" || !status.port) {
+            globalStore.set(this.previewAuthAtom, null);
+            return;
+        }
+        const builderId = globalStore.get(atoms.builderId);
+        try {
+            const auth = await RpcApi.GetBuilderPreviewAuthCommand(TabRpcClient, { builderid: builderId });
+            if (seq !== this.previewAuthSeq) {
+                return;
+            }
+            globalStore.set(this.previewAuthAtom, auth?.token ? auth : null);
+        } catch (err) {
+            console.error("Failed to get the preview token:", err);
+            if (seq === this.previewAuthSeq) {
+                globalStore.set(this.previewAuthAtom, null);
+            }
         }
     }
 
@@ -285,6 +317,7 @@ export class BuilderAppPanelModel {
     async requestRebuild() {
         const builderId = globalStore.get(atoms.builderId);
         globalStore.set(this.externalChangeAtom, false);
+        globalStore.set(this.autoRunDeclinedAtom, false);
         try {
             await RpcApi.RequestBuilderRebuildCommand(TabRpcClient, { builderid: builderId });
         } catch (err) {
@@ -295,6 +328,22 @@ export class BuilderAppPanelModel {
 
     async startBuilder() {
         return this.requestRebuild();
+    }
+
+    // Opening an app must not compile and run whatever is on disk. The server builds only inputs
+    // the user has started by hand before; for anything else the Start button is the way in.
+    async autoStartBuilder() {
+        const builderId = globalStore.get(atoms.builderId);
+        try {
+            await RpcApi.RequestBuilderRebuildCommand(TabRpcClient, { builderid: builderId, autorun: true });
+        } catch (err) {
+            if (String(err?.message ?? err).includes(AutoRunDeclinedCode)) {
+                globalStore.set(this.autoRunDeclinedAtom, true);
+                return;
+            }
+            console.error("Failed to start the app:", err);
+            globalStore.set(this.errorAtom, `Failed to rebuild: ${err.message || "Unknown error"}`);
+        }
     }
 
     async restartBuilder() {
@@ -382,7 +431,7 @@ export class BuilderAppPanelModel {
                 if (decoded.trim() !== "") {
                     const currentStatus = globalStore.get(this.builderStatusAtom);
                     if (currentStatus?.status !== "running" && currentStatus?.status !== "building") {
-                        await this.startBuilder();
+                        await this.autoStartBuilder();
                     }
                 }
             }

@@ -85,6 +85,36 @@ func GetAppDir(appId string) (string, error) {
 	return filepath.Join(homeDir, "waveapps", appNS, appName), nil
 }
 
+// APFS and NTFS volumes are case-insensitive by default, so two names that differ only by case
+// would share one folder while the builder treats them as two apps. exceptName is the app being
+// renamed, which may keep its own spelling.
+func checkNoCaseCollision(appId string, exceptName string) error {
+	appNS, appName, err := ParseAppId(appId)
+	if err != nil {
+		return err
+	}
+	nsDir := filepath.Join(remotetermbase.GetHomeDir(), "waveapps", appNS)
+	if err := CheckNoSymlinks(nsDir); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(nsDir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to list %s: %w", nsDir, err)
+	}
+	lowered := strings.ToLower(appName)
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == appName || name == exceptName || strings.ToLower(name) != lowered {
+			continue
+		}
+		return fmt.Errorf("app name %q collides with the existing app %q in %s: names that differ only by case share a folder on case-insensitive filesystems", appName, name, appNS)
+	}
+	return nil
+}
+
 func copyDir(src, dst string) error {
 	if err := CheckNoSymlinks(src); err != nil {
 		return err
@@ -154,9 +184,15 @@ func PublishDraft(draftAppId string) (string, error) {
 		return "", err
 	}
 
+	if err := checkNoCaseCollision(localAppId, ""); err != nil {
+		return "", err
+	}
+
 	if err := requireSecretBindingsStorage(draftAppId, localAppId); err != nil {
 		return "", err
 	}
+	// Before copyDir, so a legacy file in the source folder is not copied into the target's.
+	migrateLegacySecretBindings(draftAppId)
 
 	if err := copyDir(draftDir, localDir); err != nil {
 		return "", err
@@ -197,6 +233,7 @@ func RevertDraft(draftAppId string) error {
 	if err := requireSecretBindingsStorage(localAppId, draftAppId); err != nil {
 		return err
 	}
+	migrateLegacySecretBindings(localAppId)
 
 	if err := copyDir(localDir, draftDir); err != nil {
 		return err
@@ -229,6 +266,10 @@ func MakeDraftFromLocal(localAppId string) (string, error) {
 		return "", err
 	}
 
+	if err := checkNoCaseCollision(draftAppId, ""); err != nil {
+		return "", err
+	}
+
 	if _, err := os.Stat(draftDir); err == nil {
 		// draft already exists, don't overwrite (that's what RevertDraft is for)
 		return draftAppId, nil
@@ -239,6 +280,7 @@ func MakeDraftFromLocal(localAppId string) (string, error) {
 	if err := requireSecretBindingsStorage(localAppId, draftAppId); err != nil {
 		return "", err
 	}
+	migrateLegacySecretBindings(localAppId)
 
 	if err := copyDir(localDir, draftDir); err != nil {
 		return "", err
@@ -263,16 +305,38 @@ func DeleteApp(appId string) error {
 		return err
 	}
 
+	// A symlinked namespace or app folder would send the recursive delete outside the app
+	// store, so the refusal comes before anything is removed.
+	if err := CheckNoSymlinks(appDir); err != nil {
+		return err
+	}
+
 	// Bindings go first: if their removal fails the app is still there to retry, whereas
 	// a surviving file with no app would be inherited by the next app with this id.
 	if err := deleteSecretBindings(appId); err != nil {
 		return err
 	}
-
-	if err := os.RemoveAll(appDir); err != nil {
-		return fmt.Errorf("failed to delete app directory: %w", err)
+	if err := DeleteTrustedBuildHash(appId); err != nil {
+		return err
 	}
 
+	return removeAppDir(appDir)
+}
+
+// The namespace folder is opened as a root, so a symlink swapped in after the check can
+// only be removed as a link; RemoveAll through the root never follows it out.
+func removeAppDir(appDir string) error {
+	nsRoot, err := openAppRoot(filepath.Dir(appDir))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to delete app directory: %w", err)
+	}
+	defer nsRoot.Close()
+	if err := nsRoot.RemoveAll(filepath.Base(appDir)); err != nil {
+		return fmt.Errorf("failed to delete app directory: %w", err)
+	}
 	return nil
 }
 
@@ -319,6 +383,9 @@ func WriteAppFile(appId string, fileName string, contents []byte) error {
 		return err
 	}
 
+	if err := checkNoCaseCollision(appId, ""); err != nil {
+		return err
+	}
 	if err := CheckNoSymlinks(filePath); err != nil {
 		return err
 	}
@@ -728,6 +795,12 @@ func RenameLocalApp(appName string, newAppName string) error {
 
 	oldDraftAppId := MakeAppId(AppNSDraft, appName)
 	newDraftAppId := MakeAppId(AppNSDraft, newAppName)
+	if err := checkNoCaseCollision(newLocalAppId, appName); err != nil {
+		return err
+	}
+	if err := checkNoCaseCollision(newDraftAppId, appName); err != nil {
+		return err
+	}
 	if err := requireSecretBindingsStorage(oldLocalAppId, newLocalAppId, oldDraftAppId, newDraftAppId); err != nil {
 		return err
 	}

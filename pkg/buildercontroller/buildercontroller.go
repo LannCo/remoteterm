@@ -48,6 +48,9 @@ type BuilderProcess struct {
 	Port        int
 	WaitCh      chan struct{}
 	WaitRtn     error
+
+	// Handed to the app as TSUNAMI_AUTHTOKEN and to the builder's own window, never broadcast.
+	PreviewToken string
 }
 
 type BuildResult struct {
@@ -79,6 +82,7 @@ type BuilderController struct {
 	pendingEnv         map[string]string
 	lastBuildInputHash string
 	lastAnnouncedHash  string
+	trust              buildTrust
 	watcher            *AppWatcher
 	runBuildFn         func(ctx context.Context, appId string, builderEnv map[string]string)
 }
@@ -197,16 +201,24 @@ func (bc *BuilderController) waitForBuildDone(ctx context.Context) error {
 }
 
 func (bc *BuilderController) Start(ctx context.Context, appId string, builderEnv map[string]string) error {
-	bc.RequestRebuild(appId, builderEnv)
+	bc.RequestUserRebuild(appId, builderEnv)
 	return nil
 }
 
 // RequestRebuild never waits for a build, so the RPC that calls it returns at once and
 // the RPC timeout never applies to a build. Requests that arrive during a build
-// collapse into a single follow-up build.
+// collapse into a single follow-up build. It is for rebuilds the user did not ask for
+// (the watcher's live rebuild): it does not mark the inputs as trusted.
 func (bc *BuilderController) RequestRebuild(appId string, builderEnv map[string]string) {
+	bc.requestRebuild(appId, builderEnv, false)
+}
+
+func (bc *BuilderController) requestRebuild(appId string, builderEnv map[string]string, userInitiated bool) {
 	if !bc.acceptsRequests() {
 		return
+	}
+	if userInitiated {
+		bc.trustCurrentInputs(appId)
 	}
 	bc.recordInputHash(appId)
 	if !bc.queueBuild(appId, builderEnv) {
@@ -247,6 +259,7 @@ func (bc *BuilderController) buildLoop() {
 		}
 		bc.recordInputHash(appId)
 		bc.runOneBuild(appId, builderEnv)
+		bc.refreshTrustAfterBuild(appId)
 		if !bc.endBuild() {
 			return
 		}
@@ -413,7 +426,7 @@ func RequestRebuildAfterSave(builderId string, savedAppId string) error {
 	bc := GetOrCreateController(builderId)
 	// The editor already holds what it just wrote, so the save itself is never announced.
 	bc.recordAnnouncedHash(appId)
-	bc.RequestRebuild(appId, builderEnv)
+	bc.RequestUserRebuild(appId, builderEnv)
 	return nil
 }
 
@@ -545,11 +558,17 @@ func (bc *BuilderController) buildAndRun(ctx context.Context, appId string, buil
 		return
 	}
 
-	process, err := bc.runBuilderApp(ctx, appId, cachePath, builderEnv)
+	previewToken, err := makePreviewToken()
 	if err != nil {
 		bc.handleBuildError(fmt.Errorf("failed to run app: %w", err), resultCh)
 		return
 	}
+	process, err := bc.runBuilderApp(ctx, appId, cachePath, withPreviewToken(builderEnv, previewToken))
+	if err != nil {
+		bc.handleBuildError(fmt.Errorf("failed to run app: %w", err), resultCh)
+		return
+	}
+	process.PreviewToken = previewToken
 
 	bc.lock.Lock()
 	bc.process = process

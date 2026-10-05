@@ -30,7 +30,14 @@ const (
 	WatcherCloseWaitTimeout = 2 * time.Second
 )
 
+const (
+	defaultRootAddRetryDelay = 25 * time.Millisecond
+	rootAddAttempts          = 3
+)
+
 var (
+	// Spacing of the Add retries when the root's listing loses a race with a vanishing file.
+	rootAddRetryDelay    = defaultRootAddRetryDelay
 	watchDebounce        = 300 * time.Millisecond
 	rootPollInterval     = 1 * time.Second
 	rootUnavailableAfter = 10 * time.Second
@@ -241,14 +248,46 @@ func (w *AppWatcher) addWatch(dir string) error {
 	if err != nil || addFn == nil {
 		return err
 	}
-	if err := addFn(dir); err != nil {
+	err = addFn(dir)
+	if err != nil && dir == w.appDir && errors.Is(err, fs.ErrNotExist) {
+		err = w.retryRootAdd(addFn, dir, err)
+	}
+	if err != nil {
 		w.releaseWatch(dir)
-		if dir != w.appDir && errors.Is(err, fs.ErrNotExist) {
+		if errors.Is(err, fs.ErrNotExist) && w.canIgnoreMissing(dir) {
 			return nil
 		}
 		return fmt.Errorf("cannot watch %s: %w", dir, err)
 	}
 	return nil
+}
+
+// On kqueue Add lists the directory, and an entry that vanishes between the listing and its
+// Lstat fails the whole Add with ErrNotExist. While the folder itself still exists that is a
+// lost race with whoever deleted the file, and a retry normally gets through.
+func (w *AppWatcher) retryRootAdd(addFn func(string) error, dir string, err error) error {
+	for attempt := 1; attempt < rootAddAttempts && errors.Is(err, fs.ErrNotExist); attempt++ {
+		if _, statErr := os.Lstat(dir); statErr != nil {
+			return err
+		}
+		select {
+		case <-w.closeCh:
+			return err
+		case <-time.After(rootAddRetryDelay):
+		}
+		err = addFn(dir)
+	}
+	return err
+}
+
+// A subdirectory that vanished mid-scan is never fatal. The root is forgiven only while it is
+// still there: a missing root is the caller's cue to poll for it, not a watcher to keep.
+func (w *AppWatcher) canIgnoreMissing(dir string) bool {
+	if dir != w.appDir {
+		return true
+	}
+	info, err := os.Lstat(dir)
+	return err == nil && info.IsDir()
 }
 
 func (w *AppWatcher) reserveWatch(dir string) (func(string) error, error) {
