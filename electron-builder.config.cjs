@@ -3,7 +3,11 @@ const pkg = require("./package.json");
 const stagedResources = require("./build/staged-resources.cjs");
 
 // Fails here, before electron-builder spends minutes packaging an app without the SDK.
-stagedResources.failIfAny(stagedResources.checkSdk(__dirname));
+// The config unit test loads this file on a tree that has not staged anything and sets the
+// variable; a real packaging run never does.
+if (!process.env.REMOTETERM_CONFIG_TEST) {
+    stagedResources.failIfAny(stagedResources.checkSdk(__dirname));
+}
 
 const windowsShouldSign = !!process.env.SM_CODE_SIGNING_CERT_SHA1_HASH;
 
