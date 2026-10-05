@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -445,5 +446,29 @@ func TestCreateFileExclusiveInRootRefusesDanglingSymlink(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "created-through-link")); err == nil {
 		t.Fatal("the symlink target was created")
+	}
+}
+
+func TestValidateAndResolveFilePathRejectsEscapes(t *testing.T) {
+	appDir := t.TempDir()
+	for _, name := range []string{"../x", "a/../../x", "..", "/etc/passwd", "a/../../../etc/passwd"} {
+		if _, err := validateAndResolveFilePath(appDir, name); err == nil {
+			t.Errorf("%q: expected rejection, got none", name)
+		}
+	}
+}
+
+func TestValidateAndResolveFilePathAllowsInsideNames(t *testing.T) {
+	appDir := t.TempDir()
+	for _, name := range []string{"app.go", "static/tw.css", "a/../b.go"} {
+		got, err := validateAndResolveFilePath(appDir, name)
+		if err != nil {
+			t.Errorf("%q: unexpected error: %v", name, err)
+			continue
+		}
+		rel, err := filepath.Rel(appDir, got)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			t.Errorf("%q: resolved outside app dir: %s", name, got)
+		}
 	}
 }
