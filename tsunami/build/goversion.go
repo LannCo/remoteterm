@@ -57,5 +57,5 @@ func normalizeGoVersion(v string) string {
 // GOTOOLCHAIN=local makes an older Go fail with our version message instead of
 // silently downloading a newer toolchain.
 func goCmdEnv() []string {
-	return append(os.Environ(), "GOTOOLCHAIN=local")
+	return AllowlistedEnv(os.Environ(), "GOTOOLCHAIN=local")
 }

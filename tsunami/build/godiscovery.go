@@ -34,6 +34,7 @@ type goDiscoveryCache struct {
 	findLock  sync.Mutex
 	lock      sync.Mutex
 	floor     string
+	bundle    string
 	goPath    string
 	gofmtPath string
 	failErr   error
@@ -76,16 +77,17 @@ func (w *cappedWriter) Write(p []byte) (int, error) {
 func FindGoExecutable(minGoVersion string) (string, error) {
 	goCache.findLock.Lock()
 	defer goCache.findLock.Unlock()
-	if hit, goPath, failErr := goCache.lookup(minGoVersion); hit {
+	bundle := bundledDir()
+	if hit, goPath, failErr := goCache.lookup(minGoVersion, bundle); hit {
 		return goPath, failErr
 	}
 	found, err := discoverGo(minGoVersion)
 	if err != nil {
-		goCache.setFailure(minGoVersion, err)
+		goCache.setFailure(minGoVersion, bundle, err)
 		return "", err
 	}
 	goPath, gofmtPath := canonicalizeGoPath(found)
-	goCache.setSuccess(minGoVersion, goPath, gofmtPath)
+	goCache.setSuccess(minGoVersion, bundle, goPath, gofmtPath)
 	return goPath, nil
 }
 
@@ -96,10 +98,10 @@ func GetCachedGoFmtPath() string {
 	return goCache.gofmtPath
 }
 
-func (c *goDiscoveryCache) lookup(floor string) (bool, string, error) {
+func (c *goDiscoveryCache) lookup(floor string, bundle string) (bool, string, error) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	if c.floor != floor {
+	if c.floor != floor || c.bundle != bundle {
 		return false, "", nil
 	}
 	if c.goPath != "" {
@@ -118,20 +120,22 @@ func (c *goDiscoveryCache) lookup(floor string) (bool, string, error) {
 	return false, "", nil
 }
 
-func (c *goDiscoveryCache) setFailure(floor string, err error) {
+func (c *goDiscoveryCache) setFailure(floor string, bundle string, err error) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	c.floor = floor
+	c.bundle = bundle
 	c.goPath = ""
 	c.gofmtPath = ""
 	c.failErr = err
 	c.failedAt = time.Now()
 }
 
-func (c *goDiscoveryCache) setSuccess(floor string, goPath string, gofmtPath string) {
+func (c *goDiscoveryCache) setSuccess(floor string, bundle string, goPath string, gofmtPath string) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	c.floor = floor
+	c.bundle = bundle
 	c.goPath = goPath
 	c.gofmtPath = gofmtPath
 	c.failErr = nil
@@ -141,6 +145,7 @@ func resetGoDiscoveryCache() {
 	goCache.lock.Lock()
 	defer goCache.lock.Unlock()
 	goCache.floor = ""
+	goCache.bundle = ""
 	goCache.goPath = ""
 	goCache.gofmtPath = ""
 	goCache.failErr = nil
@@ -177,6 +182,10 @@ func discoverGo(minGoVersion string) (string, error) {
 			newestTooOld = &GoTooOldError{GoPath: candidate, Version: goVer, MinVersion: minGoVersion}
 		}
 		return false
+	}
+	// The packaged toolchain wins so a friend's build does not depend on what else is installed.
+	if bundled := bundledGoPath(); bundled != "" && accept(bundled) {
+		return bundled, nil
 	}
 	// First try the standard PATH lookup
 	if goPath, err := exec.LookPath(goExeName()); err == nil {

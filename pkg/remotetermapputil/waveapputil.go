@@ -21,6 +21,12 @@ const (
 	TsunamiSdkDirName        = "tsunamisdk"
 )
 
+// The server only learns its resources path from the environment after start-up, so the
+// builder reads it on every use; the packaged Go toolchain and module cache sit in it.
+func init() {
+	build.SetBundledDirResolver(remotetermbase.GetWaveAppResourcesPath)
+}
+
 func GetTsunamiScaffoldPath() string {
 	return scaffoldPathFromSettings(rtconfig.GetWatcher().GetFullConfig().Settings)
 }

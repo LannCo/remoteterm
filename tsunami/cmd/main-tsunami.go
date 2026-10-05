@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -167,8 +168,76 @@ var sdkBundleCmd = &cobra.Command{
 	},
 }
 
+var goToolchainCmd = &cobra.Command{
+	Use:          "gotoolchain",
+	Short:        "Stage a trimmed Go toolchain for the packaged app",
+	Long:         `Download a Go release (verified against a pinned SHA-256) or trim an installed one, keeping only what compiling an app needs.`,
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
+	Run: func(cmd *cobra.Command, args []string) {
+		out, _ := cmd.Flags().GetString("out")
+		fromDir, _ := cmd.Flags().GetString("from-dir")
+		var err error
+		if fromDir != "" {
+			err = build.TrimToolchainDir(fromDir, out)
+		} else {
+			version, _ := cmd.Flags().GetString("version")
+			goos, _ := cmd.Flags().GetString("os")
+			goarch, _ := cmd.Flags().GetString("arch")
+			sum, _ := cmd.Flags().GetString("sha256")
+			err = build.FetchToolchain(context.Background(), build.FetchToolchainOpts{
+				Version: version, GOOS: goos, GOARCH: goarch, DstRoot: out, SHA256: sum,
+			})
+			if err == nil {
+				err = build.VerifyToolchainArch(out, goos, goarch)
+			}
+		}
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+	},
+}
+
+var goModCacheCmd = &cobra.Command{
+	Use:          "gomodcache",
+	Short:        "Stage the SDK's module dependencies as a proxy directory for the packaged app",
+	Long:         `Resolve the SDK's dependencies online once and copy them into a directory laid out as a Go module proxy, so a first build in the packaged app needs no network for them.`,
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
+	Run: func(cmd *cobra.Command, args []string) {
+		sdkDir, _ := cmd.Flags().GetString("sdk")
+		out, _ := cmd.Flags().GetString("out")
+		goPath, _ := cmd.Flags().GetString("go")
+		proxy, _ := cmd.Flags().GetString("proxy")
+		err := build.StageModuleCache(context.Background(), build.ModCacheOpts{GoPath: goPath, SdkDir: sdkDir, OutDir: out, Proxy: proxy})
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(versionCmd)
+
+	goToolchainCmd.Flags().String("out", "", "Directory to create (replaced if it exists)")
+	goToolchainCmd.Flags().String("version", build.PinnedToolchainVersion, "Go release to download")
+	goToolchainCmd.Flags().String("os", "darwin", "GOOS of the release to download")
+	goToolchainCmd.Flags().String("arch", "arm64", "GOARCH of the release to download")
+	goToolchainCmd.Flags().String("sha256", "", "Checksum for a version that is not pinned in the source")
+	goToolchainCmd.Flags().String("from-dir", "", "Trim this installed Go root instead of downloading")
+	_ = goToolchainCmd.MarkFlagRequired("out")
+	rootCmd.AddCommand(goToolchainCmd)
+
+	goModCacheCmd.Flags().String("sdk", "", "SDK bundle directory (the output of sdkbundle)")
+	goModCacheCmd.Flags().String("out", "", "Directory to create (replaced if it exists)")
+	goModCacheCmd.Flags().String("go", "", "Go binary to resolve with")
+	goModCacheCmd.Flags().String("proxy", "", "GOPROXY to fetch from (default: the public Go proxy)")
+	_ = goModCacheCmd.MarkFlagRequired("sdk")
+	_ = goModCacheCmd.MarkFlagRequired("out")
+	_ = goModCacheCmd.MarkFlagRequired("go")
+	rootCmd.AddCommand(goModCacheCmd)
 
 	buildCmd.Flags().BoolP("verbose", "v", false, "Enable verbose output")
 	buildCmd.Flags().Bool("keeptemp", false, "Keep temporary build directory")
