@@ -26,6 +26,9 @@ func SeedApp(appId string) ([]string, error) {
 	if err := CheckNoSymlinks(appDir); err != nil {
 		return nil, err
 	}
+	if err := checkNoCaseCollision(appId, ""); err != nil {
+		return nil, err
+	}
 	_, statErr := os.Lstat(appDir)
 	if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
 		return nil, fmt.Errorf("cannot inspect %s: %w", appDir, statErr)

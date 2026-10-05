@@ -85,6 +85,36 @@ func GetAppDir(appId string) (string, error) {
 	return filepath.Join(homeDir, "waveapps", appNS, appName), nil
 }
 
+// APFS and NTFS volumes are case-insensitive by default, so two names that differ only by case
+// would share one folder while the builder treats them as two apps. exceptName is the app being
+// renamed, which may keep its own spelling.
+func checkNoCaseCollision(appId string, exceptName string) error {
+	appNS, appName, err := ParseAppId(appId)
+	if err != nil {
+		return err
+	}
+	nsDir := filepath.Join(remotetermbase.GetHomeDir(), "waveapps", appNS)
+	if err := CheckNoSymlinks(nsDir); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(nsDir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to list %s: %w", nsDir, err)
+	}
+	lowered := strings.ToLower(appName)
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == appName || name == exceptName || strings.ToLower(name) != lowered {
+			continue
+		}
+		return fmt.Errorf("app name %q collides with the existing app %q in %s: names that differ only by case share a folder on case-insensitive filesystems", appName, name, appNS)
+	}
+	return nil
+}
+
 func copyDir(src, dst string) error {
 	if err := CheckNoSymlinks(src); err != nil {
 		return err
@@ -151,6 +181,10 @@ func PublishDraft(draftAppId string) (string, error) {
 	localAppId := MakeAppId(AppNSLocal, appName)
 	localDir, err := GetAppDir(localAppId)
 	if err != nil {
+		return "", err
+	}
+
+	if err := checkNoCaseCollision(localAppId, ""); err != nil {
 		return "", err
 	}
 
@@ -226,6 +260,10 @@ func MakeDraftFromLocal(localAppId string) (string, error) {
 	draftAppId := MakeAppId(AppNSDraft, appName)
 	draftDir, err := GetAppDir(draftAppId)
 	if err != nil {
+		return "", err
+	}
+
+	if err := checkNoCaseCollision(draftAppId, ""); err != nil {
 		return "", err
 	}
 
@@ -338,6 +376,9 @@ func WriteAppFile(appId string, fileName string, contents []byte) error {
 		return err
 	}
 
+	if err := checkNoCaseCollision(appId, ""); err != nil {
+		return err
+	}
 	if err := CheckNoSymlinks(filePath); err != nil {
 		return err
 	}
@@ -747,6 +788,12 @@ func RenameLocalApp(appName string, newAppName string) error {
 
 	oldDraftAppId := MakeAppId(AppNSDraft, appName)
 	newDraftAppId := MakeAppId(AppNSDraft, newAppName)
+	if err := checkNoCaseCollision(newLocalAppId, appName); err != nil {
+		return err
+	}
+	if err := checkNoCaseCollision(newDraftAppId, appName); err != nil {
+		return err
+	}
 	if err := requireSecretBindingsStorage(oldLocalAppId, newLocalAppId, oldDraftAppId, newDraftAppId); err != nil {
 		return err
 	}
