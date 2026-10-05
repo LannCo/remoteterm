@@ -94,13 +94,13 @@ RemoteTerm 支援 macOS、Linux 與 Windows。
 
 RemoteTerm 支援以下平台：
 
-- macOS 11 或更新版本（arm64、x64）
+- macOS 12 或更新版本（arm64、x64）
 - Windows 10 1809 或更新版本（x64）
 - 基於 glibc-2.28 或更新版本的 Linux（Debian 10、RHEL 8、Ubuntu 20.04 等）（arm64、x64）
 
 WSH 輔助程式支援以下平台：
 
-- macOS 11 或更新版本（arm64、x64）
+- macOS 12 或更新版本（arm64、x64）
 - Windows 10 或更新版本（x64）
 - Linux Kernel 2.6.32 或更新版本（x64）、Linux Kernel 3.1 或更新版本（arm64）
 

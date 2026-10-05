@@ -99,6 +99,31 @@ func TestAllowlistedEnvMatchesNamesCaseInsensitively(t *testing.T) {
 	}
 }
 
+// The built app's explicit environment (the per-run preview token, secrets bound to the
+// app, the user's builder:env entries) is appended after the filtered inherited part by
+// the caller, and anything handed to AllowlistedEnv as an extra is never filtered.
+func TestExplicitEnvironmentIsNotFilteredOnlyTheInheritedPart(t *testing.T) {
+	inherited := []string{"PATH=/usr/bin", "TSUNAMI_AUTHTOKEN=inherited-stale", "MY_SERVICE_API_KEY=inherited"}
+	explicit := []string{"TSUNAMI_AUTHTOKEN=run-token", "TSUNAMI_CORS=http://localhost:5173", "MY_SERVICE_API_KEY=bound-secret", "ANTHROPIC_API_KEY=user-chose-this"}
+
+	viaExtras := envMap(AllowlistedEnv(inherited, explicit...))
+	for _, kv := range explicit {
+		k, v, _ := strings.Cut(kv, "=")
+		if viaExtras[k] != v {
+			t.Errorf("explicit %s did not survive: got %q want %q", k, viaExtras[k], v)
+		}
+	}
+
+	composed := append(AllowlistedEnv(inherited, "TSUNAMI_CLOSEONSTDIN=1"), explicit...)
+	got := envMap(composed)
+	if got["TSUNAMI_AUTHTOKEN"] != "run-token" || got["MY_SERVICE_API_KEY"] != "bound-secret" || got["ANTHROPIC_API_KEY"] != "user-chose-this" {
+		t.Errorf("explicit entries appended after the filtered part were altered: %v", got)
+	}
+	if got["TSUNAMI_CLOSEONSTDIN"] != "1" {
+		t.Errorf("TSUNAMI_CLOSEONSTDIN missing: %v", got)
+	}
+}
+
 func TestAllowlistedEnvIgnoresMalformedEntries(t *testing.T) {
 	out := AllowlistedEnv([]string{"", "=C:=C:\\x", "NOEQUALS", "PATH=/p", "=PATH"})
 	sort.Strings(out)

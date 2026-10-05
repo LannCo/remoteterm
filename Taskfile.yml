@@ -13,7 +13,8 @@ vars:
     ARTIFACTS_BUCKET: waveterm-github-artifacts/staging-w2
     RELEASES_BUCKET: dl.waveterm.dev/releases-w2
     WINGET_PACKAGE: CommandLine.Wave
-    GO_DIR: "golang-1.26.2"
+    GO_VERSION: "1.26.2"
+    GO_DIR: "golang-{{.GO_VERSION}}"
     GO: "{{.ROOT_DIR}}/{{.GO_DIR}}/bin/go"
     ZIG_DIR: "zig-0.14.0"
     ZIG: "{{.ROOT_DIR}}/{{.ZIG_DIR}}/zig"
@@ -129,6 +130,8 @@ tasks:
     package:
         desc: Package the application for the current platform.
         cmds:
+            # After the deps: `clean` empties dist/ while they run, and these write into it.
+            - task: package:macresources
             - npm run build:prod && npm exec electron-builder -- -c electron-builder.config.cjs -p never {{.CLI_ARGS}}
         deps:
             - clean
@@ -136,6 +139,14 @@ tasks:
             - build:backend
             - build:tsunamiscaffold
             - build:tsunamisdk
+
+    package:macresources:
+        desc: Stage the per-architecture Go toolchain, module cache and scaffold natives the macOS app ships (macOS hosts only).
+        platforms: [darwin]
+        deps:
+            - build:gotoolchain
+            - build:gomodcache
+            - build:tsunamiscaffold:macarch
 
     build:frontend:dev:
         desc: Build the frontend in development mode.
@@ -379,6 +390,39 @@ tasks:
             - "tsunami/**/*.go"
         generates:
             - "dist/tsunamisdk/**/*"
+
+    build:gotoolchain:
+        desc: Stage the trimmed Go toolchain the macOS app ships, one per architecture in MAC_ARCHS (default "arm64,x64").
+        vars:
+            MAC_ARCHS: '{{default "arm64,x64" .MAC_ARCHS}}'
+        cmds:
+            - for:
+                  var: MAC_ARCHS
+                  split: ","
+                  as: MAC_ARCH
+              cmd: '{{.GO}} run -C tsunami ./cmd gotoolchain --version {{.GO_VERSION}} --os darwin --arch {{if eq .MAC_ARCH "x64"}}amd64{{else}}{{.MAC_ARCH}}{{end}} --out {{.ROOT_DIR}}/dist/gotoolchain-{{.MAC_ARCH}}'
+
+    build:gomodcache:
+        desc: Stage the SDK's module dependencies as a Go proxy directory for the macOS app (needs network once).
+        cmds:
+            - cmd: "{{.RMRF}} dist/gomodcache"
+              ignore_error: true
+            - "{{.GO}} run -C tsunami ./cmd gomodcache --sdk {{.ROOT_DIR}}/dist/tsunamisdk --out {{.ROOT_DIR}}/dist/gomodcache --go {{.GO}}"
+        deps:
+            - build:tsunamisdk
+
+    build:tsunamiscaffold:macarch:
+        desc: Give each macOS architecture in MAC_ARCHS (default "arm64,x64") a scaffold with that architecture's Tailwind natives.
+        vars:
+            MAC_ARCHS: '{{default "arm64,x64" .MAC_ARCHS}}'
+        cmds:
+            - for:
+                  var: MAC_ARCHS
+                  split: ","
+                  as: MAC_ARCH
+              cmd: sh build/stage-scaffold-natives.sh dist/tsunamiscaffold dist/tsunamiscaffold-{{.MAC_ARCH}} darwin {{.MAC_ARCH}}
+        deps:
+            - build:tsunamiscaffold
 
     generate:
         desc: Generate Typescript bindings for the Go backend.
