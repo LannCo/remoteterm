@@ -191,6 +191,8 @@ func PublishDraft(draftAppId string) (string, error) {
 	if err := requireSecretBindingsStorage(draftAppId, localAppId); err != nil {
 		return "", err
 	}
+	// Before copyDir, so a legacy file in the source folder is not copied into the target's.
+	migrateLegacySecretBindings(draftAppId)
 
 	if err := copyDir(draftDir, localDir); err != nil {
 		return "", err
@@ -231,6 +233,7 @@ func RevertDraft(draftAppId string) error {
 	if err := requireSecretBindingsStorage(localAppId, draftAppId); err != nil {
 		return err
 	}
+	migrateLegacySecretBindings(localAppId)
 
 	if err := copyDir(localDir, draftDir); err != nil {
 		return err
@@ -277,6 +280,7 @@ func MakeDraftFromLocal(localAppId string) (string, error) {
 	if err := requireSecretBindingsStorage(localAppId, draftAppId); err != nil {
 		return "", err
 	}
+	migrateLegacySecretBindings(localAppId)
 
 	if err := copyDir(localDir, draftDir); err != nil {
 		return "", err

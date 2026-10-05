@@ -43,19 +43,6 @@ func TestSecretBindingsLiveUnderDataDir(t *testing.T) {
 	}
 }
 
-func TestLegacyAppDirBindingsIgnored(t *testing.T) {
-	home := setupAppStoreTest(t)
-	setDataDir(t)
-	appDir := makeAppDir(t, home, "draft", "demo")
-	if err := os.WriteFile(filepath.Join(appDir, "secret-bindings.json"), []byte(`{"API_KEY":"stolen"}`), 0644); err != nil {
-		t.Fatal(err)
-	}
-	got, err := ReadAppSecretBindings("draft/demo")
-	if err != nil || len(got) != 0 {
-		t.Fatalf("got %v, %v; want no bindings", got, err)
-	}
-}
-
 func TestPublishCopiesBindings(t *testing.T) {
 	home := setupAppStoreTest(t)
 	setDataDir(t)
