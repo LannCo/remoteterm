@@ -267,7 +267,7 @@ func (bc *BuilderController) buildLoop() {
 }
 
 func (bc *BuilderController) runOneBuild(appId string, builderEnv map[string]string) {
-	buildCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	buildCtx, cancel := context.WithTimeout(context.Background(), build.BuildTimeout())
 	defer cancel()
 	bc.setBuildCancel(cancel)
 	defer bc.setBuildCancel(nil)
