@@ -107,10 +107,10 @@ const BuilderCodeTab = memo(() => {
     return (
         <div className="w-full h-full flex flex-col" onKeyDown={handleKeyDown}>
             <DiskChangedBar />
-            <div className="flex-1 min-h-0 relative">
+            <div className="shrink-0 flex justify-end px-3 py-1">
                 <button
                     className={cn(
-                        "absolute top-1 right-4 z-50 px-3 py-1 text-sm font-medium rounded transition-colors shadow-lg",
+                        "px-3 py-1 text-sm font-medium rounded transition-colors",
                         saveNeeded
                             ? "bg-accent/80 text-onaccent hover:bg-accent cursor-pointer"
                             : "bg-gray-600 text-gray-400 cursor-default"
@@ -119,6 +119,8 @@ const BuilderCodeTab = memo(() => {
                 >
                     Save
                 </button>
+            </div>
+            <div className="flex-1 min-h-0">
                 <CodeEditor
                     blockId={builderAppId}
                     text={codeContent}
