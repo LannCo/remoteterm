@@ -206,6 +206,7 @@ const BuilderPreviewTab = memo(() => {
     const builderId = useAtomValue(atoms.builderId);
     const appGoMissing = useAtomValue(model.appGoMissingAtom);
     const autoRunDeclined = useAtomValue(model.autoRunDeclinedAtom);
+    const previewAuth = useAtomValue(model.previewAuthAtom);
     const isResizing = useAtomValue(model.resizeDraggingAtom);
     const fileExists = originalContent.length > 0;
     const [lastKnownUrl, setLastKnownUrl] = useState<string>(null);
@@ -241,10 +242,12 @@ const BuilderPreviewTab = memo(() => {
     }, [hasWebview]);
 
     const status = builderStatus?.status || "init";
-    const isWebViewActive = status === "running" && builderStatus?.port && builderStatus.port !== 0;
+    // The preview needs the run's token, and a token fetched for another port is not this run's.
+    const hasPreviewToken = previewAuth?.token != null && previewAuth.port === builderStatus?.port;
+    const isWebViewActive = status === "running" && builderStatus?.port && builderStatus.port !== 0 && hasPreviewToken;
 
     if (isWebViewActive) {
-        const previewUrl = `http://localhost:${builderStatus.port}/?clientid=wave:${builderId}`;
+        const previewUrl = `http://localhost:${builderStatus.port}/?clientid=wave:${builderId}&tsunamitoken=${previewAuth.token}`;
         if (previewUrl !== lastKnownUrl) {
             setLastKnownUrl(previewUrl);
         }
@@ -260,7 +263,7 @@ const BuilderPreviewTab = memo(() => {
             overlay = <AutoRunDeclinedView onStart={() => model.startBuilder()} />;
         } else if (!fileExists || status === "init") {
             overlay = <EmptyStateView showCreate={!fileExists} />;
-        } else if (status === "building") {
+        } else if (status === "building" || status === "running") {
             overlay = <BuildingStateView />;
         } else if (status === "stopped") {
             overlay = <StoppedStateView onStart={() => model.startBuilder()} />;

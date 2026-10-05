@@ -48,6 +48,9 @@ type BuilderProcess struct {
 	Port        int
 	WaitCh      chan struct{}
 	WaitRtn     error
+
+	// Handed to the app as TSUNAMI_AUTHTOKEN and to the builder's own window, never broadcast.
+	PreviewToken string
 }
 
 type BuildResult struct {
@@ -555,11 +558,17 @@ func (bc *BuilderController) buildAndRun(ctx context.Context, appId string, buil
 		return
 	}
 
-	process, err := bc.runBuilderApp(ctx, appId, cachePath, builderEnv)
+	previewToken, err := makePreviewToken()
 	if err != nil {
 		bc.handleBuildError(fmt.Errorf("failed to run app: %w", err), resultCh)
 		return
 	}
+	process, err := bc.runBuilderApp(ctx, appId, cachePath, withPreviewToken(builderEnv, previewToken))
+	if err != nil {
+		bc.handleBuildError(fmt.Errorf("failed to run app: %w", err), resultCh)
+		return
+	}
+	process.PreviewToken = previewToken
 
 	bc.lock.Lock()
 	bc.process = process

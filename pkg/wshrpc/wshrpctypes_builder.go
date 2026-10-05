@@ -28,6 +28,7 @@ type WshRpcBuilderInterface interface {
 	GetBuilderAppDirCommand(ctx context.Context, data CommandGetBuilderAppDirData) (string, error)
 	StopBuilderCommand(ctx context.Context, builderId string) error
 	GetBuilderStatusCommand(ctx context.Context, builderId string) (*BuilderStatusData, error)
+	GetBuilderPreviewAuthCommand(ctx context.Context, data CommandGetBuilderPreviewAuthData) (*BuilderPreviewAuthData, error)
 	GetBuilderOutputCommand(ctx context.Context, builderId string) ([]string, error)
 	CheckGoVersionCommand(ctx context.Context) (*CommandCheckGoVersionRtnData, error)
 	PublishAppCommand(ctx context.Context, data CommandPublishAppData) (*CommandPublishAppRtnData, error)
@@ -116,6 +117,18 @@ type CommandRequestBuilderRebuildData struct {
 	// AutoRun marks the start the builder makes on opening an app. The server then builds only
 	// inputs the user has started by hand before, and otherwise answers ERR-AUTORUN-DECLINED.
 	AutoRun bool `json:"autorun,omitempty"`
+}
+
+type CommandGetBuilderPreviewAuthData struct {
+	BuilderId string `json:"builderid"`
+}
+
+// The token that lets the builder's own window open the running app's /api/* routes. It is kept
+// out of BuilderStatusData because that is broadcast; this is returned only to Electron and the
+// builder's own window.
+type BuilderPreviewAuthData struct {
+	Port  int    `json:"port"`
+	Token string `json:"token"`
 }
 
 type CommandWatchBuilderAppData struct {

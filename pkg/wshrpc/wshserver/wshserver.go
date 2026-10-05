@@ -1222,6 +1222,21 @@ func (ws *WshServer) WatchBuilderAppCommand(ctx context.Context, data wshrpc.Com
 	return &status, nil
 }
 
+func (ws *WshServer) GetBuilderPreviewAuthCommand(ctx context.Context, data wshrpc.CommandGetBuilderPreviewAuthData) (*wshrpc.BuilderPreviewAuthData, error) {
+	if data.BuilderId == "" {
+		return nil, fmt.Errorf("must provide a builderId to GetBuilderPreviewAuthCommand")
+	}
+	if err := checkBuilderCaller(wshutil.GetRpcSourceFromContext(ctx), data.BuilderId, true); err != nil {
+		return nil, err
+	}
+	bc := buildercontroller.GetController(data.BuilderId)
+	if bc == nil {
+		return &wshrpc.BuilderPreviewAuthData{}, nil
+	}
+	port, token := bc.GetPreviewAuth()
+	return &wshrpc.BuilderPreviewAuthData{Port: port, Token: token}, nil
+}
+
 func (ws *WshServer) GetBuilderAppDirCommand(ctx context.Context, data wshrpc.CommandGetBuilderAppDirData) (string, error) {
 	if data.BuilderId == "" {
 		return "", fmt.Errorf("must provide a builderId to GetBuilderAppDirCommand")

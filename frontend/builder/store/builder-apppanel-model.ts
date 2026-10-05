@@ -47,6 +47,8 @@ export class BuilderAppPanelModel {
     diskChangedAtom = atom<string>(null) as PrimitiveAtom<string>;
     externalChangeAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
     autoRunDeclinedAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
+    previewAuthAtom = atom<BuilderPreviewAuthData>(null) as PrimitiveAtom<BuilderPreviewAuthData>;
+    previewAuthSeq = 0;
     watchStatusAtom = atom<BuilderWatchStatusData>(null) as PrimitiveAtom<BuilderWatchStatusData>;
     appDirAtom = atom<string>(null) as PrimitiveAtom<string>;
     noticeAtom: PrimitiveAtom<string> = BuilderNoticeAtom;
@@ -110,6 +112,7 @@ export class BuilderAppPanelModel {
                 if (!currentStatus || !currentStatus.version || status.version > currentStatus.version) {
                     globalStore.set(this.builderStatusAtom, status);
                     this.updateSecretsLatch(status);
+                    this.syncPreviewAuth(status);
                     if (status.status === "building") {
                         globalStore.set(this.externalChangeAtom, false);
                     }
@@ -121,6 +124,7 @@ export class BuilderAppPanelModel {
             const status = await RpcApi.GetBuilderStatusCommand(TabRpcClient, builderId);
             globalStore.set(this.builderStatusAtom, status);
             this.updateSecretsLatch(status);
+            this.syncPreviewAuth(status);
         } catch (err) {
             console.error("Failed to load builder status:", err);
         }
@@ -168,6 +172,30 @@ export class BuilderAppPanelModel {
         } catch (err) {
             console.error("Failed to watch the app folder:", err);
             globalStore.set(this.watchStatusAtom, { status: "unavailable", reason: err.message || "unknown error" });
+        }
+    }
+
+    // The running app only answers /api/* to a window that holds its token. The token is not part
+    // of the broadcast status: it is fetched here, for the run the status describes. A reply that
+    // lands after a newer status is dropped.
+    async syncPreviewAuth(status: BuilderStatusData) {
+        const seq = ++this.previewAuthSeq;
+        if (status?.status !== "running" || !status.port) {
+            globalStore.set(this.previewAuthAtom, null);
+            return;
+        }
+        const builderId = globalStore.get(atoms.builderId);
+        try {
+            const auth = await RpcApi.GetBuilderPreviewAuthCommand(TabRpcClient, { builderid: builderId });
+            if (seq !== this.previewAuthSeq) {
+                return;
+            }
+            globalStore.set(this.previewAuthAtom, auth?.token ? auth : null);
+        } catch (err) {
+            console.error("Failed to get the preview token:", err);
+            if (seq === this.previewAuthSeq) {
+                globalStore.set(this.previewAuthAtom, null);
+            }
         }
     }
 
