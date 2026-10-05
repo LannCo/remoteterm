@@ -49,6 +49,7 @@ var BuildTime = "0"
 
 const BackupCleanupTick = 2 * time.Minute
 const BackupCleanupInterval = 4 * time.Hour
+const BuilderSweepTimeout = 30 * time.Second
 
 var shutdownOnce sync.Once
 
@@ -116,6 +117,14 @@ func backupCleanupLoop() {
 		}
 		time.Sleep(BackupCleanupTick)
 	}
+}
+
+// Runs after the job and block controllers subscribe to BlockClose, so swept shells are torn down, and
+// before any listener opens, so no window can see or race the orphaned tabs.
+func runBuilderSweep() {
+	ctx, cancelFn := context.WithTimeout(context.Background(), BuilderSweepTimeout)
+	defer cancelFn()
+	rtcore.SweepBuilderTabs(ctx)
 }
 
 func createMainWshClient() {
@@ -307,6 +316,7 @@ func main() {
 	blocklogger.InitBlockLogger()
 	jobcontroller.InitJobController()
 	blockcontroller.InitBlockController()
+	runBuilderSweep()
 	go blockcontroller.StartupReconnectDurableShells(context.Background())
 	err = rtcore.InitBadgeStore()
 	if err != nil {

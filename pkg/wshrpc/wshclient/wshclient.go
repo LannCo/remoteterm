@@ -255,6 +255,12 @@ func ElectronSystemBellCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) error {
 	return err
 }
 
+// command "ensurebuildertab", wshserver.EnsureBuilderTabCommand
+func EnsureBuilderTabCommand(w *wshutil.WshRpc, data wshrpc.CommandEnsureBuilderTabData, opts *wshrpc.RpcOpts) (*wshrpc.CommandEnsureBuilderTabRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandEnsureBuilderTabRtnData](w, "ensurebuildertab", data, opts)
+	return resp, err
+}
+
 // command "eventpublish", wshserver.EventPublishCommand
 func EventPublishCommand(w *wshutil.WshRpc, data wps.WaveEvent, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "eventpublish", data, opts)

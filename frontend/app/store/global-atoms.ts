@@ -16,10 +16,13 @@ function initGlobalAtoms(initOpts: GlobalInitOptions) {
     const builderIdAtom = atom(initOpts.builderId) as PrimitiveAtom<string>;
     const builderAppIdAtom = atom<string>(null) as PrimitiveAtom<string>;
     setWaveWindowType(initOpts.isPreview ? "preview" : initOpts.builderId != null ? "builder" : "tab");
+    // this is *the* tab that this tabview represents.  it should never change.
+    // Builder windows have no tab at init; their terminal panel sets it once, after loading its tab.
+    const staticTabIdAtom = atom(initOpts.tabId) as PrimitiveAtom<string>;
     const uiContextAtom = atom((get) => {
         const uiContext: UIContext = {
             windowid: initOpts.windowId,
-            activetabid: initOpts.tabId,
+            activetabid: get(staticTabIdAtom),
         };
         return uiContext;
     }) as Atom<UIContext>;
@@ -62,8 +65,6 @@ function initGlobalAtoms(initOpts: GlobalInitOptions) {
         const fullConfig = get(fullConfigAtom);
         return fullConfig?.configerrors != null && fullConfig.configerrors.length > 0;
     }) as Atom<boolean>;
-    // this is *the* tab that this tabview represents.  it should never change.
-    const staticTabIdAtom: Atom<string> = atom(initOpts.tabId);
     const controlShiftDelayAtom = atom(false);
     const reducedMotionSettingAtom = atom((get) => get(settingsAtom)?.["window:reducedmotion"]);
     const reducedMotionSystemPreferenceAtom = atom(false);

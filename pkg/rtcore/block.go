@@ -24,6 +24,9 @@ func CreateSubBlock(ctx context.Context, blockId string, blockDef *remotetermobj
 	if blockDef.Meta == nil || blockDef.Meta.GetString(remotetermobj.MetaKey_View, "") == "" {
 		return nil, fmt.Errorf("no view provided for new block")
 	}
+	if err := rtstore.CheckBuilderBlockConnection(ctx, blockId, blockDef.Meta); err != nil {
+		return nil, err
+	}
 	blockData, err := createSubBlockObj(ctx, blockId, blockDef)
 	if err != nil {
 		return nil, fmt.Errorf("error creating sub block: %w", err)
@@ -69,6 +72,9 @@ func CreateBlock(ctx context.Context, tabId string, blockDef *remotetermobj.Bloc
 	}
 	if blockDef.Meta == nil || blockDef.Meta.GetString(remotetermobj.MetaKey_View, "") == "" {
 		return nil, fmt.Errorf("no view provided for new block")
+	}
+	if err := rtstore.CheckBuilderTabConnection(ctx, tabId, blockDef.Meta); err != nil {
+		return nil, err
 	}
 	blockData, err := createBlockObj(ctx, tabId, blockDef, rtOpts)
 	if err != nil {
@@ -136,10 +142,13 @@ func DeleteBlock(ctx context.Context, blockId string, recursive bool) error {
 	if err != nil {
 		return fmt.Errorf("error deleting block: %w", err)
 	}
+	// Published before any cascade step, so a later error cannot leave the block's controller (and its shell) running.
+	sendBlockCloseEvent(blockId)
 	log.Printf("DeleteBlock: parentBlockCount: %d", parentBlockCount)
 	parentORef := remotetermobj.ParseORefNoErr(block.ParentORef)
 
-	if recursive && parentORef.OType == remotetermobj.OType_Tab && parentBlockCount == 0 {
+	// A builder tab outlives its last pane: the builder panel shows an empty state, and the builder deletes the tab.
+	if recursive && parentORef != nil && parentORef.OType == remotetermobj.OType_Tab && parentBlockCount == 0 && !rtstore.IsBuilderTab(ctx, parentORef.OID) {
 		// if parent tab has no blocks, delete the tab
 		log.Printf("DeleteBlock: parent tab has no blocks, deleting tab %s", parentORef.OID)
 		parentWorkspaceId, err := rtstore.DBFindWorkspaceForTabId(ctx, parentORef.OID)
@@ -152,7 +161,6 @@ func DeleteBlock(ctx context.Context, blockId string, recursive bool) error {
 		}
 		SendActiveTabUpdate(ctx, parentWorkspaceId, newActiveTabId)
 	}
-	sendBlockCloseEvent(blockId)
 	return nil
 }
 

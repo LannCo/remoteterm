@@ -16,7 +16,7 @@ declare global {
         fullConfigAtom: jotai.PrimitiveAtom<FullConfigType>; // driven from WOS, settings -- updated via WebSocket
         settingsAtom: jotai.Atom<SettingsType>; // derrived from fullConfig
         hasConfigErrors: jotai.Atom<boolean>; // derived from fullConfig
-        staticTabId: jotai.Atom<string>;
+        staticTabId: jotai.PrimitiveAtom<string>; // set at init in main windows; set once by the builder terminal panel
         isFullScreen: jotai.PrimitiveAtom<boolean>;
         zoomFactorAtom: jotai.PrimitiveAtom<number>;
         controlShiftDelayAtom: jotai.PrimitiveAtom<boolean>;
@@ -74,6 +74,17 @@ declare global {
         windowId: string;
     };
 
+    type BuilderTerminalTarget = {
+        targetblockid?: string;
+        targetaction?: string;
+    };
+
+    type BuilderTabInfo = {
+        tabid?: string;
+        appid?: string;
+        error?: string;
+    };
+
     type ElectronApi = {
         getAuthKey(): string; // get-auth-key
         getIsDev(): boolean; // get-is-dev
@@ -123,7 +134,8 @@ declare global {
         nativePaste: () => void; // native-paste
         openBuilder: (appId?: string) => void; // open-builder
         setBuilderWindowAppId: (appId: string) => Promise<boolean>; // set-builder-window-appid
-        openBuilderTerminal: () => Promise<string>; // open-builder-terminal
+        ensureBuilderTab: () => Promise<BuilderTabInfo>; // ensure-builder-tab
+        openBuilderTerminal: (target?: BuilderTerminalTarget) => Promise<string>; // open-builder-terminal
         openBuilderFolder: () => Promise<string>; // open-builder-folder
         doRefresh: () => void; // do-refresh
         getPathForFile: (file: File) => string; // webUtils.getPathForFile

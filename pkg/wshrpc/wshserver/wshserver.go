@@ -1161,14 +1161,6 @@ func (ws *WshServer) WriteAppSecretBindingsCommand(ctx context.Context, data wsh
 	return remotetermappstore.WriteAppSecretBindings(data.AppId, data.Bindings)
 }
 
-func (ws *WshServer) DeleteBuilderCommand(ctx context.Context, builderId string) error {
-	if builderId == "" {
-		return fmt.Errorf("must provide a builderId to DeleteBuilderCommand")
-	}
-	buildercontroller.DeleteController(builderId)
-	return nil
-}
-
 func (ws *WshServer) StartBuilderCommand(ctx context.Context, data wshrpc.CommandStartBuilderData) error {
 	if data.BuilderId == "" {
 		return fmt.Errorf("must provide a builderId to StartBuilderCommand")
@@ -1203,22 +1195,6 @@ func (ws *WshServer) WatchBuilderAppCommand(ctx context.Context, data wshrpc.Com
 	}
 	status := buildercontroller.GetOrCreateController(data.BuilderId).StartWatching(appId)
 	return &status, nil
-}
-
-func (ws *WshServer) OpenBuilderTerminalCommand(ctx context.Context, data wshrpc.CommandOpenBuilderTerminalData) error {
-	if data.BuilderId == "" || data.TabId == "" {
-		return fmt.Errorf("must provide a builderId and a tabId to OpenBuilderTerminalCommand")
-	}
-	appDir, err := buildercontroller.ResolveBuilderAppDir(data.BuilderId)
-	if err != nil {
-		return err
-	}
-	_, err = ws.CreateBlockCommand(ctx, wshrpc.CommandCreateBlockData{
-		TabId:    data.TabId,
-		BlockDef: buildercontroller.MakeBuilderTerminalBlockDef(appDir),
-		Focused:  true,
-	})
-	return err
 }
 
 func (ws *WshServer) GetBuilderAppDirCommand(ctx context.Context, data wshrpc.CommandGetBuilderAppDirData) (string, error) {

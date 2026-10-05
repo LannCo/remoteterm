@@ -2,31 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it, vi } from "vitest";
-import { bringWindowToFront, findBuilderWindowForApp, openPathDetached, pickTerminalWindow } from "./emain-builder-select";
-
-function makeWin(id: string, destroyed = false) {
-    return { id, isDestroyed: () => destroyed };
-}
-
-describe("pickTerminalWindow", () => {
-    it("prefers the last focused window", () => {
-        const a = makeWin("a");
-        const b = makeWin("b");
-        expect(pickTerminalWindow(b, [a, b])).toBe(b);
-    });
-
-    it("falls back to the first live window when the last focused one is gone", () => {
-        const gone = makeWin("gone", true);
-        const live = makeWin("live");
-        expect(pickTerminalWindow(gone, [gone, live])).toBe(live);
-        expect(pickTerminalWindow(null, [live])).toBe(live);
-    });
-
-    it("returns null when no window is open", () => {
-        expect(pickTerminalWindow(null, [])).toBeNull();
-        expect(pickTerminalWindow(null, [makeWin("x", true)])).toBeNull();
-    });
-});
+import {
+    findBuilderWindowForApp,
+    openPathDetached,
+    parseBuilderTerminalTarget,
+    runBuilderTeardown,
+} from "./emain-builder-select";
 
 describe("findBuilderWindowForApp", () => {
     const windows = [
@@ -43,41 +24,15 @@ describe("findBuilderWindowForApp", () => {
         expect(findBuilderWindowForApp(windows, "draft/one", "b1")).toBeNull();
     });
 
+    it("skips a window that is tearing down", () => {
+        const closing = [...windows, { builderId: "b4", builderAppId: "draft/one", tearingDown: true }];
+        expect(findBuilderWindowForApp(closing, "draft/one", "b2")).toBe(windows[0]);
+        expect(findBuilderWindowForApp([closing[3]], "draft/one", "b2")).toBeNull();
+    });
+
     it("never matches an empty app id", () => {
         expect(findBuilderWindowForApp(windows, "", "b1")).toBeNull();
         expect(findBuilderWindowForApp(windows, null, "b1")).toBeNull();
-    });
-});
-
-describe("bringWindowToFront", () => {
-    function makeRevealable(minimized: boolean, visible: boolean) {
-        return {
-            isMinimized: () => minimized,
-            restore: vi.fn(),
-            isVisible: () => visible,
-            show: vi.fn(),
-            focus: vi.fn(),
-        };
-    }
-
-    it("restores a minimised window before focusing it", () => {
-        const win = makeRevealable(true, true);
-        bringWindowToFront(win);
-        expect(win.restore).toHaveBeenCalledTimes(1);
-        expect(win.focus).toHaveBeenCalledTimes(1);
-        expect(win.restore.mock.invocationCallOrder[0]).toBeLessThan(win.focus.mock.invocationCallOrder[0]);
-    });
-
-    it("shows a hidden window and leaves a normal one alone", () => {
-        const hidden = makeRevealable(false, false);
-        bringWindowToFront(hidden);
-        expect(hidden.show).toHaveBeenCalledTimes(1);
-        expect(hidden.restore).not.toHaveBeenCalled();
-        const normal = makeRevealable(false, true);
-        bringWindowToFront(normal);
-        expect(normal.show).not.toHaveBeenCalled();
-        expect(normal.restore).not.toHaveBeenCalled();
-        expect(normal.focus).toHaveBeenCalledTimes(1);
     });
 });
 
@@ -140,5 +95,150 @@ describe("openPathDetached", () => {
 
     it("returns an empty string for a fast success", async () => {
         expect(await openPathDetached(async () => "", "/a", vi.fn())).toBe("");
+    });
+});
+
+describe("parseBuilderTerminalTarget", () => {
+    it("treats a missing target as append", () => {
+        const empty = { targetblockid: "", targetaction: "" };
+        expect(parseBuilderTerminalTarget(undefined)).toEqual(empty);
+        expect(parseBuilderTerminalTarget(null)).toEqual(empty);
+        expect(parseBuilderTerminalTarget({})).toEqual(empty);
+    });
+
+    it("passes short strings through", () => {
+        expect(parseBuilderTerminalTarget({ targetblockid: "b1", targetaction: "splitright" })).toEqual({
+            targetblockid: "b1",
+            targetaction: "splitright",
+        });
+        expect(parseBuilderTerminalTarget({ targetblockid: "x".repeat(64) }).error).toBeUndefined();
+    });
+
+    it("rejects non-strings and strings over 64 characters", () => {
+        for (const bad of [
+            { targetblockid: 5 },
+            { targetaction: ["splitright"] },
+            { targetblockid: "x".repeat(65) },
+            "splitright",
+            7,
+        ]) {
+            expect(parseBuilderTerminalTarget(bad)).toEqual({
+                targetblockid: "",
+                targetaction: "",
+                error: "Invalid terminal target.",
+            });
+        }
+    });
+});
+
+function makeTeardownWindow() {
+    let destroyed = false;
+    return {
+        tearingDown: false,
+        hide: vi.fn(),
+        isDestroyed: () => destroyed,
+        destroy: vi.fn(() => {
+            destroyed = true;
+        }),
+    };
+}
+
+describe("runBuilderTeardown", () => {
+    it("hides the window, deletes the builder, then its rtinfo, then destroys the window", async () => {
+        const order: string[] = [];
+        const win = makeTeardownWindow();
+        win.hide.mockImplementation(() => order.push("hide"));
+        await runBuilderTeardown(win, {
+            deleteBuilder: async () => {
+                order.push("delete");
+            },
+            deleteRtInfo: async () => {
+                order.push("rtinfo");
+            },
+            destroyWindow: () => {
+                order.push("destroy");
+                win.destroy();
+            },
+            logError: vi.fn(),
+        });
+        expect(order).toEqual(["hide", "delete", "rtinfo", "destroy"]);
+    });
+
+    it("waits for the delete before going on", async () => {
+        const order: string[] = [];
+        let finish: () => void;
+        const win = makeTeardownWindow();
+        const done = runBuilderTeardown(win, {
+            deleteBuilder: () =>
+                new Promise<void>((resolve) => {
+                    finish = () => {
+                        order.push("delete");
+                        resolve();
+                    };
+                }),
+            deleteRtInfo: async () => {
+                order.push("rtinfo");
+            },
+            destroyWindow: () => order.push("destroy"),
+            logError: vi.fn(),
+        });
+        await Promise.resolve();
+        expect(order).toEqual([]);
+        finish();
+        await done;
+        expect(order).toEqual(["delete", "rtinfo", "destroy"]);
+    });
+
+    it("still destroys the window when both RPCs fail", async () => {
+        const order: string[] = [];
+        const logError = vi.fn();
+        await runBuilderTeardown(makeTeardownWindow(), {
+            deleteBuilder: async () => {
+                order.push("delete");
+                throw new Error("server gone");
+            },
+            deleteRtInfo: async () => {
+                order.push("rtinfo");
+                throw new Error("server gone");
+            },
+            destroyWindow: () => order.push("destroy"),
+            logError,
+        });
+        expect(order).toEqual(["delete", "rtinfo", "destroy"]);
+        expect(logError).toHaveBeenCalledTimes(2);
+    });
+
+    it("runs the teardown and destroys the window once when asked twice at the same time", async () => {
+        const win = makeTeardownWindow();
+        const deleteBuilder = vi.fn(() => new Promise<void>((resolve) => setTimeout(resolve, 10)));
+        const steps = {
+            deleteBuilder,
+            deleteRtInfo: vi.fn(async () => {}),
+            destroyWindow: () => win.destroy(),
+            logError: vi.fn(),
+        };
+        await Promise.all([runBuilderTeardown(win, steps), runBuilderTeardown(win, steps)]);
+        expect(deleteBuilder).toHaveBeenCalledTimes(1);
+        expect(steps.deleteRtInfo).toHaveBeenCalledTimes(1);
+        expect(win.hide).toHaveBeenCalledTimes(1);
+        expect(win.destroy).toHaveBeenCalledTimes(1);
+    });
+
+    it("leaves a window alone that is already destroyed, or destroyed during the teardown", async () => {
+        const gone = makeTeardownWindow();
+        gone.destroy();
+        const steps = {
+            deleteBuilder: vi.fn(async () => {}),
+            deleteRtInfo: vi.fn(async () => {}),
+            destroyWindow: vi.fn(),
+            logError: vi.fn(),
+        };
+        await runBuilderTeardown(gone, steps);
+        expect(steps.deleteBuilder).not.toHaveBeenCalled();
+        expect(gone.hide).not.toHaveBeenCalled();
+
+        const closing = makeTeardownWindow();
+        await runBuilderTeardown(closing, { ...steps, deleteBuilder: async () => closing.destroy() });
+        expect(steps.destroyWindow).not.toHaveBeenCalled();
     });
 });

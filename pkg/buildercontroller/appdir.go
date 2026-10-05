@@ -18,6 +18,12 @@ func ResolveBuilderAppDir(builderId string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return ResolveAppDirForAppId(appId)
+}
+
+// Builder terminals resolve their folder from the app id stored on their tab, never from rtinfo,
+// which any pane can rewrite through SetRTInfoCommand.
+func ResolveAppDirForAppId(appId string) (string, error) {
 	appDir, err := remotetermappstore.GetAppDir(appId)
 	if err != nil {
 		return "", err
@@ -38,10 +44,11 @@ func ResolveBuilderAppDir(builderId string) (string, error) {
 func MakeBuilderTerminalBlockDef(appDir string) *remotetermobj.BlockDef {
 	return &remotetermobj.BlockDef{
 		Meta: remotetermobj.MetaMapType{
-			remotetermobj.MetaKey_View:       "term",
-			remotetermobj.MetaKey_Controller: "shell",
-			remotetermobj.MetaKey_Connection: "local",
-			remotetermobj.MetaKey_CmdCwd:     appDir,
+			remotetermobj.MetaKey_View:        "term",
+			remotetermobj.MetaKey_Controller:  "shell",
+			remotetermobj.MetaKey_Connection:  "local",
+			remotetermobj.MetaKey_CmdCwd:      appDir,
+			remotetermobj.MetaKey_TermDurable: false,
 		},
 	}
 }

@@ -84,3 +84,45 @@ func TestMakeBuilderTerminalBlockDef(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveAppDirForAppIdIgnoresRtInfo(t *testing.T) {
+	home, _ := setupBuilderTest(t)
+	appDir := makeTestApp(t, home, "demo")
+	setBuilderAppId(t, "test-appdir-other", "draft/other")
+	got, err := ResolveAppDirForAppId("draft/demo")
+	if err != nil || got != appDir {
+		t.Fatalf("ResolveAppDirForAppId = %q, %v; want %q", got, err, appDir)
+	}
+}
+
+func TestResolveAppDirForAppIdRejectsBadIdsAndFolders(t *testing.T) {
+	home, _ := setupBuilderTest(t)
+	if err := os.MkdirAll(filepath.Join(home, "waveapps", "draft"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "waveapps", "draft", "afile"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	for _, appId := range []string{"", "demo", "draft/../../etc", "Draft/demo", "draft/nothere", "draft/afile"} {
+		if got, err := ResolveAppDirForAppId(appId); err == nil {
+			t.Errorf("ResolveAppDirForAppId(%q) = %q, want an error", appId, got)
+		}
+	}
+	if runtime.GOOS == "windows" {
+		return
+	}
+	if err := os.Symlink(t.TempDir(), filepath.Join(home, "waveapps", "draft", "linked")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResolveAppDirForAppId("draft/linked"); err == nil {
+		t.Error("a symlinked app folder was accepted")
+	}
+}
+
+func TestMakeBuilderTerminalBlockDefPinsDurableOff(t *testing.T) {
+	def := MakeBuilderTerminalBlockDef("/home/u/waveapps/draft/demo")
+	durable, ok := def.Meta[remotetermobj.MetaKey_TermDurable].(bool)
+	if !ok || durable {
+		t.Fatalf("meta[%q] = %#v, want false", remotetermobj.MetaKey_TermDurable, def.Meta[remotetermobj.MetaKey_TermDurable])
+	}
+}

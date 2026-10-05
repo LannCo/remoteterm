@@ -1,7 +1,7 @@
 // Copyright 2025, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { BuilderAppPanelModel } from "@/builder/store/builder-apppanel-model";
+import { BuilderAppPanelModel, getBuilderPreviewPartition } from "@/builder/store/builder-apppanel-model";
 import { atoms } from "@/store/global";
 import { useAtomValue } from "jotai";
 import { memo, useState } from "react";
@@ -154,8 +154,8 @@ const MissingAppGoView = memo(() => {
                 <div className="flex flex-col gap-3">
                     <h2 className="text-2xl font-semibold text-primary">app.go is missing</h2>
                     <p className="text-base text-secondary leading-relaxed">
-                        The app folder has no <span className="font-mono">app.go</span>. Create the starter app, or
-                        add one from your editor.
+                        The app folder has no <span className="font-mono">app.go</span>. Create the starter app, or add
+                        one from your editor.
                     </p>
                 </div>
                 <button
@@ -181,6 +181,7 @@ const BuilderPreviewTab = memo(() => {
     const builderStatus = useAtomValue(model.builderStatusAtom);
     const builderId = useAtomValue(atoms.builderId);
     const appGoMissing = useAtomValue(model.appGoMissingAtom);
+    const isResizing = useAtomValue(model.resizeDraggingAtom);
     const fileExists = originalContent.length > 0;
     const [lastKnownUrl, setLastKnownUrl] = useState<string>(null);
 
@@ -215,10 +216,11 @@ const BuilderPreviewTab = memo(() => {
                 <webview
                     ref={model.webviewRef}
                     src={lastKnownUrl}
+                    partition={getBuilderPreviewPartition(builderId)}
                     className="w-full h-full"
                     style={{
                         visibility: isWebViewActive ? "visible" : "hidden",
-                        pointerEvents: isWebViewActive ? "auto" : "none",
+                        pointerEvents: isWebViewActive && !isResizing ? "auto" : "none",
                     }}
                 />
             )}
