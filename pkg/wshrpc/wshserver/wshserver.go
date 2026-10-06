@@ -180,10 +180,16 @@ func (ws *WshServer) SetMetaCommand(ctx context.Context, data wshrpc.CommandSetM
 }
 
 func (ws *WshServer) GetRTInfoCommand(ctx context.Context, data wshrpc.CommandGetRTInfoData) (*remotetermobj.ObjRTInfo, error) {
+	if err := checkRTInfoCaller(wshutil.GetRpcSourceFromContext(ctx), data.ORef); err != nil {
+		return nil, err
+	}
 	return rtstore.GetRTInfo(data.ORef), nil
 }
 
 func (ws *WshServer) SetRTInfoCommand(ctx context.Context, data wshrpc.CommandSetRTInfoData) error {
+	if err := checkRTInfoCaller(wshutil.GetRpcSourceFromContext(ctx), data.ORef); err != nil {
+		return err
+	}
 	if data.Delete {
 		rtstore.DeleteRTInfo(data.ORef)
 		return nil
@@ -1110,6 +1116,12 @@ func (ws *WshServer) WriteAppGoFileCommand(ctx context.Context, data wshrpc.Comm
 	if data.AppId == "" {
 		return nil, fmt.Errorf("must provide an appId to WriteAppGoFileCommand")
 	}
+	// A save names the builder to rebuild, and a rebuild runs the app with its bound secrets.
+	if data.BuilderId != "" {
+		if err := checkBuilderCaller(wshutil.GetRpcSourceFromContext(ctx), data.BuilderId, true); err != nil {
+			return nil, err
+		}
+	}
 	contents, err := base64.StdEncoding.DecodeString(data.Data64)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode data64: %w", err)
@@ -1165,6 +1177,9 @@ func (ws *WshServer) StartBuilderCommand(ctx context.Context, data wshrpc.Comman
 	if data.BuilderId == "" {
 		return fmt.Errorf("must provide a builderId to StartBuilderCommand")
 	}
+	if err := checkBuilderCaller(wshutil.GetRpcSourceFromContext(ctx), data.BuilderId, true); err != nil {
+		return err
+	}
 	bc := buildercontroller.GetOrCreateController(data.BuilderId)
 	appId, builderEnv, err := buildercontroller.GetBuilderRebuildInputs(data.BuilderId)
 	if err != nil {
@@ -1177,11 +1192,18 @@ func (ws *WshServer) RequestBuilderRebuildCommand(ctx context.Context, data wshr
 	if data.BuilderId == "" {
 		return fmt.Errorf("must provide a builderId to RequestBuilderRebuildCommand")
 	}
+	if err := checkBuilderCaller(wshutil.GetRpcSourceFromContext(ctx), data.BuilderId, true); err != nil {
+		return err
+	}
 	appId, builderEnv, err := buildercontroller.GetBuilderRebuildInputs(data.BuilderId)
 	if err != nil {
 		return err
 	}
-	buildercontroller.GetOrCreateController(data.BuilderId).RequestRebuild(appId, builderEnv)
+	bc := buildercontroller.GetOrCreateController(data.BuilderId)
+	if data.AutoRun {
+		return bc.RequestAutoRun(appId, builderEnv)
+	}
+	bc.RequestUserRebuild(appId, builderEnv)
 	return nil
 }
 
@@ -1189,12 +1211,30 @@ func (ws *WshServer) WatchBuilderAppCommand(ctx context.Context, data wshrpc.Com
 	if data.BuilderId == "" {
 		return nil, fmt.Errorf("must provide a builderId to WatchBuilderAppCommand")
 	}
+	if err := checkBuilderCaller(wshutil.GetRpcSourceFromContext(ctx), data.BuilderId, true); err != nil {
+		return nil, err
+	}
 	appId, _, err := buildercontroller.GetBuilderRebuildInputs(data.BuilderId)
 	if err != nil {
 		return nil, err
 	}
 	status := buildercontroller.GetOrCreateController(data.BuilderId).StartWatching(appId)
 	return &status, nil
+}
+
+func (ws *WshServer) GetBuilderPreviewAuthCommand(ctx context.Context, data wshrpc.CommandGetBuilderPreviewAuthData) (*wshrpc.BuilderPreviewAuthData, error) {
+	if data.BuilderId == "" {
+		return nil, fmt.Errorf("must provide a builderId to GetBuilderPreviewAuthCommand")
+	}
+	if err := checkBuilderCaller(wshutil.GetRpcSourceFromContext(ctx), data.BuilderId, true); err != nil {
+		return nil, err
+	}
+	bc := buildercontroller.GetController(data.BuilderId)
+	if bc == nil {
+		return &wshrpc.BuilderPreviewAuthData{}, nil
+	}
+	port, token := bc.GetPreviewAuth()
+	return &wshrpc.BuilderPreviewAuthData{Port: port, Token: token}, nil
 }
 
 func (ws *WshServer) GetBuilderAppDirCommand(ctx context.Context, data wshrpc.CommandGetBuilderAppDirData) (string, error) {
