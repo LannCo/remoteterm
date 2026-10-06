@@ -28,6 +28,7 @@ tasks:
             - npm:install
             - build:backend
             - build:tsunamiscaffold
+            - build:tsunamisdk
         env:
             REMOTETERM_ENVFILE: "{{.ROOT_DIR}}/.env"
             WCLOUD_PING_ENDPOINT: "https://ping-dev.waveterm.dev/central"
@@ -134,6 +135,7 @@ tasks:
             - npm:install
             - build:backend
             - build:tsunamiscaffold
+            - build:tsunamisdk
 
     build:frontend:dev:
         desc: Build the frontend in development mode.
@@ -364,6 +366,19 @@ tasks:
             - "tsunami/templates/**/*"
         generates:
             - "dist/tsunamiscaffold/**/*"
+
+    build:tsunamisdk:
+        desc: Copy the Tsunami SDK runtime packages to the dist directory.
+        cmds:
+            - cmd: "{{.RMRF}} dist/tsunamisdk"
+              ignore_error: true
+            - "{{.GO}} run -C tsunami ./cmd sdkbundle --src {{.ROOT_DIR}}/tsunami {{.ROOT_DIR}}/dist/tsunamisdk"
+        sources:
+            - "tsunami/go.mod"
+            - "tsunami/go.sum"
+            - "tsunami/**/*.go"
+        generates:
+            - "dist/tsunamisdk/**/*"
 
     generate:
         desc: Generate Typescript bindings for the Go backend.
