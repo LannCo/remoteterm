@@ -90,6 +90,16 @@ func GetRpcSourceFromContext(ctx context.Context) string {
 	return rtn.(*RpcResponseHandler).GetSource()
 }
 
+// MakeRpcSourceContextForTest returns a context whose RPC source is source, as if the request had
+// arrived on that route. Production code never calls it; handler tests use it to drive caller checks.
+func MakeRpcSourceContextForTest(ctx context.Context, source string) context.Context {
+	return withRespHandler(ctx, &RpcResponseHandler{
+		source:   source,
+		canceled: &atomic.Bool{},
+		done:     &atomic.Bool{},
+	})
+}
+
 func GetIsCanceledFromContext(ctx context.Context) bool {
 	rtn := ctx.Value(wshRpcRespHandlerContextKey{})
 	if rtn == nil {

@@ -106,6 +106,24 @@ func insertTestTab(t *testing.T, meta remotetermobj.MetaMapType) *remotetermobj.
 	return tab
 }
 
+func insertTestWorkspace(t *testing.T, tabIds ...string) *remotetermobj.Workspace {
+	t.Helper()
+	ws := &remotetermobj.Workspace{OID: uuid.NewString(), TabIds: tabIds}
+	if err := rtstore.DBInsert(context.Background(), ws); err != nil {
+		t.Fatalf("insert workspace: %v", err)
+	}
+	return ws
+}
+
+func makeTestBuilderTab(t *testing.T, builderId string) *remotetermobj.Tab {
+	t.Helper()
+	tab, err := CreateBuilderTab(context.Background(), builderId, "draft/demo")
+	if err != nil {
+		t.Fatalf("CreateBuilderTab: %v", err)
+	}
+	return tab
+}
+
 func addTestTermBlock(t *testing.T, tabId string) *remotetermobj.Block {
 	t.Helper()
 	blockDef := &remotetermobj.BlockDef{Meta: remotetermobj.MetaMapType{

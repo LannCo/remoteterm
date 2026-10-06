@@ -302,6 +302,18 @@ declare global {
         storagebackend: string;
     };
 
+    // wshrpc.CommandEnsureBuilderTabData
+    type CommandEnsureBuilderTabData = {
+        builderid: string;
+        appid: string;
+    };
+
+    // wshrpc.CommandEnsureBuilderTabRtnData
+    type CommandEnsureBuilderTabRtnData = {
+        tabid: string;
+        appid: string;
+    };
+
     // wshrpc.CommandEventReadHistoryData
     type CommandEventReadHistoryData = {
         event: string;
@@ -509,6 +521,13 @@ declare global {
     // wshrpc.CommandMessageData
     type CommandMessageData = {
         message: string;
+    };
+
+    // wshrpc.CommandOpenBuilderTerminalData
+    type CommandOpenBuilderTerminalData = {
+        builderid: string;
+        targetblockid?: string;
+        targetaction?: string;
     };
 
     // wshrpc.CommandPublishAppData

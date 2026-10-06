@@ -255,6 +255,12 @@ func ElectronSystemBellCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) error {
 	return err
 }
 
+// command "ensurebuildertab", wshserver.EnsureBuilderTabCommand
+func EnsureBuilderTabCommand(w *wshutil.WshRpc, data wshrpc.CommandEnsureBuilderTabData, opts *wshrpc.RpcOpts) (*wshrpc.CommandEnsureBuilderTabRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandEnsureBuilderTabRtnData](w, "ensurebuildertab", data, opts)
+	return resp, err
+}
+
 // command "eventpublish", wshserver.EventPublishCommand
 func EventPublishCommand(w *wshutil.WshRpc, data wps.WaveEvent, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "eventpublish", data, opts)
@@ -695,6 +701,12 @@ func NotifyCommand(w *wshutil.WshRpc, data wshrpc.WaveNotificationOptions, opts 
 // command "notifysystemresume", wshserver.NotifySystemResumeCommand
 func NotifySystemResumeCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "notifysystemresume", nil, opts)
+	return err
+}
+
+// command "openbuilderterminal", wshserver.OpenBuilderTerminalCommand
+func OpenBuilderTerminalCommand(w *wshutil.WshRpc, data wshrpc.CommandOpenBuilderTerminalData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "openbuilderterminal", data, opts)
 	return err
 }
 
