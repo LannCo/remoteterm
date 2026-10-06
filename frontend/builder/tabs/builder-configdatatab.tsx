@@ -77,10 +77,14 @@ const BuilderConfigDataTab = memo(() => {
         isLoading: false,
     });
 
+    const previewAuth = useAtomValue(model.previewAuthAtom);
+
     const isRunning = builderStatus?.status === "running" && builderStatus?.port && builderStatus.port !== 0;
+    // The running app answers /api/* only to a caller with its token; one fetched for another port is not this run's.
+    const token = previewAuth?.port === builderStatus?.port ? previewAuth?.token : null;
 
     const fetchData = useCallback(async () => {
-        if (!isRunning || !builderStatus?.port) {
+        if (!isRunning || !builderStatus?.port || !token) {
             return;
         }
 
@@ -89,9 +93,10 @@ const BuilderConfigDataTab = memo(() => {
         try {
             const baseUrl = `http://localhost:${builderStatus.port}`;
 
+            const headers = { Authorization: `Bearer ${token}` };
             const [configResponse, dataResponse] = await Promise.all([
-                fetch(`${baseUrl}/api/config`),
-                fetch(`${baseUrl}/api/data`),
+                fetch(`${baseUrl}/api/config`, { headers }),
+                fetch(`${baseUrl}/api/data`, { headers }),
             ]);
 
             if (!configResponse.ok) {
@@ -118,7 +123,7 @@ const BuilderConfigDataTab = memo(() => {
                 isLoading: false,
             });
         }
-    }, [isRunning, builderStatus?.port]);
+    }, [isRunning, builderStatus?.port, token]);
 
     const handleRefresh = useCallback(async () => {
         setState({

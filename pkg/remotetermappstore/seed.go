@@ -40,6 +40,9 @@ func SeedApp(appId string) ([]string, error) {
 		if err := deleteSecretBindings(appId); err != nil {
 			return nil, err
 		}
+		if err := DeleteTrustedBuildHash(appId); err != nil {
+			return nil, err
+		}
 	}
 	if err := os.MkdirAll(appDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create app directory: %w", err)

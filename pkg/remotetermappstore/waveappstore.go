@@ -316,6 +316,9 @@ func DeleteApp(appId string) error {
 	if err := deleteSecretBindings(appId); err != nil {
 		return err
 	}
+	if err := DeleteTrustedBuildHash(appId); err != nil {
+		return err
+	}
 
 	return removeAppDir(appDir)
 }

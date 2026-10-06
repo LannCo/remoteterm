@@ -426,6 +426,12 @@ export class RpcApiType {
         return client.wshRpcCall("getbuilderoutput", data, opts);
     }
 
+    // command "getbuilderpreviewauth" [call]
+    GetBuilderPreviewAuthCommand(client: WshClient, data: CommandGetBuilderPreviewAuthData, opts?: RpcOpts): Promise<BuilderPreviewAuthData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getbuilderpreviewauth", data, opts);
+        return client.wshRpcCall("getbuilderpreviewauth", data, opts);
+    }
+
     // command "getbuilderstatus" [call]
     GetBuilderStatusCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<BuilderStatusData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getbuilderstatus", data, opts);
