@@ -136,6 +136,8 @@ func DeleteBlock(ctx context.Context, blockId string, recursive bool) error {
 	if err != nil {
 		return fmt.Errorf("error deleting block: %w", err)
 	}
+	// Published before any cascade step, so a later error cannot leave the block's controller (and its shell) running.
+	sendBlockCloseEvent(blockId)
 	log.Printf("DeleteBlock: parentBlockCount: %d", parentBlockCount)
 	parentORef := remotetermobj.ParseORefNoErr(block.ParentORef)
 
@@ -152,7 +154,6 @@ func DeleteBlock(ctx context.Context, blockId string, recursive bool) error {
 		}
 		SendActiveTabUpdate(ctx, parentWorkspaceId, newActiveTabId)
 	}
-	sendBlockCloseEvent(blockId)
 	return nil
 }
 
