@@ -5,13 +5,17 @@ package buildercontroller
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/LannCo/remoteterm/tsunami/build"
 )
 
 func waitUntil(t *testing.T, timeout time.Duration, cond func() bool, what string) {
@@ -438,5 +442,41 @@ func TestRequestRebuildAfterSaveUsesTheBuilderAppId(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("the save of the builder's app did not build")
+	}
+}
+
+func TestRunOneBuildUsesTheBuildPackageTimeout(t *testing.T) {
+	home, _ := setupBuilderTest(t)
+	makeTestApp(t, home, "demo")
+	cache := t.TempDir()
+	t.Setenv("GOCACHE", cache)
+
+	deadlineWith := func() time.Duration {
+		bc := makeBuilderController("test-timeout")
+		got := make(chan time.Duration, 1)
+		bc.runBuildFn = func(ctx context.Context, appId string, builderEnv map[string]string) {
+			d, ok := ctx.Deadline()
+			if !ok {
+				got <- 0
+				return
+			}
+			got <- time.Until(d)
+		}
+		bc.runOneBuild("draft/demo", nil)
+		return <-got
+	}
+
+	if d := deadlineWith(); d <= build.WarmBuildTimeout || d > build.ColdBuildTimeout {
+		t.Fatalf("cold cache: build deadline %v, want within (%v, %v]", d, build.WarmBuildTimeout, build.ColdBuildTimeout)
+	}
+
+	if err := os.MkdirAll(filepath.Join(cache, "ab"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cache, "ab", "entry"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if d := deadlineWith(); d <= 0 || d > build.WarmBuildTimeout {
+		t.Fatalf("warm cache: build deadline %v, want within (0, %v]", d, build.WarmBuildTimeout)
 	}
 }

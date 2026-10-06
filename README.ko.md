@@ -53,13 +53,13 @@ RemoteTerm은 macOS, Linux, Windows에서 동작합니다.
 
 RemoteTerm은 다음 플랫폼에서 실행됩니다.
 
-- macOS 11 이상 (arm64, x64)
+- macOS 12 이상 (arm64, x64)
 - Windows 10 1809 이상 (x64)
 - glibc-2.28 이상 기반 Linux (Debian 10, RHEL 8, Ubuntu 20.04 등) (arm64, x64)
 
 WSH 헬퍼는 다음 플랫폼에서 실행됩니다.
 
-- macOS 11 이상 (arm64, x64)
+- macOS 12 이상 (arm64, x64)
 - Windows 10 이상 (x64)
 - Linux Kernel 2.6.32 이상 (x64), Linux Kernel 3.1 이상 (arm64)
 

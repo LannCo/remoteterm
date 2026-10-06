@@ -1,9 +1,21 @@
 name: Build macOS
 on:
     workflow_dispatch:
+        inputs:
+            arch:
+                description: "Architecture to package (arm64 for Apple Silicon, x64 for Intel)"
+                type: choice
+                default: arm64
+                options:
+                    - arm64
+                    - x64
+                    - both
 
 env:
     GO_VERSION: "1.26.2"
+    # SHA-256 of go.dev/dl/go<GO_VERSION>.darwin-arm64.tar.gz (the runner's own toolchain). The
+    # toolchains the app ships are checked against checksums pinned in tsunami/build/gotoolchain.go.
+    GO_DARWIN_ARM64_SHA256: "32af1522bf3e3ff3975864780a429cc0b41d190ec7bf90faa661d6d64566e7af"
     NODE_VERSION: 22
     NODE_OPTIONS: --max-old-space-size=4096
 
@@ -15,7 +27,10 @@ jobs:
 
             - name: Install Go
               run: |
-                  curl -sL "https://go.dev/dl/go${{ env.GO_VERSION }}.darwin-arm64.tar.gz" | tar -xzf - -C .
+                  curl -sSL -o go.tar.gz "https://go.dev/dl/go${{ env.GO_VERSION }}.darwin-arm64.tar.gz"
+                  echo "${{ env.GO_DARWIN_ARM64_SHA256 }}  go.tar.gz" | shasum -a 256 -c -
+                  tar -xzf go.tar.gz -C .
+                  rm go.tar.gz
                   mv go golang-${{ env.GO_VERSION }}
                   echo "module golang" > golang-${{ env.GO_VERSION }}/go.mod
 
@@ -42,13 +57,23 @@ jobs:
                   GIT_ASKPASS: "echo"
                   GIT_TERMINAL_PROMPT: "0"
 
+            # A single architecture needs explicit target names: electron-builder ignores --arm64/--x64
+            # for the targets that electron-builder.config.cjs lists with their own arch arrays.
             - name: Build
-              run: task package
+              run: |
+                  case "${{ inputs.arch }}" in
+                      arm64) task package MAC_ARCHS=arm64 -- --mac dmg zip --arm64 ;;
+                      x64) task package MAC_ARCHS=x64 -- --mac dmg zip --x64 ;;
+                      *) task package ;;
+                  esac
               env:
                   USE_SYSTEM_FPM: true
 
             - name: Upload artifacts
               uses: actions/upload-artifact@v7
               with:
-                  name: macos-build
-                  path: make/
+                  name: macos-build-${{ inputs.arch }}
+                  path: |
+                      make/*.dmg
+                      make/*.zip
+                  if-no-files-found: error
