@@ -1121,6 +1121,9 @@ func (ws *WshServer) WriteAppGoFileCommand(ctx context.Context, data wshrpc.Comm
 	if err != nil {
 		return nil, err
 	}
+	if err := buildercontroller.RequestRebuildAfterSave(data.BuilderId, data.AppId); err != nil {
+		log.Printf("WriteAppGoFileCommand: saved %s but not rebuilding: %v\n", data.AppId, err)
+	}
 
 	encoded := base64.StdEncoding.EncodeToString(formattedOutput)
 	return &wshrpc.CommandWriteAppGoFileRtnData{Data64: encoded}, nil
@@ -1171,15 +1174,23 @@ func (ws *WshServer) StartBuilderCommand(ctx context.Context, data wshrpc.Comman
 		return fmt.Errorf("must provide a builderId to StartBuilderCommand")
 	}
 	bc := buildercontroller.GetOrCreateController(data.BuilderId)
-	rtInfo := rtstore.GetRTInfo(remotetermobj.MakeORef("builder", data.BuilderId))
-	if rtInfo == nil {
-		return fmt.Errorf("builder rtinfo not found for builderid: %s", data.BuilderId)
+	appId, builderEnv, err := buildercontroller.GetBuilderRebuildInputs(data.BuilderId)
+	if err != nil {
+		return err
 	}
-	appId := rtInfo.BuilderAppId
-	if appId == "" {
-		return fmt.Errorf("builder appid not set for builderid: %s", data.BuilderId)
+	return bc.Start(ctx, appId, builderEnv)
+}
+
+func (ws *WshServer) RequestBuilderRebuildCommand(ctx context.Context, data wshrpc.CommandRequestBuilderRebuildData) error {
+	if data.BuilderId == "" {
+		return fmt.Errorf("must provide a builderId to RequestBuilderRebuildCommand")
 	}
-	return bc.Start(ctx, appId, rtInfo.BuilderEnv)
+	appId, builderEnv, err := buildercontroller.GetBuilderRebuildInputs(data.BuilderId)
+	if err != nil {
+		return err
+	}
+	buildercontroller.GetOrCreateController(data.BuilderId).RequestRebuild(appId, builderEnv)
+	return nil
 }
 
 func (ws *WshServer) StopBuilderCommand(ctx context.Context, builderId string) error {
@@ -1191,34 +1202,6 @@ func (ws *WshServer) StopBuilderCommand(ctx context.Context, builderId string) e
 		return nil
 	}
 	return bc.Stop()
-}
-
-func (ws *WshServer) RestartBuilderAndWaitCommand(ctx context.Context, data wshrpc.CommandRestartBuilderAndWaitData) (*wshrpc.RestartBuilderAndWaitResult, error) {
-	if data.BuilderId == "" {
-		return nil, fmt.Errorf("must provide a builderId to RestartBuilderAndWaitCommand")
-	}
-
-	bc := buildercontroller.GetOrCreateController(data.BuilderId)
-	rtInfo := rtstore.GetRTInfo(remotetermobj.MakeORef("builder", data.BuilderId))
-	if rtInfo == nil {
-		return nil, fmt.Errorf("builder rtinfo not found for builderid: %s", data.BuilderId)
-	}
-
-	appId := rtInfo.BuilderAppId
-	if appId == "" {
-		return nil, fmt.Errorf("builder appid not set for builderid: %s", data.BuilderId)
-	}
-
-	result, err := bc.RestartAndWaitForBuild(ctx, appId, rtInfo.BuilderEnv)
-	if err != nil {
-		return nil, err
-	}
-
-	return &wshrpc.RestartBuilderAndWaitResult{
-		Success:      result.Success,
-		ErrorMessage: result.ErrorMessage,
-		BuildOutput:  result.BuildOutput,
-	}, nil
 }
 
 func (ws *WshServer) GetBuilderStatusCommand(ctx context.Context, builderId string) (*wshrpc.BuilderStatusData, error) {

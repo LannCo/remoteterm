@@ -10,8 +10,6 @@ import { base64ToString, stringToBase64 } from "@/util/util";
 import type { WebviewTag } from "electron";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
 import type * as MonacoTypes from "monaco-editor";
-import { debounce } from "throttle-debounce";
-
 export type TabType = "preview" | "files" | "code" | "secrets" | "configdata";
 
 export type EnvVar = {
@@ -40,13 +38,9 @@ export class BuilderAppPanelModel {
     webviewRef: { current: WebviewTag | null } = { current: null };
     statusUnsubFn: (() => void) | null = null;
     appGoUpdateUnsubFn: (() => void) | null = null;
-    debouncedRestart: (() => void) & { cancel: () => void };
     initialized = false;
 
     private constructor() {
-        this.debouncedRestart = debounce(800, () => {
-            this.restartBuilder();
-        });
         this.saveNeededAtom = atom((get) => {
             return get(this.codeContentAtom) !== get(this.originalContentAtom);
         });
@@ -169,7 +163,7 @@ export class BuilderAppPanelModel {
             globalStore.set(this.envVarsArrayAtom, cleanedArray);
             globalStore.set(this.envVarsDirtyAtom, false);
             globalStore.set(this.errorAtom, "");
-            this.debouncedRestart();
+            this.requestRebuild();
         } catch (err) {
             console.error("Failed to save environment variables:", err);
             globalStore.set(this.errorAtom, `Failed to save environment variables: ${err.message || "Unknown error"}`);
@@ -209,16 +203,18 @@ export class BuilderAppPanelModel {
         }
     }
 
-    async startBuilder() {
+    async requestRebuild() {
         const builderId = globalStore.get(atoms.builderId);
         try {
-            await RpcApi.StartBuilderCommand(TabRpcClient, {
-                builderid: builderId,
-            });
+            await RpcApi.RequestBuilderRebuildCommand(TabRpcClient, { builderid: builderId });
         } catch (err) {
-            console.error("Failed to start builder:", err);
-            globalStore.set(this.errorAtom, `Failed to start builder: ${err.message || "Unknown error"}`);
+            console.error("Failed to request a rebuild:", err);
+            globalStore.set(this.errorAtom, `Failed to rebuild: ${err.message || "Unknown error"}`);
         }
+    }
+
+    async startBuilder() {
+        return this.requestRebuild();
     }
 
     async restartBuilder() {
@@ -306,12 +302,11 @@ export class BuilderAppPanelModel {
             const result = await RpcApi.WriteAppGoFileCommand(TabRpcClient, {
                 appid: appId,
                 data64: encoded,
+                builderid: globalStore.get(atoms.builderId),
             });
             const formattedContent = base64ToString(result.data64);
-            globalStore.set(this.codeContentAtom, formattedContent);
             globalStore.set(this.originalContentAtom, formattedContent);
             globalStore.set(this.errorAtom, "");
-            this.debouncedRestart();
         } catch (err) {
             console.error("Failed to save app.go:", err);
             globalStore.set(this.errorAtom, `Failed to save app.go: ${err.message || "Unknown error"}`);
@@ -357,6 +352,5 @@ export class BuilderAppPanelModel {
             this.appGoUpdateUnsubFn();
             this.appGoUpdateUnsubFn = null;
         }
-        this.debouncedRestart.cancel();
     }
 }

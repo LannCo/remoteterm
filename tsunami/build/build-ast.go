@@ -45,7 +45,7 @@ type parsedAppInfo struct {
 }
 
 func parseAndValidateAppFile(appFS fs.FS) (*parsedAppInfo, error) {
-	appGoFile, err := fs.ReadFile(appFS, MainAppFileName)
+	appGoFile, err := readRegularFileFS(appFS, MainAppFileName)
 	if err != nil {
 		return &parsedAppInfo{HasAppInit: false}, nil
 	}
