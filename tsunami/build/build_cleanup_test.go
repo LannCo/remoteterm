@@ -16,7 +16,7 @@ case "$1" in
 version) echo "go version go1.26.3 linux/amd64" ;;
 mod) exit 0 ;;
 build)
-	if [ -n "$FAKE_GO_FAIL" ]; then exit 1; fi
+	if [ -e "$(dirname "$0")/fail" ]; then exit 1; fi
 	mkdir -p "$(dirname "$3")"
 	printf '#!/bin/sh\necho "<AppManifest>{}</AppManifest>"\n' > "$3"
 	chmod +x "$3"
@@ -101,7 +101,10 @@ func TestTsunamiBuildOutputLeavesNoTempDirOnSuccess(t *testing.T) {
 
 func TestTsunamiBuildOutputLeavesNoTempDirOnFailure(t *testing.T) {
 	tmp, opts := fakeBuildOpts(t)
-	t.Setenv("FAKE_GO_FAIL", "1")
+	// The build scrubs its environment, so the stand-in go is told to fail by a file beside it.
+	if err := os.WriteFile(filepath.Join(filepath.Dir(opts.GoPath), "fail"), nil, 0644); err != nil {
+		t.Fatal(err)
+	}
 	err := TsunamiBuildOutput(opts)
 	if err == nil || !strings.Contains(err.Error(), "compilation failed") {
 		t.Fatalf("want a compilation failure, got %v", err)

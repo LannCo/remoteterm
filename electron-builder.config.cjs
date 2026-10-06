@@ -1,7 +1,13 @@
 const { Arch } = require("electron-builder");
 const pkg = require("./package.json");
-const fs = require("fs");
-const path = require("path");
+const stagedResources = require("./build/staged-resources.cjs");
+
+// Fails here, before electron-builder spends minutes packaging an app without the SDK.
+// The config unit test loads this file on a tree that has not staged anything and sets the
+// variable; a real packaging run never does.
+if (!process.env.REMOTETERM_CONFIG_TEST) {
+    stagedResources.failIfAny(stagedResources.checkSdk(__dirname));
+}
 
 const windowsShouldSign = !!process.env.SM_CODE_SIGNING_CERT_SHA1_HASH;
 
@@ -28,7 +34,10 @@ const config = {
                 "bin/remotetermsrv.${arch}*",
                 "bin/wsh*",
                 "!tsunamiscaffold/**/*",
+                "!tsunamiscaffold-*/**/*",
                 "!tsunamisdk/**/*",
+                "!gotoolchain-*/**/*",
+                "!gomodcache/**/*",
             ],
         },
         {
@@ -38,11 +47,11 @@ const config = {
         },
         "!node_modules", // We don't need electron-builder to package in Node modules as Vite has already bundled any code that our program is using.
     ],
+    // The scaffold's node_modules holds native Tailwind binaries, so it is per platform:
+    // Linux and Windows ship the one built on the packaging host; each macOS architecture
+    // ships its own (see build/stage-scaffold-natives.sh), plus the Go toolchain and module
+    // cache that let the app compile builder apps with no Go or network on the machine.
     extraResources: [
-        {
-            from: "dist/tsunamiscaffold",
-            to: "tsunamiscaffold",
-        },
         {
             from: "dist/tsunamisdk",
             to: "tsunamisdk",
@@ -67,9 +76,21 @@ const config = {
             },
         ],
         category: "public.app-category.developer-tools",
-        minimumSystemVersion: "10.15.0",
-        mergeASARs: true,
-        singleArchFiles: "**/dist/bin/remotetermsrv.*",
+        minimumSystemVersion: "12.0.0", // Electron 38 and later need macOS 12
+        extraResources: [
+            {
+                from: "dist/tsunamiscaffold-${arch}",
+                to: "tsunamiscaffold",
+            },
+            {
+                from: "dist/gotoolchain-${arch}",
+                to: "gotoolchain",
+            },
+            {
+                from: "dist/gomodcache",
+                to: "gomodcache",
+            },
+        ],
         entitlements: "build/entitlements.mac.plist",
         entitlementsInherit: "build/entitlements.mac.plist",
         extendInfo: {
@@ -103,11 +124,23 @@ const config = {
             },
         },
         executableArgs: ["--enable-features", "UseOzonePlatform", "--ozone-platform-hint", "auto"], // Hint Electron to use Ozone abstraction layer for native Wayland support
+        extraResources: [
+            {
+                from: "dist/tsunamiscaffold",
+                to: "tsunamiscaffold",
+            },
+        ],
     },
     deb: {
         afterInstall: "build/deb-postinstall.tpl",
     },
     win: {
+        extraResources: [
+            {
+                from: "dist/tsunamiscaffold",
+                to: "tsunamiscaffold",
+            },
+        ],
         target: ["nsis", "msi", "zip"],
         signtoolOptions: windowsShouldSign && {
             signingHashAlgorithms: ["sha256"],
@@ -129,21 +162,9 @@ const config = {
         // this should remove /usr/lib/.build-id/ links which can conflict with other electron apps like slack
         fpm: ["--rpm-rpmbuild-define", "_build_id_links none"],
     },
-    afterPack: (context) => {
-        // This is a workaround to restore file permissions to the remotetermsrv binaries on macOS after packaging the universal binary.
-        if (context.electronPlatformName === "darwin" && context.arch === Arch.universal) {
-            const packageBinDir = path.resolve(
-                context.appOutDir,
-                `${pkg.productName}.app/Contents/Resources/app.asar.unpacked/dist/bin`
-            );
-
-            // Reapply file permissions to the remotetermsrv binaries in the final app package
-            fs.readdirSync(packageBinDir, {
-                recursive: true,
-                withFileTypes: true,
-            })
-                .filter((f) => f.isFile() && f.name.startsWith("remotetermsrv"))
-                .forEach((f) => fs.chmodSync(path.resolve(f.parentPath ?? f.path, f.name), 0o755)); // 0o755 corresponds to -rwxr-xr-x
+    beforePack: (context) => {
+        if (context.electronPlatformName === "darwin") {
+            stagedResources.failIfAny(stagedResources.checkMacArch(__dirname, Arch[context.arch]));
         }
     },
 };

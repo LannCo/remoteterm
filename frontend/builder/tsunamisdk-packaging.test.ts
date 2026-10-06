@@ -21,7 +21,9 @@ function taskBlock(taskfile: string, taskName: string): string {
 describe("tsunami SDK packaging", () => {
     it("ships dist/tsunamisdk as an extra resource and keeps it out of the asar", () => {
         const require = createRequire(import.meta.url);
+        process.env.REMOTETERM_CONFIG_TEST = "1";
         const config = require(path.join(RepoRoot, "electron-builder.config.cjs"));
+        delete process.env.REMOTETERM_CONFIG_TEST;
         expect(config.extraResources).toContainEqual({ from: "dist/tsunamisdk", to: "tsunamisdk" });
         const distEntry = config.files.find((entry: any) => entry?.from === "./dist");
         expect(distEntry.filter).toContain("!tsunamisdk/**/*");
