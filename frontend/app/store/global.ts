@@ -5,6 +5,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import {
     getLayoutModelForStaticTab,
+    LayoutModel,
     LayoutTreeActionType,
     LayoutTreeInsertNodeAction,
     newLayoutNode,
@@ -29,11 +30,12 @@ import {
 } from "@/util/util";
 import { atom, Atom, PrimitiveAtom, useAtomValue } from "jotai";
 import { setupBadgesSubscription } from "./badge";
+import { isTermBlockDef, openBuilderTerminal, splitActionFor } from "./builder-terminal";
 import { atoms, blockComponentModelMap, ConnStatusMapAtom, initGlobalAtoms, orefAtomCache } from "./global-atoms";
 import { globalStore } from "./jotaiStore";
 import { modalsModel } from "./modalmodel";
 import { ClientService, ObjectService } from "./services";
-import { isPreviewWindow } from "./windowtype";
+import { isBuilderWindow, isPreviewWindow } from "./windowtype";
 import * as WOS from "./wos";
 import { peekFileSubject, waveEventSubscribeSingle } from "./wps";
 
@@ -52,7 +54,7 @@ function initGlobal(initOpts: GlobalInitOptions) {
     }
 }
 
-function initGlobalWaveEventSubs(initOpts: RemoteTermInitOpts) {
+function subscribeToSharedWaveEvents() {
     waveEventSubscribeSingle({
         eventType: "waveobj:update",
         handler: (event) => {
@@ -68,6 +70,21 @@ function initGlobalWaveEventSubs(initOpts: RemoteTermInitOpts) {
         },
     });
     waveEventSubscribeSingle({
+        eventType: "blockfile",
+        handler: (event) => {
+            // console.log("blockfile event update", event);
+            const fileSubject = peekFileSubject(event.data.zoneid, event.data.filename);
+            if (fileSubject != null) {
+                fileSubject.next(event.data);
+            }
+        },
+    });
+    setupBadgesSubscription();
+}
+
+function initGlobalWaveEventSubs(initOpts: RemoteTermInitOpts) {
+    subscribeToSharedWaveEvents();
+    waveEventSubscribeSingle({
         eventType: "userinput",
         handler: (event) => {
             const connName = event.data?.connname;
@@ -80,17 +97,12 @@ function initGlobalWaveEventSubs(initOpts: RemoteTermInitOpts) {
         },
         scope: initOpts.windowId,
     });
-    waveEventSubscribeSingle({
-        eventType: "blockfile",
-        handler: (event) => {
-            // console.log("blockfile event update", event);
-            const fileSubject = peekFileSubject(event.data.zoneid, event.data.filename);
-            if (fileSubject != null) {
-                fileSubject.next(event.data);
-            }
-        },
-    });
-    setupBadgesSubscription();
+}
+
+// The config event keeps settings such as the live-rebuild toggle current in builder windows. Builder panes
+// are local only, so there is no connection prompt to route and no userinput subscription.
+function initBuilderWaveEventSubs() {
+    subscribeToSharedWaveEvents();
 }
 
 const blockCache = new Map<string, Map<string, any>>();
@@ -374,12 +386,27 @@ function getApi(): ElectronApi {
     return (window as any).api;
 }
 
+// The layout model is checked before any block is created, so a failure cannot leave an orphan block.
+function requireStaticLayoutModel(): LayoutModel {
+    const layoutModel = getLayoutModelForStaticTab();
+    if (layoutModel == null) {
+        throw new Error("this window has no layout yet");
+    }
+    return layoutModel;
+}
+
+// In builder windows a terminal is always a local shell in the app folder, created by the server under
+// the builder's lock; the def's cwd, controller and connection are ignored. Callers ignore the return value.
 async function createBlockSplitHorizontally(
     blockDef: BlockDef,
     targetBlockId: string,
     position: "before" | "after"
 ): Promise<string> {
-    const layoutModel = getLayoutModelForStaticTab();
+    if (isBuilderWindow() && isTermBlockDef(blockDef)) {
+        await openBuilderTerminal(splitActionFor("horizontal", position), targetBlockId);
+        return null;
+    }
+    const layoutModel = requireStaticLayoutModel();
     const rtOpts: RuntimeOpts = { termsize: { rows: 25, cols: 80 } };
     const newBlockId = await ObjectService.CreateBlock(blockDef, rtOpts);
     const targetNodeId = layoutModel.getNodeByBlockId(targetBlockId)?.id;
@@ -402,7 +429,11 @@ async function createBlockSplitVertically(
     targetBlockId: string,
     position: "before" | "after"
 ): Promise<string> {
-    const layoutModel = getLayoutModelForStaticTab();
+    if (isBuilderWindow() && isTermBlockDef(blockDef)) {
+        await openBuilderTerminal(splitActionFor("vertical", position), targetBlockId);
+        return null;
+    }
+    const layoutModel = requireStaticLayoutModel();
     const rtOpts: RuntimeOpts = { termsize: { rows: 25, cols: 80 } };
     const newBlockId = await ObjectService.CreateBlock(blockDef, rtOpts);
     const targetNodeId = layoutModel.getNodeByBlockId(targetBlockId)?.id;
@@ -421,7 +452,11 @@ async function createBlockSplitVertically(
 }
 
 async function createBlock(blockDef: BlockDef, magnified = false, ephemeral = false): Promise<string> {
-    const layoutModel = getLayoutModelForStaticTab();
+    if (isBuilderWindow() && isTermBlockDef(blockDef)) {
+        await openBuilderTerminal("", null);
+        return null;
+    }
+    const layoutModel = requireStaticLayoutModel();
     const rtOpts: RuntimeOpts = { termsize: { rows: 25, cols: 80 } };
     const blockId = await ObjectService.CreateBlock(blockDef, rtOpts);
     if (ephemeral) {
@@ -439,7 +474,10 @@ async function createBlock(blockDef: BlockDef, magnified = false, ephemeral = fa
 }
 
 async function replaceBlock(blockId: string, blockDef: BlockDef, focus: boolean): Promise<string> {
-    const layoutModel = getLayoutModelForStaticTab();
+    if (isBuilderWindow() && isTermBlockDef(blockDef)) {
+        return null;
+    }
+    const layoutModel = requireStaticLayoutModel();
     const rtOpts: RuntimeOpts = { termsize: { rows: 25, cols: 80 } };
     const newBlockId = await ObjectService.CreateBlock(blockDef, rtOpts);
     setTimeout(() => {
@@ -492,7 +530,7 @@ async function fetchWaveFile(
 
 function setNodeFocus(nodeId: string) {
     const layoutModel = getLayoutModelForStaticTab();
-    layoutModel.focusNode(nodeId);
+    layoutModel?.focusNode(nodeId);
 }
 
 const objectIdWeakMap = new WeakMap();
@@ -625,6 +663,8 @@ function isKeepAliveWidgetView(viewType: string | undefined | null): viewType is
 // Returns true if the block was hidden (keep-alive), false if the block's view type is not a
 // keep-alive widget view (caller should fall back to a normal close).
 function hideBlockKeepAlive(blockId: string): boolean {
+    // Nothing in a builder window can show a hidden block again, so keep-alive views close there.
+    if (isBuilderWindow()) return false;
     const layoutModel = getLayoutModelForStaticTab();
     if (!layoutModel) return false;
     const node = layoutModel.getNodeByBlockId(blockId);
@@ -726,6 +766,9 @@ function refocusNode(blockId: string) {
         }
     }
     const layoutModel = getLayoutModelForStaticTab();
+    if (layoutModel == null) {
+        return;
+    }
     const layoutNodeId = layoutModel.getNodeByBlockId(blockId);
     if (layoutNodeId?.id == null) {
         return;
@@ -888,6 +931,7 @@ export {
     isHiddenBlock,
     initGlobal,
     initGlobalWaveEventSubs,
+    initBuilderWaveEventSubs,
     isDev,
     isKeepAliveWidgetView,
     loadConnStatus,

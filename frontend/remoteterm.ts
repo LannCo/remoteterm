@@ -23,6 +23,7 @@ import {
     atoms,
     getApi,
     globalStore,
+    initBuilderWaveEventSubs,
     initGlobal,
     initGlobalWaveEventSubs,
     loadConnStatus,
@@ -250,6 +251,9 @@ async function initBuilder(initOpts: BuilderInitOpts) {
     (window as any).globalWS = globalWS;
     (window as any).TabRpcClient = TabRpcClient;
     await loadConnStatus();
+    await loadBadges();
+    initBuilderWaveEventSubs();
+    subscribeToConnEvents();
 
     let appIdToUse: string = null;
     try {

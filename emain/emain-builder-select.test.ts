@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it, vi } from "vitest";
-import { findBuilderWindowForApp, openPathDetached, runBuilderTeardown } from "./emain-builder-select";
+import {
+    findBuilderWindowForApp,
+    openPathDetached,
+    parseBuilderTerminalTarget,
+    runBuilderTeardown,
+} from "./emain-builder-select";
 
 describe("findBuilderWindowForApp", () => {
     const windows = [
@@ -90,6 +95,39 @@ describe("openPathDetached", () => {
 
     it("returns an empty string for a fast success", async () => {
         expect(await openPathDetached(async () => "", "/a", vi.fn())).toBe("");
+    });
+});
+
+describe("parseBuilderTerminalTarget", () => {
+    it("treats a missing target as append", () => {
+        const empty = { targetblockid: "", targetaction: "" };
+        expect(parseBuilderTerminalTarget(undefined)).toEqual(empty);
+        expect(parseBuilderTerminalTarget(null)).toEqual(empty);
+        expect(parseBuilderTerminalTarget({})).toEqual(empty);
+    });
+
+    it("passes short strings through", () => {
+        expect(parseBuilderTerminalTarget({ targetblockid: "b1", targetaction: "splitright" })).toEqual({
+            targetblockid: "b1",
+            targetaction: "splitright",
+        });
+        expect(parseBuilderTerminalTarget({ targetblockid: "x".repeat(64) }).error).toBeUndefined();
+    });
+
+    it("rejects non-strings and strings over 64 characters", () => {
+        for (const bad of [
+            { targetblockid: 5 },
+            { targetaction: ["splitright"] },
+            { targetblockid: "x".repeat(65) },
+            "splitright",
+            7,
+        ]) {
+            expect(parseBuilderTerminalTarget(bad)).toEqual({
+                targetblockid: "",
+                targetaction: "",
+                error: "Invalid terminal target.",
+            });
+        }
     });
 });
 

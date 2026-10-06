@@ -4,12 +4,12 @@
 import { globalStore } from "@/app/store/jotaiStore";
 import { atom, type PrimitiveAtom } from "jotai";
 
-export type BuilderFocusType = "app";
+export type BuilderFocusType = "app" | "terminal";
 
 export class BuilderFocusManager {
     private static instance: BuilderFocusManager | null = null;
 
-    focusType: PrimitiveAtom<BuilderFocusType> = atom("app");
+    focusType: PrimitiveAtom<BuilderFocusType> = atom<BuilderFocusType>("app");
 
     private constructor() {}
 
@@ -22,6 +22,10 @@ export class BuilderFocusManager {
 
     setAppFocused() {
         globalStore.set(this.focusType, "app");
+    }
+
+    setTerminalFocused() {
+        globalStore.set(this.focusType, "terminal");
     }
 
     getFocusType(): BuilderFocusType {

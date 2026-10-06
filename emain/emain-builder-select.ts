@@ -56,7 +56,40 @@ export async function openPathDetached(
     return "";
 }
 
+export const MaxBuilderTargetLen = 64;
 export const BuilderTeardownTimeoutMs = 20000;
+
+const InvalidTargetMessage = "Invalid terminal target.";
+
+export type ParsedBuilderTerminalTarget = {
+    targetblockid: string;
+    targetaction: string;
+    error?: string;
+};
+
+// The server validates the action and the block, but the IPC argument is still untyped data from a
+// renderer, so only short strings are forwarded.
+export function parseBuilderTerminalTarget(target: unknown): ParsedBuilderTerminalTarget {
+    const rtn: ParsedBuilderTerminalTarget = { targetblockid: "", targetaction: "" };
+    if (target == null) {
+        return rtn;
+    }
+    if (typeof target !== "object") {
+        return { ...rtn, error: InvalidTargetMessage };
+    }
+    const fields = target as Record<string, unknown>;
+    for (const key of ["targetblockid", "targetaction"] as const) {
+        const val = fields[key];
+        if (val == null) {
+            continue;
+        }
+        if (typeof val !== "string" || val.length > MaxBuilderTargetLen) {
+            return { targetblockid: "", targetaction: "", error: InvalidTargetMessage };
+        }
+        rtn[key] = val;
+    }
+    return rtn;
+}
 
 export type TeardownWindow = {
     tearingDown?: boolean;
