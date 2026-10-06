@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { RpcApi } from "@/app/store/wshclientapi";
+import { setElectronNet } from "../frontend/util/fetchutil";
 import * as electron from "electron";
 import { focusedBuilderWindow, getAllBuilderWindows } from "emain/emain-builder";
 import { globalEvents } from "emain/emain-events";
@@ -63,6 +64,7 @@ import { getLaunchSettings } from "./launchsettings";
 
 
 const electronApp = electron.app;
+setElectronNet(electron.net);
 
 let confirmQuit = true;
 
