@@ -172,6 +172,77 @@ describe("BuilderAppPanelModel reload glue", () => {
     });
 });
 
+describe("BuilderAppPanelModel auto-run on open", () => {
+    const model = BuilderAppPanelModel.getInstance();
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        vi.spyOn(console, "error").mockImplementation(() => {});
+        globalStore.set(model.codeContentAtom, "");
+        globalStore.set(model.originalContentAtom, "");
+        globalStore.set(model.errorAtom, "");
+        globalStore.set(model.builderStatusAtom, null);
+        globalStore.set(model.autoRunDeclinedAtom, false);
+        rpc.RequestBuilderRebuildCommand.mockResolvedValue(undefined);
+        rpc.ReadAppFileCommand.mockResolvedValue(diskFile("package main"));
+    });
+
+    it("loading an app asks for an auto-run, never a plain rebuild", async () => {
+        await model.loadAppFile("draft/app");
+        expect(rpc.RequestBuilderRebuildCommand).toHaveBeenCalledTimes(1);
+        expect(rpc.RequestBuilderRebuildCommand).toHaveBeenCalledWith(expect.anything(), {
+            builderid: "builder-1",
+            autorun: true,
+        });
+    });
+
+    it("an empty app.go starts nothing", async () => {
+        rpc.ReadAppFileCommand.mockResolvedValue(diskFile("  \n"));
+        await model.loadAppFile("draft/app");
+        expect(rpc.RequestBuilderRebuildCommand).not.toHaveBeenCalled();
+    });
+
+    it("an app that is already running or building is left alone", async () => {
+        for (const status of ["running", "building"]) {
+            globalStore.set(model.builderStatusAtom, { status } as BuilderStatusData);
+            await model.loadAppFile("draft/app");
+        }
+        expect(rpc.RequestBuilderRebuildCommand).not.toHaveBeenCalled();
+    });
+
+    it("a declined auto-run offers the Start button instead of showing an error", async () => {
+        rpc.RequestBuilderRebuildCommand.mockRejectedValue(
+            new Error("ERR-AUTORUN-DECLINED: the app has changed since you last started it")
+        );
+        await model.loadAppFile("draft/app");
+        expect(globalStore.get(model.autoRunDeclinedAtom)).toBe(true);
+        expect(globalStore.get(model.errorAtom)).toBe("");
+    });
+
+    it("any other auto-run failure is an error, not a Start prompt", async () => {
+        rpc.RequestBuilderRebuildCommand.mockRejectedValue(new Error("builder rtinfo not found"));
+        await model.loadAppFile("draft/app");
+        expect(globalStore.get(model.autoRunDeclinedAtom)).toBe(false);
+        expect(globalStore.get(model.errorAtom)).toContain("builder rtinfo not found");
+    });
+
+    it("pressing Start is an explicit request without the auto-run flag, and clears the prompt", async () => {
+        globalStore.set(model.autoRunDeclinedAtom, true);
+        await model.startBuilder();
+        expect(rpc.RequestBuilderRebuildCommand).toHaveBeenCalledWith(expect.anything(), { builderid: "builder-1" });
+        expect(globalStore.get(model.autoRunDeclinedAtom)).toBe(false);
+    });
+
+    it("a rebuild and a restart are explicit too", async () => {
+        await model.requestRebuild();
+        await model.restartBuilder();
+        for (const call of rpc.RequestBuilderRebuildCommand.mock.calls) {
+            expect(call[1]).toEqual({ builderid: "builder-1" });
+        }
+        expect(rpc.RequestBuilderRebuildCommand).toHaveBeenCalledTimes(2);
+    });
+});
+
 describe("BuilderAppPanelModel notice", () => {
     it("shares the builder notice atom, so Open terminal errors from any path show in the header", () => {
         expect(BuilderAppPanelModel.getInstance().noticeAtom).toBe(BuilderNoticeAtom);

@@ -123,6 +123,12 @@ declare global {
         workspaceid?: string;
     };
 
+    // wshrpc.BuilderPreviewAuthData
+    type BuilderPreviewAuthData = {
+        port: number;
+        token: string;
+    };
+
     // wshrpc.BuilderStatusData
     type BuilderStatusData = {
         status: string;
@@ -343,6 +349,11 @@ declare global {
 
     // wshrpc.CommandGetBuilderAppDirData
     type CommandGetBuilderAppDirData = {
+        builderid: string;
+    };
+
+    // wshrpc.CommandGetBuilderPreviewAuthData
+    type CommandGetBuilderPreviewAuthData = {
         builderid: string;
     };
 
@@ -653,6 +664,7 @@ declare global {
     // wshrpc.CommandRequestBuilderRebuildData
     type CommandRequestBuilderRebuildData = {
         builderid: string;
+        autorun?: boolean;
     };
 
     // wshrpc.CommandResolveIdsData

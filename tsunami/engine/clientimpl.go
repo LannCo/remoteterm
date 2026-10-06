@@ -225,10 +225,7 @@ func (c *ClientImpl) listenAndServe(ctx context.Context) error {
 		listenAddr = DefaultListenAddr
 	}
 
-	var handler http.Handler = mux
-	if listenHost, _, err := net.SplitHostPort(listenAddr); err == nil && isLoopbackHostname(listenHost) {
-		handler = loopbackHostGuard(mux)
-	}
+	handler := wrapListenHandler(mux, listenAddr, os.Getenv(TsunamiAuthTokenEnvVar))
 
 	// Create server and listen on specified address
 	server := &http.Server{

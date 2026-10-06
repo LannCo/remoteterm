@@ -422,6 +422,12 @@ func GetBuilderOutputCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpt
 	return resp, err
 }
 
+// command "getbuilderpreviewauth", wshserver.GetBuilderPreviewAuthCommand
+func GetBuilderPreviewAuthCommand(w *wshutil.WshRpc, data wshrpc.CommandGetBuilderPreviewAuthData, opts *wshrpc.RpcOpts) (*wshrpc.BuilderPreviewAuthData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.BuilderPreviewAuthData](w, "getbuilderpreviewauth", data, opts)
+	return resp, err
+}
+
 // command "getbuilderstatus", wshserver.GetBuilderStatusCommand
 func GetBuilderStatusCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) (*wshrpc.BuilderStatusData, error) {
 	resp, err := sendRpcRequestCallHelper[*wshrpc.BuilderStatusData](w, "getbuilderstatus", data, opts)
