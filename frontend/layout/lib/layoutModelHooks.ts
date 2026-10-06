@@ -44,6 +44,9 @@ function getLayoutModelForTabById(tabId: string) {
 
 export function getLayoutModelForStaticTab() {
     const tabId = globalStore.get(atoms.staticTabId);
+    if (tabId == null) {
+        return null;
+    }
     return getLayoutModelForTabById(tabId);
 }
 

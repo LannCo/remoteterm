@@ -25,6 +25,7 @@ import {
     BuilderTeardownTimeoutMs,
     findBuilderWindowForApp,
     openPathDetached,
+    parseBuilderTerminalTarget,
     runBuilderTeardown,
 } from "./emain-builder-select";
 import { callWithOriginalXdgCurrentDesktopAsync, unamePlatform } from "./emain-platform";
@@ -548,6 +549,53 @@ export function initIpcHandlers() {
         }
         await destroyBuilderWindow(bw);
     });
+
+    electron.ipcMain.handle("ensure-builder-tab", async (event): Promise<BuilderTabInfo> => {
+        const bw = getBuilderWindowByWebContentsId(event.sender.id);
+        if (bw == null) {
+            return { error: "This action is only available in a builder window." };
+        }
+        if (bw.tearingDown) {
+            return { error: "This builder window is closing." };
+        }
+        if (!bw.builderAppId) {
+            return { error: "No app is open in this builder window." };
+        }
+        try {
+            const rtn = await RpcApi.EnsureBuilderTabCommand(ElectronWshClient, {
+                builderid: bw.builderId,
+                appid: bw.builderAppId,
+            });
+            return { tabid: rtn.tabid, appid: rtn.appid };
+        } catch (e) {
+            return { error: `Could not start the terminals: ${e instanceof Error ? e.message : String(e)}` };
+        }
+    });
+
+    electron.ipcMain.handle("open-builder-terminal", async (event, target: unknown): Promise<string> => {
+        const bw = getBuilderWindowByWebContentsId(event.sender.id);
+        if (bw == null) {
+            return "This action is only available in a builder window.";
+        }
+        if (bw.tearingDown) {
+            return "This builder window is closing.";
+        }
+        const parsed = parseBuilderTerminalTarget(target);
+        if (parsed.error) {
+            return parsed.error;
+        }
+        try {
+            await RpcApi.OpenBuilderTerminalCommand(ElectronWshClient, {
+                builderid: bw.builderId,
+                targetblockid: parsed.targetblockid,
+                targetaction: parsed.targetaction,
+            });
+        } catch (e) {
+            return `Could not open a terminal: ${e instanceof Error ? e.message : String(e)}`;
+        }
+        return "";
+    });
+
     electron.ipcMain.handle("open-builder-folder", async (event): Promise<string> => {
         const bw = getBuilderWindowByWebContentsId(event.sender.id);
         if (bw == null) {

@@ -1,10 +1,12 @@
 // Copyright 2025, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { BuilderNoticeAtom, openBuilderTerminal } from "@/app/store/builder-terminal";
 import { globalStore } from "@/app/store/jotaiStore";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { BuilderTermModel } from "@/builder/store/builder-term-model";
 import { atoms, getApi, getSettingsKeyAtom, WOS } from "@/store/global";
 import { base64ToString, stringToBase64 } from "@/util/util";
 import type { WebviewTag } from "electron";
@@ -19,6 +21,12 @@ export type EnvVar = {
     value: string;
     visible?: boolean;
 };
+
+// In-memory (no "persist:" prefix) and per builder: the preview must not share cookies or storage with
+// web blocks in the builder tab (persist:webblock) or with other builders' previews.
+export function getBuilderPreviewPartition(builderId: string): string {
+    return `builder-preview-${builderId}`;
+}
 
 export class BuilderAppPanelModel {
     private static instance: BuilderAppPanelModel | null = null;
@@ -37,9 +45,10 @@ export class BuilderAppPanelModel {
     externalChangeAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
     watchStatusAtom = atom<BuilderWatchStatusData>(null) as PrimitiveAtom<BuilderWatchStatusData>;
     appDirAtom = atom<string>(null) as PrimitiveAtom<string>;
-    noticeAtom: PrimitiveAtom<string> = atom<string>("");
+    noticeAtom: PrimitiveAtom<string> = BuilderNoticeAtom;
     builderStatusAtom = atom<BuilderStatusData>(null) as PrimitiveAtom<BuilderStatusData>;
     hasSecretsAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
+    resizeDraggingAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
     saveNeededAtom!: Atom<boolean>;
     focusElemRef: { current: HTMLInputElement | null } = { current: null };
     monacoEditorRef: { current: MonacoTypes.editor.IStandaloneCodeEditor | null } = { current: null };
@@ -186,6 +195,10 @@ export class BuilderAppPanelModel {
         }
     }
 
+    async openTerminal() {
+        await openBuilderTerminal("", null);
+    }
+
     async openFolder() {
         const err = await getApi().openBuilderFolder();
         globalStore.set(this.noticeAtom, err ?? "");
@@ -291,6 +304,8 @@ export class BuilderAppPanelModel {
 
     async switchBuilderApp() {
         const builderId = globalStore.get(atoms.builderId);
+        // Set first: DeleteBuilderCommand removes the tab, and the panel must not offer Retry meanwhile.
+        BuilderTermModel.getInstance().markSwitching();
         try {
             await RpcApi.DeleteBuilderCommand(TabRpcClient, builderId);
             await new Promise((resolve) => setTimeout(resolve, 500));
@@ -304,6 +319,11 @@ export class BuilderAppPanelModel {
         } catch (err) {
             console.error("Failed to switch builder app:", err);
             globalStore.set(this.errorAtom, `Failed to switch builder app: ${err.message || "Unknown error"}`);
+            // Leave "Switching app…": back to the terminals if the tab survived, otherwise to Retry (a reload).
+            const termModel = BuilderTermModel.getInstance();
+            const tabId = globalStore.get(termModel.tabIdAtom);
+            const tab = tabId == null ? null : globalStore.get(WOS.getWaveObjectAtom<Tab>(WOS.makeORef("tab", tabId)));
+            termModel.setState(tab != null ? "ready" : "vanished");
         }
     }
 
