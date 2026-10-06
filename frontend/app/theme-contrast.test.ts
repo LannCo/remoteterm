@@ -359,7 +359,7 @@ describe("light-mode markdown code and links", () => {
     function selectorColours(css: string): Map<string, string> {
         const out = new Map<string, string>();
         for (const m of css
-            .replace(/\/\*[\s\S]*?\*\/|@import[^;]*;|\/\/[^\n]*/g, "")
+            .replace(/\/\*[\s\S]*?\*\/|@import[^;]*;|@include[^;]*;|\/\/[^\n]*/g, "")
             .matchAll(/([^{}]+)\{([^}]*)\}/g)) {
             const colour = m[2].match(/(?<![-\w])color:\s*(#[0-9a-fA-F]{3,8})/)?.[1];
             if (!colour) {
@@ -373,8 +373,8 @@ describe("light-mode markdown code and links", () => {
     }
 
     test("markdown.scss loads a light highlight.js theme scoped to light mode and keeps the dark one", () => {
-        expect(markdownScss).toMatch(/@import url\("[^"]*highlight\.js\/scss\/github-dark-dimmed\.scss"\);/);
-        expect(lightBlock).toMatch(/@import "[^"]*highlight\.js\/scss\/github\.scss";/);
+        expect(markdownScss).toMatch(/@use "[^"]*highlight\.js\/scss\/github-dark-dimmed\.scss";/);
+        expect(lightBlock).toMatch(/@include meta\.load-css\("[^"]*highlight\.js\/scss\/github\.scss"\);/);
     });
 
     const panel = lightCompositeOnWhite(extractVarValues(themeScss, "panel-bg-color").light);

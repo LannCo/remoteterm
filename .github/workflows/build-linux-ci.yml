@@ -61,7 +61,7 @@ jobs:
                   cache-dependency-path: package-lock.json
 
             - name: Install Task
-              uses: arduino/setup-task@v2
+              uses: arduino/setup-task@v3
               with:
                   version: 3.x
                   repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -90,7 +90,7 @@ jobs:
               run: echo "branch=${GITHUB_REF_NAME//\//-}" >> "$GITHUB_OUTPUT"
 
             - name: Upload artifacts
-              uses: actions/upload-artifact@v5
+              uses: actions/upload-artifact@v7
               with:
                   name: linux-build-${{ matrix.goarch }}-${{ steps.sanitize.outputs.branch }}
                   path: make/
