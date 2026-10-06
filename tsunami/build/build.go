@@ -117,6 +117,7 @@ type BuildOpts struct {
 	MinGoVersion   string
 	MoveFileBack   bool
 	OutputCapture  *OutputCapture
+	started        time.Time
 	// Ctx bounds every command the build runs; nil means no bound (the CLI).
 	Ctx context.Context
 }
@@ -356,10 +357,14 @@ func createGoMod(tempDir, appNS, appName string, buildEnv *BuildEnv, opts BuildO
 		}
 	}
 
+	if err := seedGoSum(tempDir, opts.SdkReplacePath); err != nil {
+		return err
+	}
+
 	// Run go mod tidy to clean up dependencies
 	tidyCmd := opts.command(buildEnv.GoPath, "mod", "tidy")
 	tidyCmd.Dir = tempDir
-	tidyCmd.Env = goCmdEnv()
+	tidyCmd.Env = goBuildEnv(buildEnv.GoPath)
 
 	if verbose {
 		oc.Printf("[debug] Running go mod tidy")
@@ -375,6 +380,9 @@ func createGoMod(tempDir, appNS, appName string, buildEnv *BuildEnv, opts BuildO
 
 	if err := tidyCmd.Run(); err != nil {
 		oc.Flush()
+		if timeoutErr := opts.timeoutError("go mod tidy"); timeoutErr != nil {
+			return timeoutErr
+		}
 		return fmt.Errorf("go mod tidy failed (see output for errors)")
 	}
 
@@ -516,6 +524,7 @@ func TsunamiBuildOutput(opts BuildOpts) error {
 
 func TsunamiBuildInternal(opts BuildOpts) (*BuildEnv, error) {
 	oc := opts.OutputCapture
+	opts.started = time.Now()
 
 	buildEnv, err := verifyEnvironment(opts.Verbose, opts)
 	if err != nil {
@@ -710,7 +719,7 @@ func runGoBuild(tempDir string, buildEnv *BuildEnv, opts BuildOpts) (string, err
 	args := append([]string{"build", "-o", outputPath}, ".")
 	buildCmd := opts.command(buildEnv.GoPath, args...)
 	buildCmd.Dir = tempDir
-	buildCmd.Env = goCmdEnv()
+	buildCmd.Env = goBuildEnv(buildEnv.GoPath)
 
 	if oc != nil || opts.Verbose {
 		oc.Printf("[debug] Running: %s", strings.Join(buildCmd.Args, " "))
@@ -725,6 +734,10 @@ func runGoBuild(tempDir string, buildEnv *BuildEnv, opts BuildOpts) (string, err
 	}
 
 	if err := buildCmd.Run(); err != nil {
+		oc.Flush()
+		if timeoutErr := opts.timeoutError("compilation"); timeoutErr != nil {
+			return "", timeoutErr
+		}
 		return "", fmt.Errorf("compilation failed (see output for errors)")
 	}
 	if oc != nil {
@@ -752,6 +765,9 @@ func generateManifest(tempDir, exePath string, opts BuildOpts) error {
 
 	manifestOutput, err := manifestCmd.Output()
 	if err != nil {
+		if timeoutErr := opts.timeoutError("manifest generation"); timeoutErr != nil {
+			return timeoutErr
+		}
 		return fmt.Errorf("manifest generation failed: %w", err)
 	}
 
@@ -782,6 +798,27 @@ func generateManifest(tempDir, exePath string, opts BuildOpts) error {
 	return nil
 }
 
+// A successful run is filtered down to warnings; a failed one is printed whole, because
+// the version and timing lines are not what the user needs but everything else might be.
+func printTailwindOutput(oc *OutputCapture, output string, filter bool) {
+	for _, line := range strings.Split(output, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if filter {
+			// Skip version line (contains ≈ and tailwindcss)
+			if strings.Contains(line, "≈") && strings.Contains(line, "tailwindcss") {
+				continue
+			}
+			// Skip "Done in" timing line
+			if strings.HasPrefix(strings.TrimSpace(line), "Done in") {
+				continue
+			}
+		}
+		oc.Printf("%s", line)
+	}
+}
+
 func generateAppTailwindCss(tempDir string, verbose bool, opts BuildOpts) error {
 	oc := opts.OutputCapture
 	// tailwind.css is already in tempDir from scaffold copy
@@ -791,7 +828,7 @@ func generateAppTailwindCss(tempDir string, verbose bool, opts BuildOpts) error 
 		"-i", "./tailwind.css",
 		"-o", tailwindOutput)
 	tailwindCmd.Dir = tempDir
-	tailwindCmd.Env = append(os.Environ(), "ELECTRON_RUN_AS_NODE=1")
+	tailwindCmd.Env = AllowlistedEnv(os.Environ(), "ELECTRON_RUN_AS_NODE=1")
 
 	if verbose {
 		oc.Printf("[debug] Running: %s", strings.Join(tailwindCmd.Args, " "))
@@ -799,27 +836,14 @@ func generateAppTailwindCss(tempDir string, verbose bool, opts BuildOpts) error 
 
 	output, err := tailwindCmd.CombinedOutput()
 	if err != nil {
+		printTailwindOutput(oc, string(output), false)
+		if timeoutErr := opts.timeoutError("tailwind CSS generation"); timeoutErr != nil {
+			return timeoutErr
+		}
 		return fmt.Errorf("tailwind CSS generation failed (see output for errors)")
 	}
+	printTailwindOutput(oc, string(output), true)
 
-	// Process and filter tailwind output
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		// Skip empty lines
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		// Skip version line (contains ≈ and tailwindcss)
-		if strings.Contains(line, "≈") && strings.Contains(line, "tailwindcss") {
-			continue
-		}
-		// Skip "Done in" timing line
-		if strings.HasPrefix(strings.TrimSpace(line), "Done in") {
-			continue
-		}
-		// Write remaining lines to output
-		oc.Printf("%s", line)
-	}
 	if verbose {
 		oc.Printf("Tailwind CSS generated successfully")
 	}

@@ -267,7 +267,7 @@ func (bc *BuilderController) buildLoop() {
 }
 
 func (bc *BuilderController) runOneBuild(appId string, builderEnv map[string]string) {
-	buildCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	buildCtx, cancel := context.WithTimeout(context.Background(), build.BuildTimeout())
 	defer cancel()
 	bc.setBuildCancel(cancel)
 	defer bc.setBuildCancel(nil)
@@ -681,7 +681,7 @@ func (bc *BuilderController) runBuilderApp(ctx context.Context, appId string, ap
 	}
 
 	cmd := exec.Command(appBinPath)
-	cmd.Env = append(os.Environ(), "TSUNAMI_CLOSEONSTDIN=1")
+	cmd.Env = build.AllowlistedEnv(os.Environ(), "TSUNAMI_CLOSEONSTDIN=1")
 
 	if remotetermbase.IsDevMode() {
 		cmd.Env = append(cmd.Env, "TSUNAMI_CORS="+tsunamiutil.DevModeCorsOrigins)
