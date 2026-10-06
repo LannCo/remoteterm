@@ -23,6 +23,8 @@ type WshRpcBuilderInterface interface {
 	StartBuilderCommand(ctx context.Context, data CommandStartBuilderData) error
 	RequestBuilderRebuildCommand(ctx context.Context, data CommandRequestBuilderRebuildData) error
 	WatchBuilderAppCommand(ctx context.Context, data CommandWatchBuilderAppData) (*BuilderWatchStatusData, error)
+	OpenBuilderTerminalCommand(ctx context.Context, data CommandOpenBuilderTerminalData) error
+	EnsureBuilderTabCommand(ctx context.Context, data CommandEnsureBuilderTabData) (*CommandEnsureBuilderTabRtnData, error)
 	GetBuilderAppDirCommand(ctx context.Context, data CommandGetBuilderAppDirData) (string, error)
 	StopBuilderCommand(ctx context.Context, builderId string) error
 	GetBuilderStatusCommand(ctx context.Context, builderId string) (*BuilderStatusData, error)
@@ -183,6 +185,22 @@ type CommandSeedBuilderAppRtnData struct {
 	Files []string `json:"files"`
 }
 
+type CommandOpenBuilderTerminalData struct {
+	BuilderId     string `json:"builderid"`
+	TargetBlockId string `json:"targetblockid,omitempty"`
+	TargetAction  string `json:"targetaction,omitempty"`
+}
+
 type CommandGetBuilderAppDirData struct {
 	BuilderId string `json:"builderid"`
+}
+
+type CommandEnsureBuilderTabData struct {
+	BuilderId string `json:"builderid"`
+	AppId     string `json:"appid"`
+}
+
+type CommandEnsureBuilderTabRtnData struct {
+	TabId string `json:"tabid"`
+	AppId string `json:"appid"`
 }

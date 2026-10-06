@@ -59,6 +59,16 @@ func UpdateObjectMeta(ctx context.Context, oref remotetermobj.ORef, meta remotet
 		if oref.IsEmpty() {
 			return fmt.Errorf("empty object reference")
 		}
+		if oref.OType == remotetermobj.OType_Tab {
+			if err := CheckNoReservedTabMeta(meta); err != nil {
+				return err
+			}
+		}
+		if oref.OType == remotetermobj.OType_Block {
+			if err := CheckBuilderBlockConnection(tx.Context(), oref.OID, meta); err != nil {
+				return err
+			}
+		}
 		obj, _ := DBGetORef(tx.Context(), oref)
 		if obj == nil {
 			return ErrNotFound

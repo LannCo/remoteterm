@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/LannCo/remoteterm/pkg/remotetermappstore"
+	"github.com/LannCo/remoteterm/pkg/remotetermobj"
 )
 
 // The folder always comes from the builder's rtinfo, never from the renderer, so a
@@ -38,4 +39,16 @@ func ResolveAppDirForAppId(appId string) (string, error) {
 		return "", fmt.Errorf("app folder %s is not a directory", appDir)
 	}
 	return appDir, nil
+}
+
+func MakeBuilderTerminalBlockDef(appDir string) *remotetermobj.BlockDef {
+	return &remotetermobj.BlockDef{
+		Meta: remotetermobj.MetaMapType{
+			remotetermobj.MetaKey_View:        "term",
+			remotetermobj.MetaKey_Controller:  "shell",
+			remotetermobj.MetaKey_Connection:  "local",
+			remotetermobj.MetaKey_CmdCwd:      appDir,
+			remotetermobj.MetaKey_TermDurable: false,
+		},
+	}
 }

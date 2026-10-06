@@ -70,6 +70,21 @@ func TestResolveBuilderAppDirRejectsSymlink(t *testing.T) {
 	}
 }
 
+func TestMakeBuilderTerminalBlockDef(t *testing.T) {
+	def := MakeBuilderTerminalBlockDef("/home/u/waveapps/draft/demo")
+	want := map[string]string{
+		"view":       "term",
+		"controller": "shell",
+		"connection": "local",
+		"cmd:cwd":    "/home/u/waveapps/draft/demo",
+	}
+	for key, value := range want {
+		if def.Meta[key] != value {
+			t.Errorf("meta[%q] = %v, want %q", key, def.Meta[key], value)
+		}
+	}
+}
+
 func TestResolveAppDirForAppIdIgnoresRtInfo(t *testing.T) {
 	home, _ := setupBuilderTest(t)
 	appDir := makeTestApp(t, home, "demo")
@@ -101,5 +116,13 @@ func TestResolveAppDirForAppIdRejectsBadIdsAndFolders(t *testing.T) {
 	}
 	if _, err := ResolveAppDirForAppId("draft/linked"); err == nil {
 		t.Error("a symlinked app folder was accepted")
+	}
+}
+
+func TestMakeBuilderTerminalBlockDefPinsDurableOff(t *testing.T) {
+	def := MakeBuilderTerminalBlockDef("/home/u/waveapps/draft/demo")
+	durable, ok := def.Meta[remotetermobj.MetaKey_TermDurable].(bool)
+	if !ok || durable {
+		t.Fatalf("meta[%q] = %#v, want false", remotetermobj.MetaKey_TermDurable, def.Meta[remotetermobj.MetaKey_TermDurable])
 	}
 }
