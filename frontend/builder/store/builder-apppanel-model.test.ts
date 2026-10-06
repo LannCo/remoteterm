@@ -1,6 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { BuilderNoticeAtom } from "@/app/store/builder-terminal";
 import { globalStore } from "@/app/store/jotaiStore";
 import { stringToBase64 } from "@/util/util";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,6 +16,9 @@ const rpc = vi.hoisted(() => ({
 vi.mock("@/app/store/wshclientapi", () => ({ RpcApi: rpc }));
 vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 vi.mock("@/app/store/wps", () => ({ waveEventSubscribeSingle: vi.fn(() => () => {}) }));
+vi.mock("@/builder/store/builder-term-model", () => ({
+    BuilderTermModel: { getInstance: () => ({ markSwitching: vi.fn() }) },
+}));
 vi.mock("@/store/global", async () => {
     const { atom } = await import("jotai");
     return {
@@ -25,7 +29,7 @@ vi.mock("@/store/global", async () => {
     };
 });
 
-import { BuilderAppPanelModel } from "./builder-apppanel-model";
+import { BuilderAppPanelModel, getBuilderPreviewPartition } from "./builder-apppanel-model";
 
 function diskFile(content: string | null) {
     return content == null ? { notfound: true } : { data64: stringToBase64(content) };
@@ -165,5 +169,19 @@ describe("BuilderAppPanelModel reload glue", () => {
         await model.saveAppFile("draft/app");
         expect(globalStore.get(model.codeContentAtom)).toBe("v1 formatted");
         expect(globalStore.get(model.saveNeededAtom)).toBe(false);
+    });
+});
+
+describe("BuilderAppPanelModel notice", () => {
+    it("shares the builder notice atom, so Open terminal errors from any path show in the header", () => {
+        expect(BuilderAppPanelModel.getInstance().noticeAtom).toBe(BuilderNoticeAtom);
+    });
+});
+
+describe("getBuilderPreviewPartition", () => {
+    it("gives each builder its own in-memory partition", () => {
+        expect(getBuilderPreviewPartition("b1")).toBe("builder-preview-b1");
+        expect(getBuilderPreviewPartition("b1").startsWith("persist:")).toBe(false);
+        expect(getBuilderPreviewPartition("b2")).not.toBe(getBuilderPreviewPartition("b1"));
     });
 });

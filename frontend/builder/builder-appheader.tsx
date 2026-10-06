@@ -4,7 +4,9 @@
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { BuilderAppPanelModel } from "@/builder/store/builder-apppanel-model";
+import { BuilderTermModel } from "@/builder/store/builder-term-model";
 import { getSettingsKeyAtom } from "@/store/global";
+import { cn } from "@/util/util";
 import { useAtomValue } from "jotai";
 import { memo, useState } from "react";
 
@@ -131,10 +133,22 @@ NoticeStrip.displayName = "NoticeStrip";
 
 const BuilderAppHeader = memo(() => {
     const model = BuilderAppPanelModel.getInstance();
+    const terminalReady = useAtomValue(BuilderTermModel.getInstance().ensureOkAtom);
     return (
         <>
             <div className="shrink-0 flex items-center gap-3 px-3 py-1 border-b border-border">
                 <AppFolderPath />
+                <button
+                    className={cn(
+                        "shrink-0 flex items-center gap-1.5 px-2 py-0.5 text-xs rounded transition-colors",
+                        terminalReady ? "hover:bg-secondary/10 cursor-pointer" : "opacity-50"
+                    )}
+                    disabled={!terminalReady}
+                    onClick={() => model.openTerminal()}
+                >
+                    <i className="fa fa-terminal" />
+                    Open terminal
+                </button>
                 <button
                     className="shrink-0 flex items-center gap-1.5 px-2 py-0.5 text-xs rounded hover:bg-secondary/10 transition-colors cursor-pointer"
                     onClick={() => model.openFolder()}
