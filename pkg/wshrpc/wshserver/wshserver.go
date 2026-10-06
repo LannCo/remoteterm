@@ -1126,6 +1126,17 @@ func (ws *WshServer) WriteAppGoFileCommand(ctx context.Context, data wshrpc.Comm
 	return &wshrpc.CommandWriteAppGoFileRtnData{Data64: encoded}, nil
 }
 
+func (ws *WshServer) SeedBuilderAppCommand(ctx context.Context, data wshrpc.CommandSeedBuilderAppData) (*wshrpc.CommandSeedBuilderAppRtnData, error) {
+	if data.AppId == "" {
+		return nil, fmt.Errorf("must provide an appId to SeedBuilderAppCommand")
+	}
+	files, err := remotetermappstore.SeedApp(data.AppId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create starter files: %w", err)
+	}
+	return &wshrpc.CommandSeedBuilderAppRtnData{Files: files}, nil
+}
+
 func (ws *WshServer) DeleteAppFileCommand(ctx context.Context, data wshrpc.CommandDeleteAppFileData) error {
 	if data.AppId == "" {
 		return fmt.Errorf("must provide an appId to DeleteAppFileCommand")

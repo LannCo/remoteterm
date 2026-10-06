@@ -15,6 +15,7 @@ type WshRpcBuilderInterface interface {
 	ReadAppFileCommand(ctx context.Context, data CommandReadAppFileData) (*CommandReadAppFileRtnData, error)
 	WriteAppFileCommand(ctx context.Context, data CommandWriteAppFileData) error
 	WriteAppGoFileCommand(ctx context.Context, data CommandWriteAppGoFileData) (*CommandWriteAppGoFileRtnData, error)
+	SeedBuilderAppCommand(ctx context.Context, data CommandSeedBuilderAppData) (*CommandSeedBuilderAppRtnData, error)
 	DeleteAppFileCommand(ctx context.Context, data CommandDeleteAppFileData) error
 	RenameAppFileCommand(ctx context.Context, data CommandRenameAppFileData) error
 	WriteAppSecretBindingsCommand(ctx context.Context, data CommandWriteAppSecretBindingsData) error
@@ -166,4 +167,12 @@ type CommandMakeDraftFromLocalData struct {
 
 type CommandMakeDraftFromLocalRtnData struct {
 	DraftAppId string `json:"draftappid"`
+}
+
+type CommandSeedBuilderAppData struct {
+	AppId string `json:"appid"`
+}
+
+type CommandSeedBuilderAppRtnData struct {
+	Files []string `json:"files"`
 }
