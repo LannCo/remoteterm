@@ -620,6 +620,11 @@ declare global {
         tofilename: string;
     };
 
+    // wshrpc.CommandRequestBuilderRebuildData
+    type CommandRequestBuilderRebuildData = {
+        builderid: string;
+    };
+
     // wshrpc.CommandResolveIdsData
     type CommandResolveIdsData = {
         blockid: string;
@@ -629,11 +634,6 @@ declare global {
     // wshrpc.CommandResolveIdsRtnData
     type CommandResolveIdsRtnData = {
         resolvedids: {[key: string]: ORef};
-    };
-
-    // wshrpc.CommandRestartBuilderAndWaitData
-    type CommandRestartBuilderAndWaitData = {
-        builderid: string;
     };
 
     // wshrpc.CommandSeedBuilderAppData
@@ -775,6 +775,7 @@ declare global {
     type CommandWriteAppGoFileData = {
         appid: string;
         data64: string;
+        builderid?: string;
     };
 
     // wshrpc.CommandWriteAppGoFileRtnData
@@ -1383,13 +1384,6 @@ declare global {
         clientversion: string;
         shell: string;
         homedir: string;
-    };
-
-    // wshrpc.RestartBuilderAndWaitResult
-    type RestartBuilderAndWaitResult = {
-        success: boolean;
-        errormessage?: string;
-        buildoutput: string;
     };
 
     // wshrpc.RpcContext

@@ -840,15 +840,15 @@ func RenameAppFileCommand(w *wshutil.WshRpc, data wshrpc.CommandRenameAppFileDat
 	return err
 }
 
+// command "requestbuilderrebuild", wshserver.RequestBuilderRebuildCommand
+func RequestBuilderRebuildCommand(w *wshutil.WshRpc, data wshrpc.CommandRequestBuilderRebuildData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "requestbuilderrebuild", data, opts)
+	return err
+}
+
 // command "resolveids", wshserver.ResolveIdsCommand
 func ResolveIdsCommand(w *wshutil.WshRpc, data wshrpc.CommandResolveIdsData, opts *wshrpc.RpcOpts) (wshrpc.CommandResolveIdsRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[wshrpc.CommandResolveIdsRtnData](w, "resolveids", data, opts)
-	return resp, err
-}
-
-// command "restartbuilderandwait", wshserver.RestartBuilderAndWaitCommand
-func RestartBuilderAndWaitCommand(w *wshutil.WshRpc, data wshrpc.CommandRestartBuilderAndWaitData, opts *wshrpc.RpcOpts) (*wshrpc.RestartBuilderAndWaitResult, error) {
-	resp, err := sendRpcRequestCallHelper[*wshrpc.RestartBuilderAndWaitResult](w, "restartbuilderandwait", data, opts)
 	return resp, err
 }
 
