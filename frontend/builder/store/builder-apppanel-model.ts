@@ -234,7 +234,7 @@ export class BuilderAppPanelModel {
                 oref: WOS.makeORef("builder", builderId),
                 data: { "builder:appid": null },
             });
-            getApi().setBuilderWindowAppId(null);
+            await getApi().setBuilderWindowAppId(null);
             await new Promise((resolve) => setTimeout(resolve, 100));
             getApi().doRefresh();
         } catch (err) {

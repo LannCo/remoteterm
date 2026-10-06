@@ -122,7 +122,7 @@ declare global {
         closeBuilderWindow: () => void; // close-builder-window
         nativePaste: () => void; // native-paste
         openBuilder: (appId?: string) => void; // open-builder
-        setBuilderWindowAppId: (appId: string) => void; // set-builder-window-appid
+        setBuilderWindowAppId: (appId: string) => Promise<boolean>; // set-builder-window-appid
         doRefresh: () => void; // do-refresh
         getPathForFile: (file: File) => string; // webUtils.getPathForFile
         saveTextFile: (fileName: string, content: string) => Promise<boolean>; // save-text-file
