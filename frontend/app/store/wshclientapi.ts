@@ -846,16 +846,16 @@ export class RpcApiType {
         return client.wshRpcCall("renameappfile", data, opts);
     }
 
+    // command "requestbuilderrebuild" [call]
+    RequestBuilderRebuildCommand(client: WshClient, data: CommandRequestBuilderRebuildData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "requestbuilderrebuild", data, opts);
+        return client.wshRpcCall("requestbuilderrebuild", data, opts);
+    }
+
     // command "resolveids" [call]
     ResolveIdsCommand(client: WshClient, data: CommandResolveIdsData, opts?: RpcOpts): Promise<CommandResolveIdsRtnData> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "resolveids", data, opts);
         return client.wshRpcCall("resolveids", data, opts);
-    }
-
-    // command "restartbuilderandwait" [call]
-    RestartBuilderAndWaitCommand(client: WshClient, data: CommandRestartBuilderAndWaitData, opts?: RpcOpts): Promise<RestartBuilderAndWaitResult> {
-        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "restartbuilderandwait", data, opts);
-        return client.wshRpcCall("restartbuilderandwait", data, opts);
     }
 
     // command "routeannounce" [call]

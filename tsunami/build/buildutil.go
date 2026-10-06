@@ -150,19 +150,55 @@ func CopyFileIfExists(fsys fs.FS, srcPath, destPath string) (bool, error) {
 	}
 }
 
+// The app folder is writable by agents, so a file the build reads may have been swapped
+// for a FIFO after the builder's preflight. A blocking open of one would hang the build
+// where no context can reach it, so files on disk are opened non-blocking and must turn
+// out to be regular before anything reads them.
+func openRegularFileFS(fsys fs.FS, name string) (fs.File, fs.FileInfo, error) {
+	var file fs.File
+	if dirFS, ok := fsys.(DirFS); ok {
+		if !fs.ValidPath(name) {
+			return nil, nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrInvalid}
+		}
+		osFile, err := os.OpenFile(dirFS.JoinOS(name), os.O_RDONLY|nonBlockFlag, 0)
+		if err != nil {
+			return nil, nil, err
+		}
+		file = osFile
+	} else {
+		var err error
+		file, err = fsys.Open(name)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, nil, err
+	}
+	if !info.Mode().IsRegular() {
+		file.Close()
+		return nil, nil, fmt.Errorf("%s is not a regular file", name)
+	}
+	return file, info, nil
+}
+
+func readRegularFileFS(fsys fs.FS, name string) ([]byte, error) {
+	file, _, err := openRegularFileFS(fsys, name)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return io.ReadAll(file)
+}
+
 func CopyFileFromFS(fsys fs.FS, srcPath, destPath string) error {
-	// Open source file from filesystem
-	srcFile, err := fsys.Open(srcPath)
+	srcFile, srcInfo, err := openRegularFileFS(fsys, srcPath)
 	if err != nil {
 		return err
 	}
 	defer srcFile.Close()
-
-	// Get source file info
-	srcInfo, err := fs.Stat(fsys, srcPath)
-	if err != nil {
-		return err
-	}
 
 	// Create destination directory if it doesn't exist
 	destDir := filepath.Dir(destPath)
