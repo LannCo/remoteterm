@@ -1193,6 +1193,25 @@ func (ws *WshServer) RequestBuilderRebuildCommand(ctx context.Context, data wshr
 	return nil
 }
 
+func (ws *WshServer) WatchBuilderAppCommand(ctx context.Context, data wshrpc.CommandWatchBuilderAppData) (*wshrpc.BuilderWatchStatusData, error) {
+	if data.BuilderId == "" {
+		return nil, fmt.Errorf("must provide a builderId to WatchBuilderAppCommand")
+	}
+	appId, _, err := buildercontroller.GetBuilderRebuildInputs(data.BuilderId)
+	if err != nil {
+		return nil, err
+	}
+	status := buildercontroller.GetOrCreateController(data.BuilderId).StartWatching(appId)
+	return &status, nil
+}
+
+func (ws *WshServer) GetBuilderAppDirCommand(ctx context.Context, data wshrpc.CommandGetBuilderAppDirData) (string, error) {
+	if data.BuilderId == "" {
+		return "", fmt.Errorf("must provide a builderId to GetBuilderAppDirCommand")
+	}
+	return buildercontroller.ResolveBuilderAppDir(data.BuilderId)
+}
+
 func (ws *WshServer) StopBuilderCommand(ctx context.Context, builderId string) error {
 	if builderId == "" {
 		return fmt.Errorf("must provide a builderId to StopBuilderCommand")

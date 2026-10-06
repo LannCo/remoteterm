@@ -22,6 +22,8 @@ type WshRpcBuilderInterface interface {
 	DeleteBuilderCommand(ctx context.Context, builderId string) error
 	StartBuilderCommand(ctx context.Context, data CommandStartBuilderData) error
 	RequestBuilderRebuildCommand(ctx context.Context, data CommandRequestBuilderRebuildData) error
+	WatchBuilderAppCommand(ctx context.Context, data CommandWatchBuilderAppData) (*BuilderWatchStatusData, error)
+	GetBuilderAppDirCommand(ctx context.Context, data CommandGetBuilderAppDirData) (string, error)
 	StopBuilderCommand(ctx context.Context, builderId string) error
 	GetBuilderStatusCommand(ctx context.Context, builderId string) (*BuilderStatusData, error)
 	GetBuilderOutputCommand(ctx context.Context, builderId string) ([]string, error)
@@ -111,6 +113,15 @@ type CommandRequestBuilderRebuildData struct {
 	BuilderId string `json:"builderid"`
 }
 
+type CommandWatchBuilderAppData struct {
+	BuilderId string `json:"builderid"`
+}
+
+type BuilderWatchStatusData struct {
+	Status string `json:"status"`
+	Reason string `json:"reason,omitempty"`
+}
+
 type AppMeta struct {
 	Title     string `json:"title"`
 	ShortDesc string `json:"shortdesc"`
@@ -170,4 +181,8 @@ type CommandSeedBuilderAppData struct {
 
 type CommandSeedBuilderAppRtnData struct {
 	Files []string `json:"files"`
+}
+
+type CommandGetBuilderAppDirData struct {
+	BuilderId string `json:"builderid"`
 }

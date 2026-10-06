@@ -408,6 +408,12 @@ export class RpcApiType {
         return client.wshRpcCall("getallvars", data, opts);
     }
 
+    // command "getbuilderappdir" [call]
+    GetBuilderAppDirCommand(client: WshClient, data: CommandGetBuilderAppDirData, opts?: RpcOpts): Promise<string> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getbuilderappdir", data, opts);
+        return client.wshRpcCall("getbuilderappdir", data, opts);
+    }
+
     // command "getbuilderoutput" [call]
     GetBuilderOutputCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<string[]> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "getbuilderoutput", data, opts);
@@ -1030,6 +1036,12 @@ export class RpcApiType {
     WaitForRouteCommand(client: WshClient, data: CommandWaitForRouteData, opts?: RpcOpts): Promise<boolean> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "waitforroute", data, opts);
         return client.wshRpcCall("waitforroute", data, opts);
+    }
+
+    // command "watchbuilderapp" [call]
+    WatchBuilderAppCommand(client: WshClient, data: CommandWatchBuilderAppData, opts?: RpcOpts): Promise<BuilderWatchStatusData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "watchbuilderapp", data, opts);
+        return client.wshRpcCall("watchbuilderapp", data, opts);
     }
 
     // command "wavefilereadstream" [call]

@@ -135,6 +135,12 @@ declare global {
         secretbindingscomplete: boolean;
     };
 
+    // wshrpc.BuilderWatchStatusData
+    type BuilderWatchStatusData = {
+        status: string;
+        reason?: string;
+    };
+
     // remotetermobj.Client
     type Client = WaveObj & {
         windowids: string[];
@@ -321,6 +327,11 @@ declare global {
         info: FileInfo;
         byterange?: string;
         streammeta: StreamMeta;
+    };
+
+    // wshrpc.CommandGetBuilderAppDirData
+    type CommandGetBuilderAppDirData = {
+        builderid: string;
     };
 
     // wshrpc.CommandGetMetaData
@@ -746,6 +757,11 @@ declare global {
     type CommandWaitForRouteData = {
         routeid: string;
         waitms: number;
+    };
+
+    // wshrpc.CommandWatchBuilderAppData
+    type CommandWatchBuilderAppData = {
+        builderid: string;
     };
 
     // wshrpc.CommandWaveFileReadStreamData
@@ -1518,6 +1534,8 @@ declare global {
         "debug:pprofport"?: number;
         "debug:pprofmemprofilerate"?: number;
         "debug:webglstatus"?: boolean;
+        "builder:*"?: boolean;
+        "builder:liverebuild"?: boolean;
         "tsunami:*"?: boolean;
         "tsunami:scaffoldpath"?: string;
         "tsunami:sdkreplacepath"?: string;

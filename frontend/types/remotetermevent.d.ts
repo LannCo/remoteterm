@@ -21,6 +21,7 @@ declare global {
         | "route:up"
         | "workspace:update"
         | "rtapp:appgoupdated"
+        | "rtapp:watchstatus"
         | "tsunami:updatemeta"
         | "block:jobstatus"
         | "badge"
@@ -47,6 +48,7 @@ declare global {
         { event: "route:up"; data?: null; } | 
         { event: "workspace:update"; data?: null; } | 
         { event: "rtapp:appgoupdated"; data?: null; } | 
+        { event: "rtapp:watchstatus"; data?: BuilderWatchStatusData; } | 
         { event: "tsunami:updatemeta"; data?: AppMeta; } | 
         { event: "block:jobstatus"; data?: BlockJobStatusData; } | 
         { event: "badge"; data?: BadgeEvent; }

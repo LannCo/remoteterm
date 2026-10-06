@@ -21,7 +21,12 @@ import {
     getAllBuilderWindows,
     getBuilderWindowByWebContentsId,
 } from "./emain-builder";
-import { BuilderTeardownTimeoutMs, findBuilderWindowForApp, runBuilderTeardown } from "./emain-builder-select";
+import {
+    BuilderTeardownTimeoutMs,
+    findBuilderWindowForApp,
+    openPathDetached,
+    runBuilderTeardown,
+} from "./emain-builder-select";
 import { callWithOriginalXdgCurrentDesktopAsync, unamePlatform } from "./emain-platform";
 import { handleTabLoadSucceeded } from "./emain-tab-lifecycle";
 import { getRemoteTermTabViewByWebContentsId } from "./emain-tabview";
@@ -543,6 +548,27 @@ export function initIpcHandlers() {
         }
         await destroyBuilderWindow(bw);
     });
+    electron.ipcMain.handle("open-builder-folder", async (event): Promise<string> => {
+        const bw = getBuilderWindowByWebContentsId(event.sender.id);
+        if (bw == null) {
+            return "This action is only available in a builder window.";
+        }
+        let appDir: string;
+        try {
+            appDir = await RpcApi.GetBuilderAppDirCommand(ElectronWshClient, { builderid: bw.builderId });
+        } catch (e) {
+            return `Could not find the app folder: ${e instanceof Error ? e.message : String(e)}`;
+        }
+        try {
+            if (!fs.lstatSync(appDir).isDirectory()) {
+                return "The app folder is not a directory.";
+            }
+        } catch {
+            return "The app folder does not exist.";
+        }
+        return openPathDetached((target) => electron.shell.openPath(target), appDir, (msg) => console.error(msg));
+    });
+
     electron.ipcMain.on("do-refresh", (event) => {
         event.sender.reloadIgnoringCache();
     });

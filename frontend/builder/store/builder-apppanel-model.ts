@@ -5,11 +5,13 @@ import { globalStore } from "@/app/store/jotaiStore";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { atoms, getApi, WOS } from "@/store/global";
+import { atoms, getApi, getSettingsKeyAtom, WOS } from "@/store/global";
 import { base64ToString, stringToBase64 } from "@/util/util";
 import type { WebviewTag } from "electron";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
 import type * as MonacoTypes from "monaco-editor";
+import { decideReload, type ReloadDecision } from "./decide-reload";
+
 export type TabType = "preview" | "files" | "code" | "secrets" | "configdata";
 
 export type EnvVar = {
@@ -30,6 +32,12 @@ export class BuilderAppPanelModel {
     isLoadingAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
     errorAtom: PrimitiveAtom<string> = atom<string>("");
     isSeedingAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
+    appGoMissingAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
+    diskChangedAtom = atom<string>(null) as PrimitiveAtom<string>;
+    externalChangeAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
+    watchStatusAtom = atom<BuilderWatchStatusData>(null) as PrimitiveAtom<BuilderWatchStatusData>;
+    appDirAtom = atom<string>(null) as PrimitiveAtom<string>;
+    noticeAtom: PrimitiveAtom<string> = atom<string>("");
     builderStatusAtom = atom<BuilderStatusData>(null) as PrimitiveAtom<BuilderStatusData>;
     hasSecretsAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
     saveNeededAtom!: Atom<boolean>;
@@ -38,6 +46,10 @@ export class BuilderAppPanelModel {
     webviewRef: { current: WebviewTag | null } = { current: null };
     statusUnsubFn: (() => void) | null = null;
     appGoUpdateUnsubFn: (() => void) | null = null;
+    watchStatusUnsubFn: (() => void) | null = null;
+    appIdUnsubFn: (() => void) | null = null;
+    lastWrittenContent: string = null;
+    reconcileSeq = 0;
     initialized = false;
 
     private constructor() {
@@ -85,6 +97,9 @@ export class BuilderAppPanelModel {
                 if (!currentStatus || !currentStatus.version || status.version > currentStatus.version) {
                     globalStore.set(this.builderStatusAtom, status);
                     this.updateSecretsLatch(status);
+                    if (status.status === "building") {
+                        globalStore.set(this.externalChangeAtom, false);
+                    }
                 }
             },
         });
@@ -101,14 +116,46 @@ export class BuilderAppPanelModel {
         const appId = globalStore.get(atoms.builderAppId);
         await this.loadAppFile(appId);
         await this.loadEnvVars(builderId);
+        await this.loadAppDir();
 
+        this.watchStatusUnsubFn = waveEventSubscribeSingle({
+            eventType: "rtapp:watchstatus",
+            scope: WOS.makeORef("builder", builderId),
+            handler: (event) => {
+                globalStore.set(this.watchStatusAtom, event.data);
+            },
+        });
+
+        await this.watchApp(builderId, appId);
+        // The server drops watch status and rebuilds when the watcher's app id is not the
+        // window's current one, so a changed app id needs a fresh watch.
+        this.appIdUnsubFn = globalStore.sub(atoms.builderAppId, () => {
+            const newAppId = globalStore.get(atoms.builderAppId);
+            if (newAppId == null) {
+                return;
+            }
+            this.watchApp(builderId, newAppId);
+        });
+    }
+
+    async watchApp(builderId: string, appId: string) {
+        if (this.appGoUpdateUnsubFn) {
+            this.appGoUpdateUnsubFn();
+        }
         this.appGoUpdateUnsubFn = waveEventSubscribeSingle({
             eventType: "rtapp:appgoupdated",
             scope: appId,
             handler: () => {
-                this.loadAppFile(appId);
+                this.handleAppGoUpdated(appId);
             },
         });
+        try {
+            const watchStatus = await RpcApi.WatchBuilderAppCommand(TabRpcClient, { builderid: builderId });
+            globalStore.set(this.watchStatusAtom, watchStatus);
+        } catch (err) {
+            console.error("Failed to watch the app folder:", err);
+            globalStore.set(this.watchStatusAtom, { status: "unavailable", reason: err.message || "unknown error" });
+        }
     }
 
     updateSecretsLatch(status: BuilderStatusData) {
@@ -127,6 +174,25 @@ export class BuilderAppPanelModel {
                 secretbindings: newBindings,
             });
         }
+    }
+
+    async loadAppDir() {
+        const builderId = globalStore.get(atoms.builderId);
+        try {
+            const appDir = await RpcApi.GetBuilderAppDirCommand(TabRpcClient, { builderid: builderId });
+            globalStore.set(this.appDirAtom, appDir);
+        } catch (err) {
+            console.error("Failed to resolve the app folder:", err);
+        }
+    }
+
+    async openFolder() {
+        const err = await getApi().openBuilderFolder();
+        globalStore.set(this.noticeAtom, err ?? "");
+    }
+
+    clearNotice() {
+        globalStore.set(this.noticeAtom, "");
     }
 
     async loadEnvVars(builderId: string) {
@@ -205,6 +271,7 @@ export class BuilderAppPanelModel {
 
     async requestRebuild() {
         const builderId = globalStore.get(atoms.builderId);
+        globalStore.set(this.externalChangeAtom, false);
         try {
             await RpcApi.RequestBuilderRebuildCommand(TabRpcClient, { builderid: builderId });
         } catch (err) {
@@ -254,8 +321,15 @@ export class BuilderAppPanelModel {
             seedError = `Failed to create starter app: ${err.message || "Unknown error"}`;
         }
         // Reload even after a failure so files written before it show up. loadAppFile clears
-        // the error, so the seed error is set afterwards.
-        await this.loadAppFile(appId);
+        // the error, so the seed error is set afterwards. A dirty editor must not be replaced
+        // by the starter (or by "" after a failed seed), so it goes through decideReload and
+        // ends up as a conflict the user resolves.
+        if (globalStore.get(this.codeContentAtom) !== globalStore.get(this.originalContentAtom)) {
+            globalStore.set(this.errorAtom, "");
+            await this.reconcileWithDisk(appId);
+        } else {
+            await this.loadAppFile(appId);
+        }
         if (seedError != null) {
             globalStore.set(this.errorAtom, seedError);
         }
@@ -263,6 +337,9 @@ export class BuilderAppPanelModel {
     }
 
     async loadAppFile(appId: string) {
+        // A reconcile read that started before this load holds older disk content; bumping
+        // the sequence makes it drop its result instead of overwriting the loaded file.
+        ++this.reconcileSeq;
         try {
             globalStore.set(this.isLoadingAtom, true);
             globalStore.set(this.errorAtom, "");
@@ -275,7 +352,9 @@ export class BuilderAppPanelModel {
             if (result.notfound) {
                 globalStore.set(this.codeContentAtom, "");
                 globalStore.set(this.originalContentAtom, "");
+                globalStore.set(this.appGoMissingAtom, true);
             } else {
+                globalStore.set(this.appGoMissingAtom, false);
                 const decoded = base64ToString(result.data64);
                 globalStore.set(this.codeContentAtom, decoded);
                 globalStore.set(this.originalContentAtom, decoded);
@@ -287,6 +366,7 @@ export class BuilderAppPanelModel {
                     }
                 }
             }
+            globalStore.set(this.diskChangedAtom, null);
         } catch (err) {
             console.error("Failed to load app.go:", err);
             globalStore.set(this.errorAtom, `Failed to load app.go: ${err.message || "Unknown error"}`);
@@ -305,12 +385,99 @@ export class BuilderAppPanelModel {
                 builderid: globalStore.get(atoms.builderId),
             });
             const formattedContent = base64ToString(result.data64);
+            // Keystrokes typed while the save was in flight must survive; the formatted text
+            // only replaces the editor when it still holds exactly what was sent.
+            if (globalStore.get(this.codeContentAtom) === content) {
+                globalStore.set(this.codeContentAtom, formattedContent);
+            }
             globalStore.set(this.originalContentAtom, formattedContent);
+            globalStore.set(this.appGoMissingAtom, false);
+            globalStore.set(this.diskChangedAtom, null);
             globalStore.set(this.errorAtom, "");
+            this.lastWrittenContent = formattedContent;
         } catch (err) {
             console.error("Failed to save app.go:", err);
             globalStore.set(this.errorAtom, `Failed to save app.go: ${err.message || "Unknown error"}`);
         }
+    }
+
+    async handleAppGoUpdated(appId: string) {
+        const liveRebuild = globalStore.get(getSettingsKeyAtom("builder:liverebuild")) ?? false;
+        if (!liveRebuild) {
+            globalStore.set(this.externalChangeAtom, true);
+        }
+        await this.reconcileWithDisk(appId);
+    }
+
+    // A read that finishes after a newer one has started is dropped, so diskChangedAtom
+    // always holds the latest disk read and "Load disk version" never loads older content.
+    async reconcileWithDisk(appId: string) {
+        const seq = ++this.reconcileSeq;
+        let disk: string = null;
+        try {
+            const result = await RpcApi.ReadAppFileCommand(TabRpcClient, { appid: appId, filename: "app.go" });
+            disk = result.notfound ? null : base64ToString(result.data64);
+        } catch (err) {
+            console.error("Failed to read app.go after an outside change:", err);
+            return;
+        }
+        if (seq !== this.reconcileSeq) {
+            return;
+        }
+        const decision = decideReload(
+            globalStore.get(this.codeContentAtom),
+            globalStore.get(this.originalContentAtom),
+            disk,
+            this.lastWrittenContent
+        );
+        this.applyReloadDecision(decision);
+    }
+
+    applyReloadDecision(decision: ReloadDecision) {
+        if (decision.kind === "missing") {
+            globalStore.set(this.appGoMissingAtom, true);
+            globalStore.set(this.diskChangedAtom, null);
+            return;
+        }
+        globalStore.set(this.appGoMissingAtom, false);
+        if (decision.kind === "none") {
+            globalStore.set(this.diskChangedAtom, null);
+            return;
+        }
+        this.lastWrittenContent = null;
+        if (decision.kind === "sync-original") {
+            globalStore.set(this.originalContentAtom, decision.content);
+            globalStore.set(this.diskChangedAtom, null);
+            return;
+        }
+        if (decision.kind === "replace") {
+            globalStore.set(this.codeContentAtom, decision.content);
+            globalStore.set(this.originalContentAtom, decision.content);
+            globalStore.set(this.diskChangedAtom, null);
+            return;
+        }
+        globalStore.set(this.diskChangedAtom, decision.disk);
+    }
+
+    loadDiskVersion() {
+        const disk = globalStore.get(this.diskChangedAtom);
+        if (disk == null) {
+            return;
+        }
+        globalStore.set(this.codeContentAtom, disk);
+        globalStore.set(this.originalContentAtom, disk);
+        globalStore.set(this.diskChangedAtom, null);
+    }
+
+    // The original becomes the disk content so Save stays enabled; saving then overwrites
+    // the outside change because the user chose to.
+    keepMyEdits() {
+        const disk = globalStore.get(this.diskChangedAtom);
+        if (disk == null) {
+            return;
+        }
+        globalStore.set(this.originalContentAtom, disk);
+        globalStore.set(this.diskChangedAtom, null);
     }
 
     clearError() {
@@ -351,6 +518,14 @@ export class BuilderAppPanelModel {
         if (this.appGoUpdateUnsubFn) {
             this.appGoUpdateUnsubFn();
             this.appGoUpdateUnsubFn = null;
+        }
+        if (this.watchStatusUnsubFn) {
+            this.watchStatusUnsubFn();
+            this.watchStatusUnsubFn = null;
+        }
+        if (this.appIdUnsubFn) {
+            this.appIdUnsubFn();
+            this.appIdUnsubFn = null;
         }
     }
 }
