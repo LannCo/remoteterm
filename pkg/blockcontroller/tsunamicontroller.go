@@ -116,14 +116,11 @@ func (c *TsunamiController) Start(ctx context.Context, blockMeta remotetermobj.M
 	c.runLock.Lock()
 	defer c.runLock.Unlock()
 
-	scaffoldPath := remotetermapputil.GetTsunamiScaffoldPath()
 	settings := rtconfig.GetWatcher().GetFullConfig().Settings
-	sdkReplacePath := settings.TsunamiSdkReplacePath
 	sdkVersion := settings.TsunamiSdkVersion
 	if sdkVersion == "" {
 		sdkVersion = remotetermapputil.DefaultTsunamiSdkVersion
 	}
-	goPath := settings.TsunamiGoPath
 
 	appPath := blockMeta.GetString(remotetermobj.MetaKey_TsunamiAppPath, "")
 	appId := blockMeta.GetString(remotetermobj.MetaKey_TsunamiAppId, "")
@@ -171,17 +168,23 @@ func (c *TsunamiController) Start(ctx context.Context, blockMeta remotetermobj.M
 			return fmt.Errorf("electron executable path not set")
 		}
 
+		buildEnv, err := remotetermapputil.PrepareTsunamiBuild(settings)
+		if err != nil {
+			return err
+		}
+
 		opts := build.BuildOpts{
 			AppPath:        appPath,
 			Verbose:        true,
 			Open:           false,
 			KeepTemp:       false,
 			OutputFile:     cachePath,
-			ScaffoldPath:   scaffoldPath,
-			SdkReplacePath: sdkReplacePath,
+			ScaffoldPath:   buildEnv.ScaffoldPath,
+			SdkReplacePath: buildEnv.SdkReplacePath,
+			MinGoVersion:   buildEnv.MinGoVersion,
 			SdkVersion:     sdkVersion,
 			NodePath:       nodePath,
-			GoPath:         goPath,
+			GoPath:         buildEnv.GoPath,
 		}
 
 		err = build.TsunamiBuild(opts)

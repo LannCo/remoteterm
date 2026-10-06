@@ -22,7 +22,14 @@ const config = {
         {
             from: "./dist",
             to: "./dist",
-            filter: ["**/*", "!bin/*", "bin/remotetermsrv.${arch}*", "bin/wsh*", "!tsunamiscaffold/**/*"],
+            filter: [
+                "**/*",
+                "!bin/*",
+                "bin/remotetermsrv.${arch}*",
+                "bin/wsh*",
+                "!tsunamiscaffold/**/*",
+                "!tsunamisdk/**/*",
+            ],
         },
         {
             from: ".",
@@ -35,6 +42,10 @@ const config = {
         {
             from: "dist/tsunamiscaffold",
             to: "tsunamiscaffold",
+        },
+        {
+            from: "dist/tsunamisdk",
+            to: "tsunamisdk",
         },
     ],
     directories: {

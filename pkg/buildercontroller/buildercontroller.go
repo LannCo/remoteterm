@@ -203,6 +203,13 @@ func (bc *BuilderController) buildAndRun(ctx context.Context, appId string, buil
 		return
 	}
 
+	settings := rtconfig.GetWatcher().GetFullConfig().Settings
+	buildEnv, err := remotetermapputil.PrepareTsunamiBuild(settings)
+	if err != nil {
+		bc.handleBuildError(err, resultCh)
+		return
+	}
+
 	cachePath, err := GetBuilderAppExecutablePath(appPath)
 	if err != nil {
 		bc.handleBuildError(fmt.Errorf("failed to get builder executable path: %w", err), resultCh)
@@ -215,14 +222,10 @@ func (bc *BuilderController) buildAndRun(ctx context.Context, appId string, buil
 		return
 	}
 
-	scaffoldPath := remotetermapputil.GetTsunamiScaffoldPath()
-	settings := rtconfig.GetWatcher().GetFullConfig().Settings
-	sdkReplacePath := settings.TsunamiSdkReplacePath
 	sdkVersion := settings.TsunamiSdkVersion
 	if sdkVersion == "" {
 		sdkVersion = remotetermapputil.DefaultTsunamiSdkVersion
 	}
-	goPath := settings.TsunamiGoPath
 
 	outputCapture := build.MakeOutputCapture()
 	_, err = build.TsunamiBuildInternal(build.BuildOpts{
@@ -232,11 +235,12 @@ func (bc *BuilderController) buildAndRun(ctx context.Context, appId string, buil
 		Open:           false,
 		KeepTemp:       false,
 		OutputFile:     cachePath,
-		ScaffoldPath:   scaffoldPath,
-		SdkReplacePath: sdkReplacePath,
+		ScaffoldPath:   buildEnv.ScaffoldPath,
+		SdkReplacePath: buildEnv.SdkReplacePath,
+		MinGoVersion:   buildEnv.MinGoVersion,
 		SdkVersion:     sdkVersion,
 		NodePath:       nodePath,
-		GoPath:         goPath,
+		GoPath:         buildEnv.GoPath,
 		OutputCapture:  outputCapture,
 		MoveFileBack:   true,
 	})
@@ -416,6 +420,9 @@ func (bc *BuilderController) handleBuildError(err error, resultCh chan<- *BuildR
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
 	bc.setStatus_nolock(BuilderStatus_Error, 0, 1, err.Error())
+	if bc.outputBuffer != nil {
+		bc.outputBuffer.AddLine("[error] " + err.Error())
+	}
 
 	if resultCh != nil {
 		buildOutput := ""
