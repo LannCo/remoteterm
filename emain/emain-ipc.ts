@@ -15,7 +15,13 @@ import * as keyutil from "../frontend/util/keyutil";
 import { fireAndForget, parseDataUrl } from "../frontend/util/util";
 import {    setWasActive,
 } from "./emain-activity";
-import { createBuilderWindow, getAllBuilderWindows, getBuilderWindowByWebContentsId } from "./emain-builder";
+import {
+    type BuilderWindowType,
+    createBuilderWindow,
+    getAllBuilderWindows,
+    getBuilderWindowByWebContentsId,
+} from "./emain-builder";
+import { BuilderTeardownTimeoutMs, findBuilderWindowForApp, runBuilderTeardown } from "./emain-builder-select";
 import { callWithOriginalXdgCurrentDesktopAsync, unamePlatform } from "./emain-platform";
 import { handleTabLoadSucceeded } from "./emain-tab-lifecycle";
 import { getRemoteTermTabViewByWebContentsId } from "./emain-tabview";
@@ -48,7 +54,9 @@ let webviewKeys: string[] = [];
 export function openBuilderWindow(appId?: string) {
     const normalizedAppId = appId || "";
     const existingBuilderWindows = getAllBuilderWindows();
-    const existingWindow = existingBuilderWindows.find((win) => win.builderAppId === normalizedAppId);
+    const existingWindow = existingBuilderWindows.find(
+        (win) => !win.tearingDown && win.builderAppId === normalizedAppId
+    );
     if (existingWindow) {
         existingWindow.focus();
         return;
@@ -203,6 +211,43 @@ function saveImageFileWithNativeDialog(
         .catch((err) => {
             console.log("error trying to save file", err);
         });
+}
+
+async function destroyBuilderWindow(bw: BuilderWindowType) {
+    const builderId = bw.builderId;
+    await runBuilderTeardown(bw, {
+        deleteBuilder: async () => {
+            if (!builderId) {
+                return;
+            }
+            await RpcApi.DeleteBuilderCommand(ElectronWshClient, builderId, { timeout: BuilderTeardownTimeoutMs });
+        },
+        deleteRtInfo: async () => {
+            if (!builderId) {
+                return;
+            }
+            await RpcApi.SetRTInfoCommand(ElectronWshClient, {
+                oref: `builder:${builderId}`,
+                data: {} as ObjRTInfo,
+                delete: true,
+            });
+        },
+        destroyWindow: () => {
+            const wc = bw.webContents;
+            if (wc.isDevToolsOpened()) {
+                wc.closeDevTools();
+            }
+            for (const guest of electron.webContents.getAllWebContents()) {
+                if (guest.getType() === "webview" && guest.hostWebContents?.id === wc.id) {
+                    if (guest.isDevToolsOpened()) {
+                        guest.closeDevTools();
+                    }
+                }
+            }
+            bw.destroy();
+        },
+        logError: (message, err) => console.error(message, err),
+    });
 }
 
 export function initIpcHandlers() {
@@ -470,13 +515,23 @@ export function initIpcHandlers() {
         openBuilderWindow(appId);
     });
 
-    electron.ipcMain.on("set-builder-window-appid", (event, appId: string) => {
+    electron.ipcMain.handle("set-builder-window-appid", async (event, appId: string): Promise<boolean> => {
         const bw = getBuilderWindowByWebContentsId(event.sender.id);
         if (bw == null) {
-            return;
+            return false;
+        }
+        const other = findBuilderWindowForApp(getAllBuilderWindows(), appId, bw.builderId);
+        if (other != null) {
+            if (other.isMinimized()) {
+                other.restore();
+            }
+            other.focus();
+            await destroyBuilderWindow(bw);
+            return false;
         }
         bw.builderAppId = appId;
         console.log("set-builder-window-appid", bw.builderId, appId);
+        return true;
     });
 
     electron.ipcMain.on("open-new-window", () => fireAndForget(createNewRemoteTermWindow));
@@ -486,32 +541,8 @@ export function initIpcHandlers() {
         if (bw == null) {
             return;
         }
-        const builderId = bw.builderId;
-        if (builderId) {
-            try {
-                await RpcApi.SetRTInfoCommand(ElectronWshClient, {
-                    oref: `builder:${builderId}`,
-                    data: {} as ObjRTInfo,
-                    delete: true,
-                });
-            } catch (e) {
-                console.error("Error deleting builder rtinfo:", e);
-            }
-        }
-        const wc = bw.webContents;
-        if (wc.isDevToolsOpened()) {
-            wc.closeDevTools();
-        }
-        for (const guest of electron.webContents.getAllWebContents()) {
-            if (guest.getType() === "webview" && guest.hostWebContents?.id === wc.id) {
-                if (guest.isDevToolsOpened()) {
-                    guest.closeDevTools();
-                }
-            }
-        }
-        bw.destroy();
+        await destroyBuilderWindow(bw);
     });
-
     electron.ipcMain.on("do-refresh", (event) => {
         event.sender.reloadIgnoringCache();
     });

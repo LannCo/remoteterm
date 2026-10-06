@@ -135,6 +135,10 @@ export function AppSelectionModal() {
             }
         }
 
+        const kept = await getApi().setBuilderWindowAppId(appIdToUse);
+        if (!kept) {
+            return;
+        }
         const builderId = globalStore.get(atoms.builderId);
         const oref = WOS.makeORef("builder", builderId);
         await RpcApi.SetRTInfoCommand(TabRpcClient, {
@@ -143,11 +147,14 @@ export function AppSelectionModal() {
         });
         globalStore.set(atoms.builderAppId, appIdToUse);
         document.title = `RTApp Builder (${appIdToUse})`;
-        getApi().setBuilderWindowAppId(appIdToUse);
     };
 
     const handleCreateNew = async (appName: string) => {
         const draftAppId = `draft/${appName}`;
+        const kept = await getApi().setBuilderWindowAppId(draftAppId);
+        if (!kept) {
+            return;
+        }
         const builderId = globalStore.get(atoms.builderId);
         const oref = WOS.makeORef("builder", builderId);
         await RpcApi.SetRTInfoCommand(TabRpcClient, {

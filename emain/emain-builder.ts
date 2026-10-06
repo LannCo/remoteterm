@@ -16,6 +16,7 @@ export type BuilderWindowType = BrowserWindow & {
     builderId: string;
     builderAppId?: string;
     savedInitOpts: BuilderInitOpts;
+    tearingDown?: boolean;
 };
 
 const builderWindows: BuilderWindowType[] = [];

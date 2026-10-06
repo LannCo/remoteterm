@@ -5,8 +5,9 @@ import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import * as electron from "electron";
 import { fireAndForget } from "../frontend/util/util";
-import { focusedBuilderWindow, getBuilderWindowById } from "./emain-builder";
+import { focusedBuilderWindow, getBuilderWindowById, getBuilderWindowByWebContentsId } from "./emain-builder";
 import { openBuilderWindow } from "./emain-ipc";
+import { pickCloseTarget, wantsHiddenNewWindowItems } from "./emain-menu-select";
 import { isDev, unamePlatform } from "./emain-platform";
 import { isLivePopup } from "./emain-popup";
 import { clearTabCache } from "./emain-tabview";
@@ -130,10 +131,16 @@ function makeEditMenu(fullConfig?: FullConfigType): Electron.MenuItemConstructor
     ];
 }
 
-function makeFileMenu(
+function isBuilderWindow(window: electron.BaseWindow): boolean {
+    const webContentsId = (window as electron.BrowserWindow)?.webContents?.id;
+    return webContentsId != null && getBuilderWindowByWebContentsId(webContentsId) != null;
+}
+
+export function makeFileMenu(
     numRemoteTermWindows: number,
     callbacks: AppMenuCallbacks,
-    fullConfig: FullConfigType
+    fullConfig: FullConfigType,
+    isBuilderWindowFocused: boolean
 ): Electron.MenuItemConstructorOptions[] {
     const fileMenu: Electron.MenuItemConstructorOptions[] = [
         {
@@ -145,11 +152,12 @@ function makeFileMenu(
             role: "close",
             accelerator: "",
             click: (_, window) => {
-                if (window != null && isLivePopup(window)) {
-                    window.close();
-                    return;
-                }
-                focusedRemoteTermWindow?.close();
+                pickCloseTarget<electron.BaseWindow>(
+                    window,
+                    focusedRemoteTermWindow,
+                    isLivePopup,
+                    isBuilderWindow
+                )?.close();
             },
         },
     ];
@@ -161,7 +169,7 @@ function makeFileMenu(
             click: () => openBuilderWindow(""),
         });
     }
-    if (numRemoteTermWindows == 0) {
+    if (wantsHiddenNewWindowItems(numRemoteTermWindows, isBuilderWindowFocused)) {
         fileMenu.push({
             label: "New Window (hidden-1)",
             accelerator: unamePlatform === "darwin" ? "Command+N" : "Alt+N",
@@ -346,7 +354,7 @@ async function makeFullAppMenu(callbacks: AppMenuCallbacks, workspaceOrBuilderId
         console.error("Error fetching config:", e);
     }
     const editMenu = makeEditMenu(fullConfig);
-    const fileMenu = makeFileMenu(numRemoteTermWindows, callbacks, fullConfig);
+    const fileMenu = makeFileMenu(numRemoteTermWindows, callbacks, fullConfig, isBuilderWindowFocused);
     const viewMenu = makeViewMenu(webContents, callbacks, isBuilderWindowFocused, fullscreenOnLaunch);
     let workspaceMenu: Electron.MenuItemConstructorOptions[] = null;
     try {
