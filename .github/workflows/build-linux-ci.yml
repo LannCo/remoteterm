@@ -1,8 +1,5 @@
 name: Build Linux (CI)
 on:
-    push:
-        branches:
-            - "**"
     workflow_dispatch:
 
 env:
