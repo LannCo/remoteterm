@@ -105,6 +105,9 @@ const (
 	ConfigKey_DebugPprofMemProfileRate       = "debug:pprofmemprofilerate"
 	ConfigKey_DebugWebGlStatus               = "debug:webglstatus"
 
+	ConfigKey_BuilderClear                   = "builder:*"
+	ConfigKey_BuilderLiveRebuild             = "builder:liverebuild"
+
 	ConfigKey_TsunamiClear                   = "tsunami:*"
 	ConfigKey_TsunamiScaffoldPath            = "tsunami:scaffoldpath"
 	ConfigKey_TsunamiSdkReplacePath          = "tsunami:sdkreplacepath"

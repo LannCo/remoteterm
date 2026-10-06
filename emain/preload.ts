@@ -65,6 +65,7 @@ contextBridge.exposeInMainWorld("api", {
     nativePaste: () => ipcRenderer.send("native-paste"),
     openBuilder: (appId?: string) => ipcRenderer.send("open-builder", appId),
     setBuilderWindowAppId: (appId: string) => ipcRenderer.invoke("set-builder-window-appid", appId),
+    openBuilderFolder: () => ipcRenderer.invoke("open-builder-folder"),
     doRefresh: () => ipcRenderer.send("do-refresh"),
     getPathForFile: (file: File): string => webUtils.getPathForFile(file),
     saveTextFile: (fileName: string, content: string) => ipcRenderer.invoke("save-text-file", fileName, content),

@@ -404,6 +404,12 @@ func GetAllVarsCommand(w *wshutil.WshRpc, data wshrpc.CommandVarData, opts *wshr
 	return resp, err
 }
 
+// command "getbuilderappdir", wshserver.GetBuilderAppDirCommand
+func GetBuilderAppDirCommand(w *wshutil.WshRpc, data wshrpc.CommandGetBuilderAppDirData, opts *wshrpc.RpcOpts) (string, error) {
+	resp, err := sendRpcRequestCallHelper[string](w, "getbuilderappdir", data, opts)
+	return resp, err
+}
+
 // command "getbuilderoutput", wshserver.GetBuilderOutputCommand
 func GetBuilderOutputCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) ([]string, error) {
 	resp, err := sendRpcRequestCallHelper[[]string](w, "getbuilderoutput", data, opts)
@@ -1019,6 +1025,12 @@ func VDomUrlRequestCommand(w *wshutil.WshRpc, data wshrpc.VDomUrlRequestData, op
 // command "waitforroute", wshserver.WaitForRouteCommand
 func WaitForRouteCommand(w *wshutil.WshRpc, data wshrpc.CommandWaitForRouteData, opts *wshrpc.RpcOpts) (bool, error) {
 	resp, err := sendRpcRequestCallHelper[bool](w, "waitforroute", data, opts)
+	return resp, err
+}
+
+// command "watchbuilderapp", wshserver.WatchBuilderAppCommand
+func WatchBuilderAppCommand(w *wshutil.WshRpc, data wshrpc.CommandWatchBuilderAppData, opts *wshrpc.RpcOpts) (*wshrpc.BuilderWatchStatusData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.BuilderWatchStatusData](w, "watchbuilderapp", data, opts)
 	return resp, err
 }
 
