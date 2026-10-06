@@ -636,6 +636,16 @@ declare global {
         builderid: string;
     };
 
+    // wshrpc.CommandSeedBuilderAppData
+    type CommandSeedBuilderAppData = {
+        appid: string;
+    };
+
+    // wshrpc.CommandSeedBuilderAppRtnData
+    type CommandSeedBuilderAppRtnData = {
+        files: string[];
+    };
+
     // wshrpc.CommandSetMetaData
     type CommandSetMetaData = {
         oref: ORef;

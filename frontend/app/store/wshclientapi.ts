@@ -870,6 +870,12 @@ export class RpcApiType {
         return client.wshRpcCall("routeunannounce", null, opts);
     }
 
+    // command "seedbuilderapp" [call]
+    SeedBuilderAppCommand(client: WshClient, data: CommandSeedBuilderAppData, opts?: RpcOpts): Promise<CommandSeedBuilderAppRtnData> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "seedbuilderapp", data, opts);
+        return client.wshRpcCall("seedbuilderapp", data, opts);
+    }
+
     // command "setblockfocus" [call]
     SetBlockFocusCommand(client: WshClient, data: string, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "setblockfocus", data, opts);

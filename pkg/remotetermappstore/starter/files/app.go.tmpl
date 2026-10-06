@@ -1,0 +1,43 @@
+package main
+
+import (
+	"github.com/LannCo/remoteterm/tsunami/app"
+	"github.com/LannCo/remoteterm/tsunami/vdom"
+)
+
+var AppMeta = app.AppMeta{
+	Title:     "Starter App",
+	ShortDesc: "A counter and a text field to build on",
+}
+
+var App = app.DefineComponent("App", func(_ any) any {
+	count := app.UseLocal(0)
+	name := app.UseLocal("")
+
+	greeting := "Type your name below."
+	if name.Get() != "" {
+		greeting = "Hello, " + name.Get() + "!"
+	}
+
+	return vdom.H("div", map[string]any{
+		"className": "max-w-md m-6 flex flex-col gap-4 font-sans",
+	},
+		vdom.H("h1", map[string]any{"className": "text-2xl font-bold"}, "Starter App"),
+		vdom.H("p", nil, greeting),
+		vdom.H("input", map[string]any{
+			"className":   "px-3 py-2 border border-border rounded",
+			"type":        "text",
+			"placeholder": "Your name",
+			"value":       name.Get(),
+			"onChange": func(e vdom.VDomEvent) {
+				name.Set(e.TargetValue)
+			},
+		}),
+		vdom.H("button", map[string]any{
+			"className": "px-4 py-2 border border-border rounded cursor-pointer",
+			"onClick": func() {
+				count.Set(count.Get() + 1)
+			},
+		}, "Clicked ", count.Get(), " times"),
+	)
+})

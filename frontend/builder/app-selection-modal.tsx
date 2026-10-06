@@ -155,6 +155,14 @@ export function AppSelectionModal() {
         if (!kept) {
             return;
         }
+        try {
+            await RpcApi.SeedBuilderAppCommand(TabRpcClient, { appid: draftAppId });
+        } catch (err) {
+            console.error("Failed to create starter files:", err);
+            setError(`Failed to create ${appName}: ${err.message || String(err)}`);
+            await getApi().setBuilderWindowAppId(null);
+            return;
+        }
         const builderId = globalStore.get(atoms.builderId);
         const oref = WOS.makeORef("builder", builderId);
         await RpcApi.SetRTInfoCommand(TabRpcClient, {
@@ -163,7 +171,6 @@ export function AppSelectionModal() {
         });
         globalStore.set(atoms.builderAppId, draftAppId);
         document.title = `RTApp Builder (${draftAppId})`;
-        getApi().setBuilderWindowAppId(draftAppId);
     };
 
     const isDraftApp = (appId: string) => {
