@@ -1,12 +1,13 @@
 // Copyright 2024, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-@import url("../../../node_modules/highlight.js/scss/github-dark-dimmed.scss");
+@use "sass:meta";
+@use "../../../node_modules/highlight.js/scss/github-dark-dimmed.scss";
 
 // The dark theme's pale token colours are 2.0-3.6:1 on the light code box, so light mode gets GitHub's
 // light theme. A few of its colours are 3.2-4.5:1 on --panel-bg-color, so those are darkened below.
 :root[data-theme="light"] {
-    @import "../../../node_modules/highlight.js/scss/github.scss";
+    @include meta.load-css("../../../node_modules/highlight.js/scss/github.scss");
 
     .hljs-doctag,
     .hljs-keyword,

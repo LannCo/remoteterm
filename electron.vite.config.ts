@@ -128,6 +128,10 @@ export default defineConfig({
             sourcemap: true,
             minify: "esbuild",
             outDir: "dist/frontend",
+            // The renderer is loaded from disk, so bundle size costs no download time. The largest chunks are
+            // Monaco and its language workers (ts.worker is 7.0 MB), which cannot be split below 500 kB; the
+            // limit is set just above that so a chunk growing past it is still reported.
+            chunkSizeWarningLimit: 7100,
             rollupOptions: {
                 input: {
                     index: "index.html",

@@ -8,6 +8,7 @@ import { globalEvents } from "emain/emain-events";
 import { sprintf } from "sprintf-js";
 import * as services from "../frontend/app/store/services";
 import { initElectronWshrpc, shutdownWshrpc } from "../frontend/app/store/wshrpcutil-base";
+import { setElectronNet } from "../frontend/util/fetchutil";
 import { fireAndForget } from "../frontend/util/util";
 import { AuthKey, configureAuthKeyRequestInjection } from "./authkey";
 import {
@@ -64,6 +65,7 @@ import { getLaunchSettings } from "./launchsettings";
 
 
 const electronApp = electron.app;
+setElectronNet(electron.net);
 
 let confirmQuit = true;
 
