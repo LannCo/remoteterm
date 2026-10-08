@@ -127,6 +127,8 @@ export default defineConfig({
             target: CHROME,
             sourcemap: true,
             minify: "esbuild",
+            // The renderer ships as one eager entry chunk by design (see the startup commits), so the default 500 kB warning is noise.
+            chunkSizeWarningLimit: 8000,
             outDir: "dist/frontend",
             rollupOptions: {
                 input: {
