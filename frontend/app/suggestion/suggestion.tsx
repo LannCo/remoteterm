@@ -3,7 +3,7 @@
 
 import { atoms } from "@/app/store/global";
 import { isBlank, makeIconClass } from "@/util/util";
-import { offset, useFloating } from "@floating-ui/react";
+import { autoUpdate, offset, useFloating } from "@floating-ui/react";
 import clsx from "clsx";
 import { Atom, useAtomValue } from "jotai";
 import React, { ReactNode, useEffect, useId, useRef, useState } from "react";
@@ -180,7 +180,7 @@ function SuggestionControlInner({
     const widgetId = useId();
     const [query, setQuery] = useState("");
     const reqNumRef = useRef(0);
-    let [suggestions, setSuggestions] = useState<SuggestionType[]>([]);
+    const [suggestions, setSuggestions] = useState<SuggestionType[]>([]);
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [fetched, setFetched] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -189,6 +189,7 @@ function SuggestionControlInner({
         placement: "bottom",
         strategy: "absolute",
         middleware: [offset(-1)],
+        whileElementsMounted: autoUpdate,
     });
     const emptyStateChild = React.Children.toArray(children).find(
         (child) => React.isValidElement(child) && child.type === SuggestionControlNoResults
