@@ -47,28 +47,12 @@ const AboutModalV = ({ versionString, onClose }: AboutModalVProps) => {
                         <i className="fa-brands fa-github mr-2"></i>GitHub
                     </a>
                     <a
-                        href="https://remoteterm.dev/?ref=about"
+                        href="https://rterm.dev"
                         target="_blank"
                         rel="noopener"
                         className="inline-flex items-center justify-center px-4 py-2 rounded border border-border hover:bg-hoverbg transition-colors duration-200"
                     >
                         <i className="fa-sharp fa-light fa-globe mr-2"></i>Website
-                    </a>
-                    <a
-                        href="https://github.com/LannCo/remoteterm/blob/main/ACKNOWLEDGEMENTS.md"
-                        target="_blank"
-                        rel="noopener"
-                        className="inline-flex items-center justify-center px-4 py-2 rounded border border-border hover:bg-hoverbg transition-colors duration-200"
-                    >
-                        <i className="fa-sharp fa-light fa-book mr-2"></i>Open Source
-                    </a>
-                    <a
-                        href="https://github.com/sponsors/wavetermdev"
-                        target="_blank"
-                        rel="noopener"
-                        className="inline-flex items-center justify-center px-4 py-2 rounded border border-border hover:bg-hoverbg transition-colors duration-200"
-                    >
-                        <i className="fa-sharp fa-light fa-heart mr-2"></i>Sponsor
                     </a>
                 </div>
                 <div className="items-center gap-4 self-stretch w-full text-center">
