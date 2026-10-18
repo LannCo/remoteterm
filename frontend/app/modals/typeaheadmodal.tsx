@@ -4,6 +4,7 @@
 import { Input, InputGroup, InputRightElement } from "@/app/element/input";
 import { useDimensionsWithExistingRef } from "@/app/hook/useDimensions";
 import { makeIconClass } from "@/util/util";
+import { autoUpdate } from "@floating-ui/react";
 import clsx from "clsx";
 import React, { forwardRef, useEffect, useLayoutEffect, useRef } from "react";
 import ReactDOM from "react-dom";
@@ -106,7 +107,6 @@ const TypeAheadModal = ({
     showFilter = true,
 }: TypeAheadModalProps) => {
     const domRect = useDimensionsWithExistingRef(blockRef, 30);
-    const width = domRect?.width ?? 0;
     const height = domRect?.height ?? 0;
     const modalRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -160,39 +160,60 @@ const TypeAheadModal = ({
         suggestionsWrapperRef.current.style.height = `${computedHeight - inputHeight - modalPadding - modalBorder - suggestionsWrapperMarginTop}px`;
     }, [height, suggestions, showFilter]);
 
-    useEffect(() => {
-        if (!blockRef.current || !modalRef.current) return;
+    // Live tracking: the modal is positioned relative to the block from the
+    // anchor rect, so an in-block re-layout (block resize, header change)
+    // invalidates a one-shot computed position. autoUpdate re-runs the compute
+    // when the block or modal resize, ancestors scroll, or the block's
+    // IntersectionObserver layout-shift fires (layoutShift watches the
+    // reference element — the block — not the anchor). Clamping is preserved
+    // against the BLOCK boundary here (deliberately not a viewport clamp like
+    // the fixed-strategy dropdowns).
+    useLayoutEffect(() => {
+        const block = blockRef.current;
+        const anchorNode = anchorRef.current;
+        const modal = modalRef.current;
+        if (!block || !anchorNode || !modal) return;
 
-        const blockRect = blockRef.current.getBoundingClientRect();
-        const anchorRect = anchorRef.current.getBoundingClientRect();
+        const compute = () => {
+            const anchorRect = anchorRef.current?.getBoundingClientRect();
+            if (!anchorRect) return;
+            const blockRect = block.getBoundingClientRect();
+            // vertical position tracks the block header height live (header can
+            // change height with the block); the one-shot mount version only
+            // covered the initial state
+            const headerHeight =
+                anchorRef.current?.closest?.(".block-frame-default-header")?.getBoundingClientRect().height ?? 0;
+            modal.style.top = `${headerHeight}px`;
 
-        const minGap = 20;
+            const minGap = 20;
 
-        const availableWidth = blockRect.width - minGap * 2;
-        let modalWidth = 300;
+            const availableWidth = blockRect.width - minGap * 2;
+            let modalWidth = 300;
 
-        if (modalWidth > availableWidth) {
-            modalWidth = availableWidth;
-        }
+            if (modalWidth > availableWidth) {
+                modalWidth = availableWidth;
+            }
 
-        let leftPosition = anchorRect.left - blockRect.left;
+            let leftPosition = anchorRect.left - blockRect.left;
 
-        const modalRightEdge = leftPosition + modalWidth;
-        const blockRightEdge = blockRect.width - (minGap - 4);
+            const modalRightEdge = leftPosition + modalWidth;
+            const blockRightEdge = blockRect.width - (minGap - 4);
 
-        if (modalRightEdge > blockRightEdge) {
-            leftPosition -= modalRightEdge - blockRightEdge;
-        }
+            if (modalRightEdge > blockRightEdge) {
+                leftPosition -= modalRightEdge - blockRightEdge;
+            }
 
-        if (leftPosition < minGap) {
-            leftPosition = minGap;
-        }
+            if (leftPosition < minGap) {
+                leftPosition = minGap;
+            }
 
-        modalRef.current.style.width = `${modalWidth}px`;
-        modalRef.current.style.left = `${leftPosition}px`;
-        // height in deps: a vertical block re-layout moves the header anchor
-        // even when width is unchanged
-    }, [width, height]);
+            modal.style.width = `${modalWidth}px`;
+            modal.style.left = `${leftPosition}px`;
+        };
+
+        // autoUpdate runs the compute once itself on registration
+        return autoUpdate(block, modal, compute);
+    }, []);
 
     useLayoutEffect(() => {
         if (giveFocusRef) {
@@ -205,12 +226,7 @@ const TypeAheadModal = ({
         };
     }, [showFilter]);
 
-    useLayoutEffect(() => {
-        if (anchorRef.current && modalRef.current) {
-            const parentElement = anchorRef.current.closest(".block-frame-default-header");
-            modalRef.current.style.top = `${parentElement?.getBoundingClientRect().height}px`;
-        }
-    }, []);
+    // top is set inside the live compute above (was a one-shot mount effect)
 
     // List-only mode: focus the modal so ↑/↓/Enter/Esc work without an input.
     useLayoutEffect(() => {
