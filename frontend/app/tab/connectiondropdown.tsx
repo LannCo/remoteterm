@@ -14,9 +14,10 @@ import {
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import * as keyutil from "@/util/keyutil";
+import { autoUpdate, shift, useFloating } from "@floating-ui/react";
 import clsx from "clsx";
 import { useAtom } from "jotai";
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "./connectiondropdown.scss";
 
@@ -74,7 +75,6 @@ export const NewTabConnTypeahead = memo(function NewTabConnTypeahead({
     // -1 = no highlight (default, and when only New Connection is shown so Enter is safe)
     const [rowIndex, setRowIndex] = useState(-1);
     const [loading, setLoading] = useState(true);
-    const [posStyle, setPosStyle] = useState<React.CSSProperties>({});
     const dropdownRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -98,26 +98,18 @@ export const NewTabConnTypeahead = memo(function NewTabConnTypeahead({
         return Array.from(new Set([...rpcConnList, ...fromConfig]));
     }, [rpcConnList, fullConfig]);
 
-    // Positioning
-    const updatePosition = useCallback(() => {
-        const anchor = anchorRef?.current;
-        if (!anchor) return;
-        const rect = anchor.getBoundingClientRect();
-        setPosStyle({
-            position: "fixed",
-            top: rect.bottom,
-            left: rect.left,
-            minWidth: Math.max(rect.width, 280),
-        });
-    }, [anchorRef]);
-
-    useLayoutEffect(() => {
-        updatePosition();
-        window.addEventListener("resize", updatePosition);
-        return () => {
-            window.removeEventListener("resize", updatePosition);
-        };
-    }, [updatePosition]);
+    // Positioning via floating-ui: tracks tab-bar layout shifts that move the
+    // + anchor after mount (stale captured rects used to leave the menu detached
+    // from the + button, clipped by the window edge), and shift() clamps the
+    // dropdown inside the window.
+    const { refs, floatingStyles } = useFloating({
+        placement: "bottom-start",
+        strategy: "fixed",
+        open: true,
+        whileElementsMounted: autoUpdate,
+        middleware: [shift({ padding: 4 })],
+        elements: { reference: anchorRef?.current ?? null },
+    });
 
     // Fetch connection lists independently — WSL failure must not block remotes.
     useEffect(() => {
@@ -172,6 +164,21 @@ export const NewTabConnTypeahead = memo(function NewTabConnTypeahead({
         }
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [onClose, anchorRef]);
+
+    // Keyboard backstop: Esc closes even if focus has left the filter input,
+    // and returns focus to the anchor. The input's own Esc handler may fire
+    // first; close is idempotent. Click-outside deliberately does not yank
+    // focus (the user clicked elsewhere on purpose).
+    useEffect(() => {
+        function handleEscape(e: KeyboardEvent) {
+            if (e.key === "Escape" && !e.defaultPrevented) {
+                anchorRef?.current?.focus();
+                onClose();
+            }
+        }
+        document.addEventListener("keydown", handleEscape);
+        return () => document.removeEventListener("keydown", handleEscape);
     }, [onClose, anchorRef]);
 
     // Build suggestions
@@ -278,7 +285,17 @@ export const NewTabConnTypeahead = memo(function NewTabConnTypeahead({
     );
 
     return createPortal(
-        <div ref={dropdownRef} className="connection-dropdown" style={posStyle}>
+        <div
+            ref={(node) => {
+                dropdownRef.current = node;
+                refs.setFloating(node);
+            }}
+            className="connection-dropdown"
+            // minWidth matches the scss 280 floor; the anchor (+ button, ~24px,
+            // or the vtabbar button capped at 280px sidebar width) never
+            // exceeds it, so no render-time width read is needed
+            style={{ ...floatingStyles, minWidth: 280 }}
+        >
             <InputGroup className="connection-dropdown-filter mb-1">
                 <InputLeftElement>
                     <i className="fa fa-solid fa-magnifying-glass" style={{ color: "var(--grey-text-color)" }} />

@@ -56,7 +56,7 @@ const Suggestions = forwardRef<HTMLDivElement, SuggestionsProps>(
                         return (
                             <div key={index}>
                                 {item.headerText && <div className="suggestion-header">{item.headerText}</div>}
-                                {item.items.map((subItem, subIndex) => {
+                                {item.items.map((subItem) => {
                                     fullIndex += 1;
                                     return renderItem(subItem, fullIndex);
                                 })}
@@ -190,7 +190,9 @@ const TypeAheadModal = ({
 
         modalRef.current.style.width = `${modalWidth}px`;
         modalRef.current.style.left = `${leftPosition}px`;
-    }, [width]);
+        // height in deps: a vertical block re-layout moves the header anchor
+        // even when width is unchanged
+    }, [width, height]);
 
     useLayoutEffect(() => {
         if (giveFocusRef) {

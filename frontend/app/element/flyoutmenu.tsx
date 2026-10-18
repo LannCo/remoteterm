@@ -1,9 +1,9 @@
 // Copyright 2025, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { FloatingPortal, type Placement, useDismiss, useFloating, useInteractions } from "@floating-ui/react";
+import { FloatingPortal, autoUpdate, type Placement, useDismiss, useFloating, useInteractions } from "@floating-ui/react";
 import clsx from "clsx";
-import { createRef, Fragment, memo, ReactNode, useRef, useState } from "react";
+import { createRef, Fragment, memo, ReactNode, useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 
 import "./flyoutmenu.scss";
@@ -26,6 +26,8 @@ const FlyoutMenuComponent = memo(
             [key: string]: { top: number; left: number; label: string };
         }>({});
         const subMenuRefs = useRef<{ [key: string]: React.RefObject<HTMLDivElement> }>({});
+        // Cleanup fns for each open submenu's live-tracking loop (see handleSubMenuPosition)
+        const subMenuAutoUpdateCleanups = useRef<{ [key: string]: () => void }>({});
 
         const [isOpen, setIsOpen] = useState(false);
         const onOpenChangeMenu = (isOpen: boolean) => {
@@ -36,9 +38,21 @@ const FlyoutMenuComponent = memo(
             placement: placement ?? "bottom-start",
             open: isOpen,
             onOpenChange: onOpenChangeMenu,
+            whileElementsMounted: autoUpdate,
         });
         const dismiss = useDismiss(context);
         const { getReferenceProps, getFloatingProps } = useInteractions([dismiss]);
+
+        // Stop all submenu reposition loops when the whole menu closes/unmounts
+        useEffect(
+            () => () => {
+                for (const key in subMenuAutoUpdateCleanups.current) {
+                    subMenuAutoUpdateCleanups.current[key]?.();
+                }
+                subMenuAutoUpdateCleanups.current = {};
+            },
+            []
+        );
 
         items.forEach((_, idx) => {
             const key = `${idx}`;
@@ -47,35 +61,56 @@ const FlyoutMenuComponent = memo(
             }
         });
 
-        // Position submenus based on available space and scroll position
-        const handleSubMenuPosition = (key: string, itemRect: DOMRect, label: string) => {
+        // Live-tracking submenu positioning. The old code captured the item's
+        // rect once on hover and wrote top/left into state a frame later — the
+        // same stale-rect bug class fixed in connectiondropdown (menus detach
+        // on any subsequent layout change). Instead: one open autoUpdate loop
+        // per visible submenu, keyed by submenu key; recompute fires on scroll,
+        // resize and layout shift; cleanup stops the loop when the submenu is
+        // replaced or hidden.
+        const stopSubMenuTracking = (key: string) => {
+            subMenuAutoUpdateCleanups.current[key]?.();
+            delete subMenuAutoUpdateCleanups.current[key];
+        };
+
+        const handleSubMenuPosition = (key: string, itemEl: HTMLElement, label: string) => {
             setTimeout(() => {
                 const subMenuRef = subMenuRefs.current[key]?.current;
                 if (!subMenuRef) return;
 
-                const scrollTop = window.scrollY || document.documentElement.scrollTop;
-                const scrollLeft = window.scrollX || document.documentElement.scrollLeft;
+                stopSubMenuTracking(key);
+                const compute = () => {
+                    const itemRect = itemEl.getBoundingClientRect();
+                    const scrollTop = window.scrollY || document.documentElement.scrollTop;
+                    const scrollLeft = window.scrollX || document.documentElement.scrollLeft;
 
-                const submenuWidth = subMenuRef.offsetWidth;
-                const submenuHeight = subMenuRef.offsetHeight;
+                    const submenuWidth = subMenuRef.offsetWidth;
+                    const submenuHeight = subMenuRef.offsetHeight;
 
-                let left = itemRect.right + scrollLeft - 2; // Adjust for horizontal scroll
-                let top = itemRect.top - 2 + scrollTop; // Adjust for vertical scroll
+                    let left = itemRect.right + scrollLeft - 2; // Adjust for horizontal scroll
+                    let top = itemRect.top - 2 + scrollTop; // Adjust for vertical scroll
 
-                // Adjust to the left if overflowing the right boundary
-                if (left + submenuWidth > window.innerWidth + scrollLeft) {
-                    left = itemRect.left + scrollLeft - submenuWidth;
-                }
+                    // Adjust to the left if overflowing the right boundary
+                    if (left + submenuWidth > window.innerWidth + scrollLeft) {
+                        left = itemRect.left + scrollLeft - submenuWidth;
+                    }
 
-                // Adjust if the submenu overflows the bottom boundary
-                if (top + submenuHeight > window.innerHeight + scrollTop) {
-                    top = window.innerHeight + scrollTop - submenuHeight - 10;
-                }
+                    // Adjust if the submenu overflows the bottom boundary
+                    if (top + submenuHeight > window.innerHeight + scrollTop) {
+                        top = window.innerHeight + scrollTop - submenuHeight - 10;
+                    }
 
-                setSubMenuPosition((prev) => ({
-                    ...prev,
-                    [key]: { top, left, label },
-                }));
+                    setSubMenuPosition((prev) => {
+                        const pos = prev[key];
+                        if (pos && pos.top === top && pos.left === left && pos.label === label) {
+                            return prev; // no state churn on repeated autoUpdate fires
+                        }
+                        return { ...prev, [key]: { top, left, label } };
+                    });
+                };
+
+                compute();
+                subMenuAutoUpdateCleanups.current[key] = autoUpdate(itemEl, subMenuRef, compute);
             }, 0);
         };
 
@@ -107,6 +142,7 @@ const FlyoutMenuComponent = memo(
                 for (const pkey in updatedState) {
                     if (!ancestors.includes(pkey) && pkey !== key) {
                         updatedState[pkey].visible = false;
+                        stopSubMenuTracking(pkey);
                     }
                 }
 
@@ -120,8 +156,7 @@ const FlyoutMenuComponent = memo(
 
             setHoveredItems(newHoveredItems);
 
-            const itemRect = event.currentTarget.getBoundingClientRect();
-            handleSubMenuPosition(key, itemRect, item.label);
+            handleSubMenuPosition(key, event.currentTarget, item.label);
         };
 
         const handleOnClick = (e: React.MouseEvent<HTMLDivElement>, item: MenuItem) => {

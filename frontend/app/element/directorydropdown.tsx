@@ -4,7 +4,8 @@
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { formatRemoteUri } from "@/util/remotetermutil";
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { autoUpdate, shift, useFloating } from "@floating-ui/react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "./directorydropdown.scss";
 
@@ -34,7 +35,6 @@ export const DirectoryDropdown = memo(function DirectoryDropdown({
     const [entries, setEntries] = useState<DirEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [dirError, setDirError] = useState<string | null>(null);
-    const [posStyle, setPosStyle] = useState<React.CSSProperties>({});
     const [browsePath, setBrowsePath] = useState(currentPath);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -43,26 +43,17 @@ export const DirectoryDropdown = memo(function DirectoryDropdown({
         setBrowsePath(currentPath);
     }, [currentPath]);
 
-    const updatePosition = useCallback(() => {
-        const anchor = anchorRef?.current;
-        if (!anchor) return;
-        const rect = anchor.getBoundingClientRect();
-        setPosStyle({
-            position: "fixed",
-            top: rect.bottom,
-            left: rect.left,
-        });
-    }, [anchorRef]);
-
-    useLayoutEffect(() => {
-        updatePosition();
-        window.addEventListener("resize", updatePosition);
-        window.addEventListener("scroll", updatePosition, true);
-        return () => {
-            window.removeEventListener("resize", updatePosition);
-            window.removeEventListener("scroll", updatePosition);
-        };
-    }, [updatePosition]);
+    // Positioning via floating-ui: autoUpdate tracks anchor movement (pane
+    // resizes, scrolling) that a one-shot captured rect misses, and shift()
+    // keeps the dropdown inside the window.
+    const { refs, floatingStyles } = useFloating({
+        placement: "bottom-start",
+        strategy: "fixed",
+        open: true,
+        whileElementsMounted: autoUpdate,
+        middleware: [shift({ padding: 4 })],
+        elements: { reference: anchorRef?.current ?? null },
+    });
 
     const loadDirectories = useCallback(
         async (dirPath: string) => {
@@ -130,6 +121,19 @@ export const DirectoryDropdown = memo(function DirectoryDropdown({
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [onClose, anchorRef]);
 
+    // Esc closes and returns focus to the anchor (component has no filter input
+    // of its own, so there is no in-element Esc handler)
+    useEffect(() => {
+        function handleEscape(e: KeyboardEvent) {
+            if (e.key === "Escape" && !e.defaultPrevented) {
+                anchorRef?.current?.focus();
+                onClose();
+            }
+        }
+        document.addEventListener("keydown", handleEscape);
+        return () => document.removeEventListener("keydown", handleEscape);
+    }, [onClose, anchorRef]);
+
     const handleItemClick = useCallback(
         (e: React.MouseEvent, entry: DirEntry) => {
             e.stopPropagation();
@@ -139,7 +143,14 @@ export const DirectoryDropdown = memo(function DirectoryDropdown({
     );
 
     return createPortal(
-        <div ref={dropdownRef} className="directory-dropdown" style={posStyle}>
+        <div
+            ref={(node) => {
+                dropdownRef.current = node;
+                refs.setFloating(node);
+            }}
+            className="directory-dropdown"
+            style={floatingStyles}
+        >
             <div className="directory-dropdown-breadcrumb">
                 {browsePath !== "/" && (
                     <i
