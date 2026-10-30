@@ -162,8 +162,11 @@ export const NewTabConnTypeahead = memo(function NewTabConnTypeahead({
                 onClose();
             }
         }
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
+        // Capture phase: bubble-phase stopPropagation anywhere in the app (e.g.
+        // the + button's onMouseDown) previously starved this close handler
+        // and pinned an open dropdown over unrelated UI
+        document.addEventListener("mousedown", handleClickOutside, true);
+        return () => document.removeEventListener("mousedown", handleClickOutside, true);
     }, [onClose, anchorRef]);
 
     // Keyboard backstop: Esc closes even if focus has left the filter input,
