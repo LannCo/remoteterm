@@ -226,12 +226,20 @@ function SuggestionControlInner({
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                onClose();
+            // Exempt the whole floating menu (filter input + list + empty
+            // states). dropdownRef wraps only the list, so a list-scoped check
+            // left outside mousedown unable to close the control while
+            // loading or at zero matches.
+            const menu = refs.floating.current ?? dropdownRef.current;
+            if (!menu || menu.contains(event.target as Node)) {
+                return;
             }
+            onClose();
         };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
+        // Capture phase: see connectiondropdown — bubble-phase stopPropagation
+        // elsewhere can starve this handler
+        document.addEventListener("mousedown", handleClickOutside, true);
+        return () => document.removeEventListener("mousedown", handleClickOutside, true);
     }, [onClose, anchorRef]);
 
     useEffect(() => {
