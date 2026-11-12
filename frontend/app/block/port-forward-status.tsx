@@ -114,7 +114,7 @@ export function PortForwardStatusIndicator({
                         }}
                         {...getFloatingProps()}
                         className={cn(
-                            "bg-zinc-800 border border-border rounded-md px-3 py-2.5 text-xs text-foreground shadow-xl z-50"
+                            "bg-modalbg border border-border rounded-md px-3 py-2.5 text-xs text-foreground shadow-xl z-50"
                         )}
                         onMouseDown={(e) => e.stopPropagation()}
                         onFocusCapture={(e) => e.stopPropagation()}

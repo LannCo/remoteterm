@@ -31,6 +31,20 @@ const USER_AGENT_IPHONE =
 const USER_AGENT_ANDROID =
     "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.43 Mobile Safari/537.36";
 
+export function safeIsDevToolsOpened(webview: WebviewTag | null | undefined): boolean {
+    if (webview == null) {
+        return false;
+    }
+    try {
+        return webview.isDevToolsOpened();
+    } catch (e) {
+        // Guest WebContents can already be destroyed (e.g. React tearing down the <webview>
+        // element on unmount before this runs), and Electron's webview-tag proxy throws
+        // "Invalid guestInstanceId" instead of returning false in that case.
+        return false;
+    }
+}
+
 let webviewPreloadUrl = null;
 
 function getWebviewPreloadUrl(env: WebViewEnv) {
@@ -724,10 +738,10 @@ export class WebViewModel implements ViewModel {
                 submenu: zoomSubMenu,
             },
             {
-                label: this.webviewRef.current?.isDevToolsOpened() ? "Close DevTools" : "Open DevTools",
+                label: safeIsDevToolsOpened(this.webviewRef.current) ? "Close DevTools" : "Open DevTools",
                 click: () => {
                     if (this.webviewRef.current) {
-                        if (this.webviewRef.current.isDevToolsOpened()) {
+                        if (safeIsDevToolsOpened(this.webviewRef.current)) {
                             this.webviewRef.current.closeDevTools();
                         } else {
                             this.webviewRef.current.openDevTools();
@@ -783,8 +797,8 @@ const BookmarkTypeahead = memo(
             >
                 <SuggestionControlNoData>
                     <div className="text-center">
-                        <p className="text-lg font-bold text-gray-100">No Bookmarks Configured</p>
-                        <p className="text-sm text-gray-400 mt-1">
+                        <p className="text-lg font-bold text-foreground">No Bookmarks Configured</p>
+                        <p className="text-sm text-secondary mt-1">
                             Edit your <code className="font-mono">bookmarks.json</code> file to configure bookmarks.
                         </p>
                         <button
@@ -798,7 +812,7 @@ const BookmarkTypeahead = memo(
 
                 <SuggestionControlNoResults>
                     <div className="text-center">
-                        <p className="text-sm text-gray-400">No matching bookmarks</p>
+                        <p className="text-sm text-secondary">No matching bookmarks</p>
                         <button
                             onClick={openBookmarksJson}
                             className="mt-3 px-4 py-2 text-sm font-medium text-black bg-accent hover:bg-accenthover rounded-lg cursor-pointer"
@@ -954,7 +968,7 @@ const WebView = memo(({ model, onFailLoad, blockRef, initialSrc }: WebViewProps)
     useLayoutEffect(() => {
         return () => {
             const webview = model.webviewRef.current;
-            if (webview?.isDevToolsOpened()) {
+            if (safeIsDevToolsOpened(webview)) {
                 webview.closeDevTools();
             }
         };

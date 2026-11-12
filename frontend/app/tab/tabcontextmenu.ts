@@ -74,6 +74,37 @@ export function buildTabContextMenu(
         })),
     ];
     menu.push({ label: "Flag Tab", type: "submenu", submenu: flagSubmenu }, { type: "separator" });
+    const currentAppearanceMode = globalStore.get(getOrefMetaKeyAtom(tabORef, "tab:appearancemode")) ?? null;
+    const appearanceModeSubmenu: ContextMenuItem[] = [
+        {
+            label: "Inherit",
+            type: "checkbox",
+            checked: currentAppearanceMode == null,
+            click: () =>
+                fireAndForget(() =>
+                    env.rpc.SetMetaCommand(TabRpcClient, { oref: tabORef, meta: { "tab:appearancemode": null } })
+                ),
+        },
+        {
+            label: "Light",
+            type: "checkbox",
+            checked: currentAppearanceMode === "light",
+            click: () =>
+                fireAndForget(() =>
+                    env.rpc.SetMetaCommand(TabRpcClient, { oref: tabORef, meta: { "tab:appearancemode": "light" } })
+                ),
+        },
+        {
+            label: "Dark",
+            type: "checkbox",
+            checked: currentAppearanceMode === "dark",
+            click: () =>
+                fireAndForget(() =>
+                    env.rpc.SetMetaCommand(TabRpcClient, { oref: tabORef, meta: { "tab:appearancemode": "dark" } })
+                ),
+        },
+    ];
+    menu.push({ label: "Appearance", type: "submenu", submenu: appearanceModeSubmenu }, { type: "separator" });
     const fullConfig = globalStore.get(env.atoms.fullConfigAtom);
     const backgrounds = fullConfig?.backgrounds ?? {};
     const bgKeys = Object.keys(backgrounds).filter((k) => backgrounds[k] != null);

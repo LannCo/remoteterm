@@ -1,14 +1,13 @@
 // Copyright 2025, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { NewInstallOnboardingModal } from "@/app/onboarding/onboarding";
 import { ClientModel } from "@/app/store/client-model";
 import { globalStore } from "@/app/store/jotaiStore";
 import { atoms } from "@/store/global";
 import { modalsModel } from "@/store/modalmodel";
 import * as jotai from "jotai";
-import { useEffect } from "react";
-import { getModalComponent } from "./modalregistry";
+import { Suspense, useEffect } from "react";
+import { getModalComponent, NewInstallOnboardingModal } from "./modalregistry";
 
 const ModalsRenderer = () => {
     const clientData = jotai.useAtomValue(ClientModel.getInstance().clientAtom);
@@ -19,12 +18,20 @@ const ModalsRenderer = () => {
     for (const modal of modals) {
         const ModalComponent = getModalComponent(modal.displayName);
         if (ModalComponent) {
-            rtn.push(<ModalComponent key={modal.displayName} {...modal.props} />);
+            rtn.push(
+                <Suspense key={modal.displayName} fallback={null}>
+                    <ModalComponent {...modal.props} />
+                </Suspense>
+            );
         }
     }
     // User input prompts are now rendered per-block in UserInputPromptOverlay
     if (newInstallOnboardingOpen) {
-        rtn.push(<NewInstallOnboardingModal key={NewInstallOnboardingModal.displayName} />);
+        rtn.push(
+            <Suspense key="NewInstallOnboardingModal" fallback={null}>
+                <NewInstallOnboardingModal />
+            </Suspense>
+        );
     }
     useEffect(() => {
         if (!clientData.tosagreed) {

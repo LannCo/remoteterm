@@ -32,7 +32,7 @@ const MacOSTabBarSpacer = memo(() => {
                     height: "calc(8px * var(--zoomfactor-inv))",
                     WebkitAppRegion: "drag",
                     backdropFilter: "blur(20px)",
-                    background: "rgba(0, 0, 0, 0.35)",
+                    background: "var(--tabbar-scrim-color)",
                 } as React.CSSProperties
             }
         />

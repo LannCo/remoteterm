@@ -15,14 +15,20 @@ type WshRpcBuilderInterface interface {
 	ReadAppFileCommand(ctx context.Context, data CommandReadAppFileData) (*CommandReadAppFileRtnData, error)
 	WriteAppFileCommand(ctx context.Context, data CommandWriteAppFileData) error
 	WriteAppGoFileCommand(ctx context.Context, data CommandWriteAppGoFileData) (*CommandWriteAppGoFileRtnData, error)
+	SeedBuilderAppCommand(ctx context.Context, data CommandSeedBuilderAppData) (*CommandSeedBuilderAppRtnData, error)
 	DeleteAppFileCommand(ctx context.Context, data CommandDeleteAppFileData) error
 	RenameAppFileCommand(ctx context.Context, data CommandRenameAppFileData) error
 	WriteAppSecretBindingsCommand(ctx context.Context, data CommandWriteAppSecretBindingsData) error
 	DeleteBuilderCommand(ctx context.Context, builderId string) error
 	StartBuilderCommand(ctx context.Context, data CommandStartBuilderData) error
+	RequestBuilderRebuildCommand(ctx context.Context, data CommandRequestBuilderRebuildData) error
+	WatchBuilderAppCommand(ctx context.Context, data CommandWatchBuilderAppData) (*BuilderWatchStatusData, error)
+	OpenBuilderTerminalCommand(ctx context.Context, data CommandOpenBuilderTerminalData) error
+	EnsureBuilderTabCommand(ctx context.Context, data CommandEnsureBuilderTabData) (*CommandEnsureBuilderTabRtnData, error)
+	GetBuilderAppDirCommand(ctx context.Context, data CommandGetBuilderAppDirData) (string, error)
 	StopBuilderCommand(ctx context.Context, builderId string) error
-	RestartBuilderAndWaitCommand(ctx context.Context, data CommandRestartBuilderAndWaitData) (*RestartBuilderAndWaitResult, error)
 	GetBuilderStatusCommand(ctx context.Context, builderId string) (*BuilderStatusData, error)
+	GetBuilderPreviewAuthCommand(ctx context.Context, data CommandGetBuilderPreviewAuthData) (*BuilderPreviewAuthData, error)
 	GetBuilderOutputCommand(ctx context.Context, builderId string) ([]string, error)
 	CheckGoVersionCommand(ctx context.Context) (*CommandCheckGoVersionRtnData, error)
 	PublishAppCommand(ctx context.Context, data CommandPublishAppData) (*CommandPublishAppRtnData, error)
@@ -77,8 +83,9 @@ type CommandWriteAppFileData struct {
 }
 
 type CommandWriteAppGoFileData struct {
-	AppId  string `json:"appid"`
-	Data64 string `json:"data64"`
+	AppId     string `json:"appid"`
+	Data64    string `json:"data64"`
+	BuilderId string `json:"builderid,omitempty"`
 }
 
 type CommandWriteAppGoFileRtnData struct {
@@ -105,14 +112,32 @@ type CommandStartBuilderData struct {
 	BuilderId string `json:"builderid"`
 }
 
-type CommandRestartBuilderAndWaitData struct {
+type CommandRequestBuilderRebuildData struct {
+	BuilderId string `json:"builderid"`
+	// AutoRun marks the start the builder makes on opening an app. The server then builds only
+	// inputs the user has started by hand before, and otherwise answers ERR-AUTORUN-DECLINED.
+	AutoRun bool `json:"autorun,omitempty"`
+}
+
+type CommandGetBuilderPreviewAuthData struct {
 	BuilderId string `json:"builderid"`
 }
 
-type RestartBuilderAndWaitResult struct {
-	Success      bool   `json:"success"`
-	ErrorMessage string `json:"errormessage,omitempty"`
-	BuildOutput  string `json:"buildoutput"`
+// The token that lets the builder's own window open the running app's /api/* routes. It is kept
+// out of BuilderStatusData because that is broadcast; this is returned only to Electron and the
+// builder's own window.
+type BuilderPreviewAuthData struct {
+	Port  int    `json:"port"`
+	Token string `json:"token"`
+}
+
+type CommandWatchBuilderAppData struct {
+	BuilderId string `json:"builderid"`
+}
+
+type BuilderWatchStatusData struct {
+	Status string `json:"status"`
+	Reason string `json:"reason,omitempty"`
 }
 
 type AppMeta struct {
@@ -166,4 +191,32 @@ type CommandMakeDraftFromLocalData struct {
 
 type CommandMakeDraftFromLocalRtnData struct {
 	DraftAppId string `json:"draftappid"`
+}
+
+type CommandSeedBuilderAppData struct {
+	AppId string `json:"appid"`
+}
+
+type CommandSeedBuilderAppRtnData struct {
+	Files []string `json:"files"`
+}
+
+type CommandOpenBuilderTerminalData struct {
+	BuilderId     string `json:"builderid"`
+	TargetBlockId string `json:"targetblockid,omitempty"`
+	TargetAction  string `json:"targetaction,omitempty"`
+}
+
+type CommandGetBuilderAppDirData struct {
+	BuilderId string `json:"builderid"`
+}
+
+type CommandEnsureBuilderTabData struct {
+	BuilderId string `json:"builderid"`
+	AppId     string `json:"appid"`
+}
+
+type CommandEnsureBuilderTabRtnData struct {
+	TabId string `json:"tabid"`
+	AppId string `json:"appid"`
 }

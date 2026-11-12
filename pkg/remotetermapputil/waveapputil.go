@@ -16,15 +16,30 @@ import (
 	"github.com/LannCo/remoteterm/tsunami/build"
 )
 
-const DefaultTsunamiSdkVersion = "v0.12.4"
+const (
+	DefaultTsunamiSdkVersion = "v0.12.4"
+	TsunamiSdkDirName        = "tsunamisdk"
+)
+
+// The server only learns its resources path from the environment after start-up, so the
+// builder reads it on every use; the packaged Go toolchain and module cache sit in it.
+func init() {
+	build.SetBundledDirResolver(remotetermbase.GetWaveAppResourcesPath)
+}
 
 func GetTsunamiScaffoldPath() string {
-	settings := rtconfig.GetWatcher().GetFullConfig().Settings
-	scaffoldPath := settings.TsunamiScaffoldPath
-	if scaffoldPath == "" {
-		scaffoldPath = filepath.Join(remotetermbase.GetWaveAppResourcesPath(), "tsunamiscaffold")
+	return scaffoldPathFromSettings(rtconfig.GetWatcher().GetFullConfig().Settings)
+}
+
+func scaffoldPathFromSettings(settings rtconfig.SettingsType) string {
+	if settings.TsunamiScaffoldPath != "" {
+		return settings.TsunamiScaffoldPath
 	}
-	return scaffoldPath
+	return filepath.Join(remotetermbase.GetWaveAppResourcesPath(), "tsunamiscaffold")
+}
+
+func GetTsunamiSdkPath() string {
+	return filepath.Join(remotetermbase.GetWaveAppResourcesPath(), TsunamiSdkDirName)
 }
 
 func ResolveGoFmtPath() (string, error) {
@@ -32,11 +47,11 @@ func ResolveGoFmtPath() (string, error) {
 	goPath := settings.TsunamiGoPath
 
 	if goPath == "" {
-		var err error
-		goPath, err = build.FindGoExecutable()
-		if err != nil {
-			return "", err
+		gofmtPath := build.GetCachedGoFmtPath()
+		if gofmtPath == "" {
+			return "", fmt.Errorf("go toolchain has not been located yet (the first build locates it)")
 		}
+		return gofmtPath, nil
 	}
 
 	goDir := filepath.Dir(goPath)

@@ -4,7 +4,6 @@
 package app
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -142,19 +141,11 @@ func RegisterEmbeds(assetsFilesystem fs.FS, staticFilesystem fs.FS, manifest []b
 	client.ManifestFileBytes = manifest
 }
 
-// DeepCopy creates a deep copy of the input value using JSON marshal/unmarshal.
-// Panics on JSON errors.
+// DeepCopy creates a deep copy of the input value. Pointers, slices, maps and exported
+// struct fields are copied recursively. Unexported struct fields are copied by value
+// only, so slices, maps or pointers held in them are shared with the original.
 func DeepCopy[T any](v T) T {
-	data, err := json.Marshal(v)
-	if err != nil {
-		panic(err)
-	}
-	var result T
-	err = json.Unmarshal(data, &result)
-	if err != nil {
-		panic(err)
-	}
-	return result
+	return util.DeepCopy(v)
 }
 
 // QueueRefOp queues a reference operation to be executed on the DOM element.

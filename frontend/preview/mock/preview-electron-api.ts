@@ -4,6 +4,9 @@
 const previewElectronApi: ElectronApi = {
     getAuthKey: () => "",
     getIsDev: () => false,
+    onDownloadProgress: () => {},
+    startFileDrag: (_items: { remoteUri: string; fileName: string }[]) => {},
+    cleanupDragTemp: () => {},
     getCursorPoint: () => ({ x: 0, y: 0 }) as Electron.Point,
     getPlatform: () => "darwin",
     getEnv: (_varName: string) => "",
@@ -42,6 +45,7 @@ const previewElectronApi: ElectronApi = {
     onBuilderInit: (_callback: (initOpts: BuilderInitOpts) => void) => {},
     sendLog: (_log: string) => {},
     onQuicklook: (_filePath: string) => {},
+    getPathForFile: (_file: File) => "",
     openNativePath: (_filePath: string) => {},
     captureScreenshot: (_rect: Electron.Rectangle) => Promise.resolve(""),
     setKeyboardChordMode: () => {},
@@ -50,11 +54,16 @@ const previewElectronApi: ElectronApi = {
 
     nativePaste: () => {},
     openBuilder: (_appId?: string) => {},
-    setBuilderWindowAppId: (_appId: string) => {},
+    setBuilderWindowAppId: (_appId: string) => Promise.resolve(true),
+    ensureBuilderTab: () => Promise.resolve({ error: "Not available in the preview." }),
+    openBuilderTerminal: (_target?: BuilderTerminalTarget) => Promise.resolve(""),
+    openBuilderFolder: () => Promise.resolve(""),
     doRefresh: () => {},
     saveTextFile: (_fileName: string, _content: string) => Promise.resolve(false),
     setIsActive: async () => {},
     onRemoteTermResize: (_callback: () => void) => {},
+    getNativeTheme: () => false,
+    onNativeThemeChange: () => {},
 };
 
 function installPreviewElectronApi() {

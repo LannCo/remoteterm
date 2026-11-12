@@ -16,6 +16,7 @@ import (
 	"github.com/LannCo/remoteterm/pkg/wshrpc"
 )
 
+const ModulePath = "github.com/LannCo/remoteterm"
 const WshClientFileName = "pkg/wshrpc/wshclient/wshclient.go"
 const WaveObjMetaConstsFileName = "pkg/remotetermobj/metaconsts.go"
 const SettingsMetaConstsFileName = "pkg/rtconfig/metaconsts.go"
@@ -45,10 +46,13 @@ func GenerateWshClient() error {
 	}
 	buf.WriteString("\n")
 	written, err := utilfn.WriteFileIfDifferent(WshClientFileName, []byte(buf.String()))
+	if err != nil {
+		return err
+	}
 	if !written {
 		fmt.Fprintf(os.Stderr, "no changes to %s\n", WshClientFileName)
 	}
-	return err
+	return nil
 }
 
 func GenerateWaveObjMetaConsts() error {
@@ -58,10 +62,13 @@ func GenerateWaveObjMetaConsts() error {
 	gogen.GenerateMetaMapConsts(&buf, "MetaKey_", reflect.TypeOf(remotetermobj.MetaTSType{}), false)
 	buf.WriteString("\n")
 	written, err := utilfn.WriteFileIfDifferent(WaveObjMetaConstsFileName, []byte(buf.String()))
+	if err != nil {
+		return err
+	}
 	if !written {
 		fmt.Fprintf(os.Stderr, "no changes to %s\n", WaveObjMetaConstsFileName)
 	}
-	return err
+	return nil
 }
 
 func GenerateSettingsMetaConsts() error {
@@ -71,26 +78,34 @@ func GenerateSettingsMetaConsts() error {
 	gogen.GenerateMetaMapConsts(&buf, "ConfigKey_", reflect.TypeOf(rtconfig.SettingsType{}), false)
 	buf.WriteString("\n")
 	written, err := utilfn.WriteFileIfDifferent(SettingsMetaConstsFileName, []byte(buf.String()))
+	if err != nil {
+		return err
+	}
 	if !written {
 		fmt.Fprintf(os.Stderr, "no changes to %s\n", SettingsMetaConstsFileName)
 	}
-	return err
+	return nil
 }
 
 func main() {
-	err := GenerateWshClient()
+	err := utilfn.ChdirToModuleRoot(ModulePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error locating repo root: %v\n", err)
+		os.Exit(1)
+	}
+	err = GenerateWshClient()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error generating wshclient: %v\n", err)
-		return
+		os.Exit(1)
 	}
 	err = GenerateWaveObjMetaConsts()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error generating remotetermobj meta consts: %v\n", err)
-		return
+		os.Exit(1)
 	}
 	err = GenerateSettingsMetaConsts()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error generating settings meta consts: %v\n", err)
-		return
+		os.Exit(1)
 	}
 }

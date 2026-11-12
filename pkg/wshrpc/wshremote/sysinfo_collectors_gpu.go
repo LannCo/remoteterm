@@ -4,6 +4,7 @@
 package wshremote
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,13 +16,32 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // execCommand is a package-level seam so GPU collector tests can inject
 // canned CLI output instead of shelling out to real vendor tools — none of
 // the three vendors' tools can be assumed present on any given dev/CI host.
 var execCommand = func(name string, args ...string) ([]byte, error) {
-	return exec.Command(name, args...).Output()
+	return runGpuTool(gpuToolTimeout, name, args...)
+}
+
+// gpuToolTimeout bounds each vendor CLI call. nvidia-smi and rocm-smi can hang indefinitely
+// on a wedged driver, and every collector shares one tick, so an unbounded call would freeze
+// all metrics for the connection rather than just the GPU ones.
+const gpuToolTimeout = 5 * time.Second
+
+func runGpuTool(timeout time.Duration, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	// A killed tool's children can keep the stdout pipe open; stop waiting on it.
+	cmd.WaitDelay = time.Second
+	out, err := cmd.Output()
+	if ctx.Err() == context.DeadlineExceeded {
+		return nil, fmt.Errorf("%s timed out after %v", name, timeout)
+	}
+	return out, err
 }
 
 // rocmLookPath, rocmGlobPaths and rocmStatPath are package-level seams so

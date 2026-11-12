@@ -14,6 +14,7 @@ const OverrideVarNames = [
     "WAVETERM_DATA_HOME",
     "REMOTETERM_HOME",
     "WAVETERM_HOME",
+    "REMOTETERM_ISOLATED_PROFILE",
 ];
 const MarkerFileName = ".migrated-from-waveterm";
 
@@ -119,6 +120,111 @@ describe("combined-home fallback", () => {
         const mod = await loadPlatform(true);
         expect(mod.getRemoteTermDataDir()).toBe(path.join(tmpHome, ".remoteterm"));
         expect(mod.getRemoteTermConfigDir()).toBe(path.join(tmpHome, ".remoteterm", "config"));
+    });
+});
+
+describe("Electron userData dir (single-instance lock scope)", () => {
+    it("isRemoteTermIsolatedProfileActive is false by default, even with the data/config/home override vars set", async () => {
+        let mod = await loadPlatform(true);
+        expect(mod.isRemoteTermIsolatedProfileActive()).toBe(false);
+
+        vi.resetModules();
+        process.env.REMOTETERM_CONFIG_HOME = makeDir(path.join(tmpHome, "cfg-override"));
+        mod = await loadPlatform(true);
+        expect(mod.isRemoteTermIsolatedProfileActive()).toBe(false);
+        delete process.env.REMOTETERM_CONFIG_HOME;
+
+        vi.resetModules();
+        process.env.REMOTETERM_DATA_HOME = makeDir(path.join(tmpHome, "data-override"));
+        mod = await loadPlatform(true);
+        expect(mod.isRemoteTermIsolatedProfileActive()).toBe(false);
+        delete process.env.REMOTETERM_DATA_HOME;
+
+        vi.resetModules();
+        process.env.REMOTETERM_HOME = makeDir(path.join(tmpHome, "home-override"));
+        mod = await loadPlatform(true);
+        expect(mod.isRemoteTermIsolatedProfileActive()).toBe(false);
+        delete process.env.REMOTETERM_HOME;
+
+        vi.resetModules();
+        process.env.WAVETERM_CONFIG_HOME = makeDir(path.join(tmpHome, "legacy-cfg-override"));
+        mod = await loadPlatform(true);
+        expect(mod.isRemoteTermIsolatedProfileActive()).toBe(false);
+        delete process.env.WAVETERM_CONFIG_HOME;
+    });
+
+    it("isRemoteTermIsolatedProfileActive is true only when REMOTETERM_ISOLATED_PROFILE=1 AND REMOTETERM_CONFIG_HOME are both set", async () => {
+        let mod = await loadPlatform(true);
+        expect(mod.isRemoteTermIsolatedProfileActive()).toBe(false);
+
+        vi.resetModules();
+        process.env.REMOTETERM_ISOLATED_PROFILE = "1";
+        process.env.REMOTETERM_CONFIG_HOME = makeDir(path.join(tmpHome, "cfg-override"));
+        mod = await loadPlatform(true);
+        expect(mod.isRemoteTermIsolatedProfileActive()).toBe(true);
+        delete process.env.REMOTETERM_ISOLATED_PROFILE;
+        delete process.env.REMOTETERM_CONFIG_HOME;
+    });
+
+    it.each(["0", "true", "yes", "TRUE", "2"])(
+        "isRemoteTermIsolatedProfileActive is false for REMOTETERM_ISOLATED_PROFILE=%s (exact match on \"1\" only)",
+        async (value) => {
+            process.env.REMOTETERM_ISOLATED_PROFILE = value;
+            process.env.REMOTETERM_CONFIG_HOME = makeDir(path.join(tmpHome, "cfg-override"));
+            const mod = await loadPlatform(true);
+            expect(mod.isRemoteTermIsolatedProfileActive()).toBe(false);
+        }
+    );
+
+    it("isRemoteTermIsolatedProfileActive falls back to false and warns when REMOTETERM_ISOLATED_PROFILE=1 is set without a config-dir override", async () => {
+        process.env.REMOTETERM_ISOLATED_PROFILE = "1";
+        const mod = await loadPlatform(true);
+        expect(mod.isRemoteTermIsolatedProfileActive()).toBe(false);
+        expect(
+            loggedLines().some(
+                (s) => s.includes("REMOTETERM_ISOLATED_PROFILE=1") && s.includes("REMOTETERM_CONFIG_HOME")
+            )
+        ).toBe(true);
+    });
+
+    it("isRemoteTermIsolatedProfileActive accepts the legacy WAVETERM_CONFIG_HOME as the config-dir override", async () => {
+        process.env.REMOTETERM_ISOLATED_PROFILE = "1";
+        process.env.WAVETERM_CONFIG_HOME = makeDir(path.join(tmpHome, "legacy-cfg-override"));
+        const mod = await loadPlatform(true);
+        expect(mod.isRemoteTermIsolatedProfileActive()).toBe(true);
+    });
+
+    it("isRemoteTermIsolatedProfileActive falls back to false when a combined-home dir at its default location would cause the config override to be ignored", async () => {
+        makeDir(path.join(tmpHome, ".remoteterm"), { "wave.lock": "" });
+        process.env.REMOTETERM_ISOLATED_PROFILE = "1";
+        process.env.REMOTETERM_CONFIG_HOME = makeDir(path.join(tmpHome, "scratch-cfg-override"));
+        const mod = await loadPlatform(true);
+        expect(mod.isRemoteTermIsolatedProfileActive()).toBe(false);
+        expect(loggedLines().some((s) => s.includes("combined-home directory"))).toBe(true);
+    });
+
+    it("getElectronUserDataDir nests under the resolved config dir — only meant to be used when isRemoteTermIsolatedProfileActive() is true", async () => {
+        const mod = await loadPlatform(true);
+        expect(mod.getElectronUserDataDir()).toBe(path.join(mod.getRemoteTermConfigDir(), "electron"));
+        expect(mod.getElectronUserDataDir()).toBe(path.join(xdgConfig, "remoteterm", "electron"));
+    });
+
+    it("resolves to distinct paths for distinct REMOTETERM_CONFIG_HOME overrides, so isolated instances get separately-scoped single-instance locks", async () => {
+        const scratchA = makeDir(path.join(tmpHome, "scratch-a"));
+        const scratchB = makeDir(path.join(tmpHome, "scratch-b"));
+
+        process.env.REMOTETERM_CONFIG_HOME = scratchA;
+        let mod = await loadPlatform(true);
+        const userDataA = mod.getElectronUserDataDir();
+        expect(userDataA).toBe(path.join(scratchA, "electron"));
+
+        vi.resetModules();
+        process.env.REMOTETERM_CONFIG_HOME = scratchB;
+        mod = await loadPlatform(true);
+        const userDataB = mod.getElectronUserDataDir();
+        expect(userDataB).toBe(path.join(scratchB, "electron"));
+
+        expect(userDataA).not.toBe(userDataB);
     });
 });
 
@@ -255,17 +361,11 @@ describe("data-dir migration shim", () => {
             makeDir(legacyData(), { "wave.lock": "" });
             const override = path.join(tmpHome, "custom-data");
             process.env[varName] = override;
-            let mod = await loadPlatform(true);
-            const markerFile = path.join(override, MarkerFileName);
-            expect(fs.readFileSync(markerFile, "utf8")).toMatch(/^no-migration-needed:override\n/);
+            const mod = await loadPlatform(true);
+            expect(fs.existsSync(path.join(override, MarkerFileName))).toBe(false);
             expect(fs.existsSync(path.join(legacyData(), "wave.lock"))).toBe(true);
             expect(fs.existsSync(newData())).toBe(false);
             expect(mod.getRemoteTermDataDir()).toBe(override);
-
-            fs.writeFileSync(markerFile, "sentinel");
-            vi.resetModules();
-            mod = await loadPlatform(true);
-            expect(fs.readFileSync(markerFile, "utf8")).toBe("sentinel");
             expect(mod.getMigrationFailures()).toEqual([]);
         }
     );

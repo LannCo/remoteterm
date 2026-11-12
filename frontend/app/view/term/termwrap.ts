@@ -33,6 +33,7 @@ import * as TermTypes from "@xterm/xterm";
 import { Terminal } from "@xterm/xterm";
 import debug from "debug";
 import * as jotai from "jotai";
+import type { Subscription } from "rxjs";
 import { debounce } from "throttle-debounce";
 import {
     handleOsc16162Command,
@@ -43,12 +44,18 @@ import {
 } from "./osc-handlers";
 import {
     bufferLinesToText,
+    colourSchemeReport,
     createRemoteTempFileFromBlob,
     createTempFileFromBlob,
     extractAllClipboardData,
+    formatOscColourReport,
+    neutraliseFaintSgr,
     normalizeCursorStyle,
     quoteForPosixShell,
+    setXtermGlyphBlend,
     trimTerminalSelection,
+    type ReportedColours,
+    type SgrParams,
 } from "./termutil";
 
 const dlog = debug("wave:termwrap");
@@ -214,6 +221,8 @@ type TermWrapOptions = {
     useWebGl?: boolean;
     sendDataHandler?: (data: string) => void;
     nodeModel?: BlockNodeModel;
+    reportedColours?: ReportedColours;
+    lightTextFixes?: boolean;
 };
 
 // DEC private modes that are safe to replay on durable reconnect.
@@ -233,6 +242,7 @@ export class TermWrap {
     searchAddon: SearchAddon;
     serializeAddon: SerializeAddon;
     mainFileSubject: SubjectWithRef<WSFileEventData>;
+    mainFileSubjectSubscription: Subscription;
     loaded: boolean;
     heldData: Uint8Array[];
     handleResize_debounced: () => void;
@@ -257,6 +267,9 @@ export class TermWrap {
     onLinkHover?: (uri: string | null, mouseX: number, mouseY: number) => void;
 
     _visibilityChangeHandler: (() => void) | null = null;
+    disposed: boolean = false;
+    idleTimeoutId: ReturnType<typeof setTimeout> | null = null;
+    idleCallbackId: number | null = null;
 
     // Paste deduplication
     // xterm.js paste() method triggers onData event, which can cause duplicate sends
@@ -276,6 +289,14 @@ export class TermWrap {
 
     // Track active DEC private modes for durable reconnect state restoration
     activeDecModes: Set<number> = new Set();
+
+    // Colours the block visibly shows. The xterm canvas is transparent, so xterm.js cannot answer
+    // OSC 10/11 or the colour scheme query correctly on its own.
+    reportedColours: ReportedColours = {};
+
+    // Light themes need two xterm.js rendering behaviours turned off (see needsLightTextFixes).
+    lightTextFixes = false;
+    glyphBlendCorrected = false;
 
     // Track written image asset hashes to avoid redundant writes
     _writtenImageHashes: Set<string> = new Set();
@@ -304,7 +325,11 @@ export class TermWrap {
         this.lastCommandAtom = jotai.atom(null) as jotai.PrimitiveAtom<string | null>;
         this.claudeCodeActiveAtom = jotai.atom(false);
         this.webglEnabledAtom = jotai.atom(false) as jotai.PrimitiveAtom<boolean>;
-        this.terminal = new Terminal(options);
+        this.reportedColours = waveOptions.reportedColours ?? {};
+        this.lightTextFixes = waveOptions.lightTextFixes ?? false;
+        // xterm.js derives its colour scheme answer and DEC 2031 updates from the transparent canvas
+        // colour; RemoteTerm answers both from reportedColours instead.
+        this.terminal = new Terminal({ ...options, vtExtensions: { ...options.vtExtensions, colorSchemeQuery: false } });
         this.fitAddon = new FitAddon();
         this.serializeAddon = new SerializeAddon();
         this.searchAddon = new SearchAddon();
@@ -446,9 +471,6 @@ export class TermWrap {
                                         if (ctx) { ctx.imageSmoothingEnabled = true; ctx.drawImage(tmp, 0, 0, tw, th); }
                                     }
 
-                                    const cols = Math.ceil(canvas.width / cw);
-                                    const rows = Math.ceil(canvas.height / ch);
-                                    
                                     storage.addImage(canvas);
                                     rawChunks = [];
                                     rawTotal = 0;
@@ -502,6 +524,27 @@ export class TermWrap {
                 return false;
             }
         });
+        this.toDispose.push(
+            this.terminal.parser.registerOscHandler(10, (data: string) => this.handleOscColourQuery(10, data)),
+            this.terminal.parser.registerOscHandler(11, (data: string) => this.handleOscColourQuery(11, data)),
+            this.terminal.parser.registerCsiHandler({ prefix: "?", final: "n" }, (params) => {
+                if (params?.[0] !== 996) {
+                    return false;
+                }
+                return this.reportColourScheme();
+            })
+        );
+        // The public parser API hands handlers a copy of the parameters, so the faint fix registers on the
+        // core parser, where the list is the one xterm.js goes on to read.
+        const faintHandler = (this.terminal as any)._core?.registerCsiHandler?.({ final: "m" }, (params: SgrParams) => {
+            if (this.lightTextFixes) {
+                neutraliseFaintSgr(params);
+            }
+            return false;
+        });
+        if (faintHandler != null) {
+            this.toDispose.push(faintHandler);
+        }
         this.toDispose.push(
             this.terminal.parser.registerCsiHandler({ final: "J" }, (params) => {
                 if (params == null || params.length < 1) {
@@ -597,9 +640,11 @@ export class TermWrap {
         });
         this.connectElem = connectElem;
         this.mainFileSubject = null;
+        this.mainFileSubjectSubscription = null;
         this.heldData = [];
         this.handleResize_debounced = debounce(50, this.handleResize.bind(this));
         this.terminal.open(this.connectElem);
+        this.applyGlyphBlend();
 
         const dragoverHandler = (e: DragEvent) => {
             e.preventDefault();
@@ -716,6 +761,7 @@ export class TermWrap {
             });
             this.terminal.loadAddon(addon);
             this.webglAddon = addon;
+            this.applyGlyphBlend();
             globalStore.set(this.webglEnabledAtom, true);
             if (!loggedWebGL) {
                 loggedWebGL = true;
@@ -762,7 +808,7 @@ export class TermWrap {
         }
 
         this.mainFileSubject = getFileSubject(this.getZoneId(), TermFileName);
-        this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
+        this.mainFileSubjectSubscription = this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
 
         try {
             const rtInfo = await RpcApi.GetRTInfoCommand(TabRpcClient, {
@@ -784,17 +830,26 @@ export class TermWrap {
         } catch (e) {
             console.error("Error loading runtime info:", e);
         }
+        if (this.disposed) {
+            return;
+        }
 
         try {
             await this.loadInitialTerminalData();
         } finally {
-            this.loaded = true;
-            if (this.heldData.length > 0) {
-                for (const data of this.heldData) {
-                    this.doTerminalWrite(data, null);
+            // dispose() can run during the awaits above (initTerminal is fire-and-forget)
+            if (!this.disposed) {
+                this.loaded = true;
+                if (this.heldData.length > 0) {
+                    for (const data of this.heldData) {
+                        this.doTerminalWrite(data, null);
+                    }
+                    this.heldData = [];
                 }
-                this.heldData = [];
             }
+        }
+        if (this.disposed) {
+            return;
         }
         this._visibilityChangeHandler = () => {
             if (document.visibilityState === "visible") {
@@ -834,6 +889,15 @@ export class TermWrap {
     }
 
     dispose() {
+        this.disposed = true;
+        if (this.idleTimeoutId != null) {
+            clearTimeout(this.idleTimeoutId);
+            this.idleTimeoutId = null;
+        }
+        if (this.idleCallbackId != null) {
+            window.cancelIdleCallback(this.idleCallbackId);
+            this.idleCallbackId = null;
+        }
         if (this._visibilityChangeHandler) {
             document.removeEventListener("visibilitychange", this._visibilityChangeHandler);
             this._visibilityChangeHandler = null;
@@ -857,8 +921,51 @@ export class TermWrap {
                 /* nothing */
             }
         });
-        this.mainFileSubject.release();
+        this.mainFileSubjectSubscription?.unsubscribe();
+        this.mainFileSubject?.release();
         clearBlockUserInput(this.blockId);
+    }
+
+    setLightTextFixes(on: boolean) {
+        this.lightTextFixes = on;
+        this.applyGlyphBlend();
+    }
+
+    // The blend function lives in the WebGL context xterm.js made, so it is set again whenever the
+    // canvas is new. A dark theme never gets the correction, which keeps its rendering as it was.
+    applyGlyphBlend() {
+        if (!this.lightTextFixes && !this.glyphBlendCorrected) {
+            return;
+        }
+        setXtermGlyphBlend(this.terminal.element, this.lightTextFixes);
+        this.glyphBlendCorrected = this.lightTextFixes;
+    }
+
+    setReportedColours(colours: ReportedColours) {
+        const before = colourSchemeReport(this.reportedColours);
+        this.reportedColours = colours;
+        const after = colourSchemeReport(colours);
+        if (after != null && after !== before && this.activeDecModes.has(2031)) {
+            this.handleTermData(after);
+        }
+    }
+
+    handleOscColourQuery(ident: 10 | 11, data: string): boolean {
+        const color = ident === 10 ? this.reportedColours.foreground : this.reportedColours.background;
+        if (data !== "?" || !color) {
+            return false;
+        }
+        this.handleTermData(formatOscColourReport(ident, color));
+        return true;
+    }
+
+    reportColourScheme(): boolean {
+        const report = colourSchemeReport(this.reportedColours);
+        if (report == null) {
+            return false;
+        }
+        this.handleTermData(report);
+        return true;
     }
 
     handleTermData(data: string) {
@@ -925,6 +1032,9 @@ export class TermWrap {
         const startTs = Date.now();
         const zoneId = this.getZoneId();
         const { data: cacheData, fileInfo: cacheFile } = await fetchWaveFile(zoneId, TermCacheFileName);
+        if (this.disposed) {
+            return;
+        }
         let ptyOffset = 0;
         if (cacheFile != null) {
             ptyOffset = cacheFile.meta["ptyoffset"] ?? 0;
@@ -954,10 +1064,16 @@ export class TermWrap {
             // Restore images from sidecar
             await this.restoreImages();
         }
+        if (this.disposed) {
+            return;
+        }
         const { data: mainData, fileInfo: mainFile } = await fetchWaveFile(zoneId, TermFileName, ptyOffset);
         console.log(
             `terminal loaded cachefile:${cacheData?.byteLength ?? 0} main:${mainData?.byteLength ?? 0} bytes, ${Date.now() - startTs}ms`
         );
+        if (this.disposed) {
+            return;
+        }
         if (mainFile != null) {
             await this.doTerminalWrite(mainData, null);
         }
@@ -988,6 +1104,7 @@ export class TermWrap {
 
                     const b64 = new TextDecoder().decode(imgData);
                     const canvas = await decodePngBase64(b64, entry.width, entry.height);
+                    if (this.disposed) return;
                     if (!canvas) continue;
 
                     if (entry.row < 0 || entry.row >= buffer.lines.length) continue;
@@ -997,7 +1114,6 @@ export class TermWrap {
 
                     if (isInViewport) {
                         // Use addImage for visible images (handles cursor, lineFeed, eviction markers)
-                        const ybaseBefore = buffer.ybase;
                         buffer.x = entry.col;
                         buffer.y = viewportRow;
                         storage.addImage(canvas, {
@@ -1221,8 +1337,16 @@ export class TermWrap {
     }
 
     runProcessIdleTimeout() {
-        setTimeout(() => {
-            window.requestIdleCallback(() => {
+        if (this.disposed) {
+            return;
+        }
+        this.idleTimeoutId = setTimeout(() => {
+            this.idleTimeoutId = null;
+            this.idleCallbackId = window.requestIdleCallback(() => {
+                this.idleCallbackId = null;
+                if (this.disposed) {
+                    return;
+                }
                 this.processAndCacheData();
                 this.runProcessIdleTimeout();
             });

@@ -4,12 +4,13 @@
 import { RpcApi } from "@/app/store/wshclientapi";
 import { adaptFromElectronKeyEvent, checkKeyPressed } from "@/util/keyutil";
 import { CHORD_TIMEOUT } from "@/util/sharedconst";
-import { Rectangle, shell, WebContentsView } from "electron";
+import { Rectangle, screen, shell, WebContentsView } from "electron";
 import { createNewRemoteTermWindow, getRemoteTermWindowById } from "emain/emain-window";
 import path from "path";
-import { configureAuthKeyRequestInjection } from "./authkey";
 import { setWasActive } from "./emain-activity";
-import { getElectronAppBasePath, isDevVite, unamePlatform } from "./emain-platform";
+import { getElectronAppBasePath, getWebviewPreloadPath, isDevVite, unamePlatform } from "./emain-platform";
+import { installGuestWindowOpenHandler } from "./emain-popup";
+import { handleTabDidFailLoad, handleTabRenderProcessGone, handleTabUnresponsive } from "./emain-tab-lifecycle";
 import {
     decreaseZoomLevel,
     handleCtrlShiftFocus,
@@ -19,6 +20,7 @@ import {
     shFrameNavHandler,
     shNavHandler,
 } from "./emain-util";
+import { registerAppWebContents } from "./emain-websecurity";
 import { ElectronWshClient } from "./emain-wsh";
 
 function handleWindowsMenuAccelerators(
@@ -157,6 +159,7 @@ export class RemoteTermTabView extends WebContentsView {
         });
         const wcId = this.webContents.id;
         wcIdToRemoteTermTabMap.set(wcId, this);
+        registerAppWebContents(this.webContents);
         if (isDevVite) {
             this.webContents.loadURL(`${process.env.ELECTRON_RENDERER_URL}/index.html`);
         } else {
@@ -167,6 +170,11 @@ export class RemoteTermTabView extends WebContentsView {
             removeRemoteTermTabView(this.remoteTermTabId);
             this.isDestroyed = true;
         });
+        this.webContents.on("render-process-gone", (_event, details) => handleTabRenderProcessGone(this, details));
+        this.webContents.on("unresponsive", () => handleTabUnresponsive(this));
+        this.webContents.on("did-fail-load", (_event, errorCode, errorDescription, _validatedURL, isMainFrame) =>
+            handleTabDidFailLoad(this, errorCode, errorDescription, isMainFrame)
+        );
         this.setBackgroundColor(computeBgColor(fullConfig));
     }
 
@@ -316,12 +324,20 @@ export async function getOrCreateWebViewForTab(
     tabView.webContents.on("will-navigate", shNavHandler);
     tabView.webContents.on("will-frame-navigate", shFrameNavHandler);
     tabView.webContents.on("did-attach-webview", (event, wc) => {
-        wc.setWindowOpenHandler((details) => {
-            if (wc == null || wc.isDestroyed() || tabView.webContents == null || tabView.webContents.isDestroyed()) {
-                return { action: "deny" };
-            }
-            tabView.webContents.send("webview-new-window", wc.id, details);
-            return { action: "deny" };
+        installGuestWindowOpenHandler(wc, {
+            rootGuestId: wc.id,
+            sendToTab: (guestId, details) => {
+                if (tabView.webContents == null || tabView.webContents.isDestroyed()) {
+                    return;
+                }
+                tabView.webContents.send("webview-new-window", guestId, details);
+            },
+            getParentWindow: () => getRemoteTermWindowById(tabView.remoteTermWindowId) ?? null,
+            getWorkArea: (parent) => {
+                const display = parent == null ? screen.getPrimaryDisplay() : screen.getDisplayMatching(parent.getBounds());
+                return display.workArea;
+            },
+            preloadPath: getWebviewPreloadPath(),
         });
     });
     tabView.webContents.on("before-input-event", (e, input) => {
@@ -343,7 +359,7 @@ export async function getOrCreateWebViewForTab(
             }
         }
     });
-    tabView.webContents.setWindowOpenHandler(({ url, frameName }) => {
+    tabView.webContents.setWindowOpenHandler(({ url }) => {
         if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("file://")) {
             console.log("openExternal fallback", url);
             shell.openExternal(url);
@@ -354,7 +370,6 @@ export async function getOrCreateWebViewForTab(
     tabView.webContents.on("blur", () => {
         handleCtrlShiftFocus(tabView.webContents, false);
     });
-    configureAuthKeyRequestInjection(tabView.webContents.session);
     return [tabView, false];
 }
 

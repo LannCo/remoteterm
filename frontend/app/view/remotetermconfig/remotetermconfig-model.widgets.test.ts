@@ -271,4 +271,186 @@ describe("RemoteTermConfigViewModel — sidebar widgets (reorder / toggle / pers
 
         expect(model.hasChanges()).toBe(false);
     });
+
+    describe("display:order collisions", () => {
+        const customWidget = (label: string) => ({ icon: "star", label, blockdef: { meta: { view: "term" } } });
+        const defaultKeys = Object.keys(makeDefaultWidgetsMap());
+
+        beforeEach(() => {
+            rawWidgetsFileOnDisk = { "w@a": customWidget("a"), "w@b": customWidget("b"), "w@c": customWidget("c") };
+            fullConfigAtom._value = { widgets: { ...makeDefaultWidgetsMap(), ...rawWidgetsFileOnDisk } };
+        });
+
+        it("renumbers tied custom widgets so a move between two of them sticks", async () => {
+            await model.reorderWidget("w@c", 7, [...defaultKeys, "w@a", "w@c", "w@b"]);
+
+            const merged = { ...makeDefaultWidgetsMap(), ...rawWidgetsFileOnDisk };
+            expect(sortByDisplayOrder(merged).map((w) => w.label)).toEqual([
+                "terminal",
+                "source\ncontrol",
+                "files",
+                "web",
+                "sysinfo",
+                "processes",
+                "a",
+                "c",
+                "b",
+            ]);
+        });
+
+        it("confines the renumber to the tied run and never forks untouched defaults into widgets.json", async () => {
+            await model.reorderWidget("w@c", 7, [...defaultKeys, "w@a", "w@c", "w@b"]);
+
+            expect(Object.keys(rawWidgetsFileOnDisk).sort()).toEqual(["w@a", "w@b", "w@c"]);
+            const orders = ["w@a", "w@c", "w@b"].map((k) => rawWidgetsFileOnDisk[k]["display:order"]);
+            expect(orders[0]).toBeGreaterThan(-1);
+            expect(orders[1]).toBeGreaterThan(orders[0]);
+            expect(orders[2]).toBeGreaterThan(orders[1]);
+        });
+
+        it("renumbers when bisection has exhausted float precision between two neighbours", async () => {
+            const lo = 1;
+            const hi = 1 + Number.EPSILON;
+            rawWidgetsFileOnDisk = {
+                "w@a": { ...customWidget("a"), "display:order": lo },
+                "w@b": { ...customWidget("b"), "display:order": hi },
+                "w@c": { ...customWidget("c"), "display:order": 5 },
+            };
+            fullConfigAtom._value = { widgets: { ...makeDefaultWidgetsMap(), ...rawWidgetsFileOnDisk } };
+
+            await model.reorderWidget("w@c", 7, [...defaultKeys, "w@a", "w@c", "w@b"]);
+
+            const merged = { ...makeDefaultWidgetsMap(), ...rawWidgetsFileOnDisk };
+            expect(sortByDisplayOrder(merged).map((w) => w.label).slice(6)).toEqual(["a", "c", "b"]);
+        });
+    });
+
+    describe("Raw JSON tab interplay", () => {
+        const widgetsFile = { name: "widgets.json", path: "widgets.json" };
+
+        it("a visual-tab write that lands after the user starts typing keeps the unsaved buffer", async () => {
+            model.selectedFileAtom._value = widgetsFile;
+            model.fileContentAtom._value = '{"typed": true';
+            model.markAsEdited();
+
+            await model.toggleWidgetHidden("defwidget@web");
+
+            expect(model.fileContentAtom._value).toBe('{"typed": true');
+            expect(model.hasChanges()).toBe(true);
+            expect(JSON.parse(model.originalContentAtom._value)["defwidget@web"]["display:hidden"]).toBe(true);
+        });
+
+        it("a visual-tab write refreshes the editor when there are no unsaved edits", async () => {
+            model.selectedFileAtom._value = widgetsFile;
+
+            await model.toggleWidgetHidden("defwidget@web");
+
+            expect(JSON.parse(model.fileContentAtom._value)["defwidget@web"]["display:hidden"]).toBe(true);
+        });
+
+        it("a Raw JSON save waits behind a queued visual write instead of being overwritten by it", async () => {
+            let releaseFirstWrite: () => void;
+            const firstWriteGate = new Promise<void>((r) => (releaseFirstWrite = r));
+            const writes: string[] = [];
+            fileWriteCommand.mockImplementation(async (_client: any, params: { data64: string }) => {
+                const body = base64ToString(params.data64);
+                writes.push(body);
+                if (writes.length === 1) await firstWriteGate;
+                rawWidgetsFileOnDisk = JSON.parse(body);
+            });
+
+            const toggle = model.toggleWidgetHidden("defwidget@web");
+            await vi.waitFor(() => expect(writes).toHaveLength(1));
+
+            model.selectedFileAtom._value = widgetsFile;
+            model.fileContentAtom._value = JSON.stringify({ "w@saved": { label: "saved" } });
+            const save = model.saveFile();
+            await Promise.resolve();
+            expect(writes).toHaveLength(1);
+
+            releaseFirstWrite();
+            await Promise.all([toggle, save]);
+
+            expect(writes).toHaveLength(2);
+            expect(rawWidgetsFileOnDisk).toEqual({ "w@saved": { label: "saved" } });
+        });
+    });
+
+    it("loadFile ignores a response that arrives after a newer load started", async () => {
+        const pending = new Map<string, (data: string) => void>();
+        model.env.rpc.SetMetaCommand = vi.fn();
+        model.env.rpc.FileReadCommand = vi.fn(
+            (_client: any, params: { info: { path: string } }) =>
+                new Promise((resolve) =>
+                    pending.set(params.info.path, (data: string) => resolve({ data64: stringToBase64(data) }))
+                )
+        );
+        const fileA = { name: "A", path: "a.json" };
+        const fileB = { name: "B", path: "b.json" };
+
+        const loadA = model.loadFile(fileA);
+        const loadB = model.loadFile(fileB);
+        pending.get("/config/b.json")('{"b": 1}');
+        await loadB;
+        expect(model.isLoadingAtom._value).toBe(false);
+        pending.get("/config/a.json")('{"a": 1}');
+        await loadA;
+
+        expect(model.selectedFileAtom._value).toBe(fileB);
+        expect(model.fileContentAtom._value).toBe('{"b": 1}');
+        expect(model.isLoadingAtom._value).toBe(false);
+    });
+
+    it("two quick background adds with the same name get distinct keys", async () => {
+        let backgroundsOnDisk: { [key: string]: any } | null = null;
+        fullConfigAtom._value = { widgets: makeDefaultWidgetsMap(), backgrounds: {} };
+        model.env.rpc.FileInfoCommand = vi.fn(async () => ({ notfound: backgroundsOnDisk == null }));
+        model.env.rpc.FileReadCommand = vi.fn(async () => ({
+            data64: stringToBase64(JSON.stringify(backgroundsOnDisk ?? {})),
+        }));
+        model.env.rpc.FileWriteCommand = vi.fn(async (_client: any, params: { data64: string }) => {
+            backgroundsOnDisk = JSON.parse(base64ToString(params.data64));
+        });
+
+        const [first, second] = await Promise.all([
+            model.addBackground("Sunset", "orange"),
+            model.addBackground("Sunset", "red"),
+        ]);
+
+        expect(first).toBe("bg@sunset");
+        expect(second).toBe("bg@sunset-2");
+        expect(backgroundsOnDisk[first].bg).toBe("orange");
+        expect(backgroundsOnDisk[second].bg).toBe("red");
+        expect(backgroundsOnDisk[second]["display:order"]).toBeGreaterThan(backgroundsOnDisk[first]["display:order"]);
+    });
+});
+
+describe("orderValuesBetween", () => {
+    let orderValuesBetween: typeof import("./remotetermconfig-model").orderValuesBetween;
+
+    beforeEach(async () => {
+        ({ orderValuesBetween } = await import("./remotetermconfig-model"));
+    });
+
+    it("bisects a single slot between two bounds", () => {
+        expect(orderValuesBetween(-5, -4, 1)).toEqual([-4.5]);
+    });
+
+    it("steps outward from a single bound", () => {
+        expect(orderValuesBetween(-1, undefined, 3)).toEqual([0, 1, 2]);
+        expect(orderValuesBetween(undefined, -6, 2)).toEqual([-8, -7]);
+    });
+
+    it("starts at zero with no bounds", () => {
+        expect(orderValuesBetween(undefined, undefined, 3)).toEqual([0, 1, 2]);
+    });
+
+    it("rejects tied or inverted bounds", () => {
+        expect(orderValuesBetween(0, 0, 1)).toBeNull();
+        expect(orderValuesBetween(2, 1, 1)).toBeNull();
+    });
+
+    it("rejects a gap too narrow to hold distinct values", () => {
+        expect(orderValuesBetween(1, 1 + Number.EPSILON, 1)).toBeNull();
+    });
 });

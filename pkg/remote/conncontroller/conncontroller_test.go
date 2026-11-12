@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -3205,5 +3206,99 @@ func TestAttemptReconnect_WaitsWhenConnecting(t *testing.T) {
 	}
 	if err := <-attemptDone; err != nil {
 		t.Fatalf("AttemptReconnect while Connecting: %v", err)
+	}
+}
+
+func TestDetachedTimeoutSurvivesParentCancellation(t *testing.T) {
+	t.Parallel()
+
+	parent, parentCancel := context.WithCancel(context.Background())
+	child, childCancel := detachedTimeout(parent, 50*time.Millisecond)
+	defer childCancel()
+
+	// Simulate the connect-phase context being aborted (or its own deadline
+	// firing) after this sub-phase has already started.
+	parentCancel()
+
+	select {
+	case <-child.Done():
+		t.Fatal("expected child context to survive parent cancellation")
+	default:
+	}
+	if err := child.Err(); err != nil {
+		t.Fatalf("expected no error on child immediately after parent cancellation, got %v", err)
+	}
+
+	<-child.Done()
+	if !errors.Is(child.Err(), context.DeadlineExceeded) {
+		t.Fatalf("expected child to expire via its own timeout, got %v", child.Err())
+	}
+}
+
+func TestDetachedTimeoutSurvivesParentDeadlineExpiry(t *testing.T) {
+	t.Parallel()
+
+	// Mirrors the real bug: wshCtx's own wshStartupTimeout budget expires
+	// while a sub-phase (install, post-install verify, or the approval wait)
+	// is still running on its own independent, longer timeout.
+	parent, parentCancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer parentCancel()
+	child, childCancel := detachedTimeout(parent, 200*time.Millisecond)
+	defer childCancel()
+
+	<-parent.Done()
+	time.Sleep(20 * time.Millisecond)
+
+	select {
+	case <-child.Done():
+		t.Fatal("expected child to still be running after parent's shorter deadline expired")
+	default:
+	}
+}
+
+func TestMarkConnControllerTerminated_StaleSessionLeavesNewControllerAlone(t *testing.T) {
+	conn := makeTestConn(Status_Connected)
+	defer cleanupTestConn(conn)
+	oldSession := &ssh.Session{}
+	newSession := &ssh.Session{}
+	conn.ConnController = newSession
+	conn.WshEnabled.Store(true)
+
+	conn.markConnControllerTerminated(oldSession, fmt.Errorf("old session exited"))
+
+	if conn.ConnController != newSession {
+		t.Fatal("stale session exit cleared the live ConnController")
+	}
+	if !conn.WshEnabled.Load() || conn.NoWshReason != "" || conn.WshError != "" {
+		t.Fatalf("stale session exit changed wsh state: enabled=%v reason=%q err=%q", conn.WshEnabled.Load(), conn.NoWshReason, conn.WshError)
+	}
+}
+
+func TestMarkConnControllerTerminated_CurrentSessionDisablesWsh(t *testing.T) {
+	conn := makeTestConn(Status_Connected)
+	defer cleanupTestConn(conn)
+	session := &ssh.Session{}
+	conn.ConnController = session
+	conn.WshEnabled.Store(true)
+
+	conn.markConnControllerTerminated(session, fmt.Errorf("boom"))
+
+	if conn.ConnController != nil {
+		t.Fatal("ConnController not cleared when its own session terminated")
+	}
+	if conn.WshEnabled.Load() || conn.NoWshReason != "connserver terminated" || !strings.Contains(conn.WshError, "boom") {
+		t.Fatalf("unexpected wsh state: enabled=%v reason=%q err=%q", conn.WshEnabled.Load(), conn.NoWshReason, conn.WshError)
+	}
+}
+
+func TestMarkConnControllerTerminated_IntentionalCloseKeepsWshState(t *testing.T) {
+	conn := makeTestConn(Status_Connected)
+	defer cleanupTestConn(conn)
+	conn.WshEnabled.Store(true)
+
+	conn.markConnControllerTerminated(&ssh.Session{}, nil)
+
+	if !conn.WshEnabled.Load() || conn.NoWshReason != "" {
+		t.Fatalf("session closed via closeInternal changed wsh state: enabled=%v reason=%q", conn.WshEnabled.Load(), conn.NoWshReason)
 	}
 }

@@ -23,6 +23,7 @@ import {
     atoms,
     getApi,
     globalStore,
+    initBuilderWaveEventSubs,
     initGlobal,
     initGlobalWaveEventSubs,
     loadConnStatus,
@@ -31,6 +32,7 @@ import {
 import { activeTabIdAtom } from "@/store/tab-model";
 import * as WOS from "@/store/wos";
 import { loadFonts } from "@/util/fontutil";
+import { isDevVite } from "@/util/isdev";
 import { setKeyUtilPlatform } from "@/util/keyutil";
 import { isMacOS, setMacOSVersion } from "@/util/platformutil";
 import { createElement } from "react";
@@ -39,6 +41,12 @@ import { createRoot } from "react-dom/client";
 const platform = getApi().getPlatform();
 document.title = `RemoteTerm`;
 let savedInitOpts: RemoteTermInitOpts = null;
+
+// React's development build records a performance.measure() per component render and never clears it,
+// so the renderer's timeline grows without bound (~4 KB per entry).
+if (isDevVite()) {
+    setInterval(() => performance.clearMeasures(), 10000);
+}
 
 (window as any).WOS = WOS;
 (window as any).globalStore = globalStore;
@@ -67,12 +75,12 @@ async function initBare() {
         window.dispatchEvent(new CustomEvent("remoteterm-resize"));
     });
     setKeyUtilPlatform(platform);
-    loadFonts();
+    const fontsReady = loadFonts();
     updateZoomFactor(getApi().getZoomFactor());
     getApi().onZoomFactorChange((zoomFactor) => {
         updateZoomFactor(zoomFactor);
     });
-    document.fonts.ready.then(() => {
+    fontsReady.then(() => {
         console.log("Init Bare Done");
         getApi().setWindowInitStatus("ready");
     });
@@ -243,6 +251,9 @@ async function initBuilder(initOpts: BuilderInitOpts) {
     (window as any).globalWS = globalWS;
     (window as any).TabRpcClient = TabRpcClient;
     await loadConnStatus();
+    await loadBadges();
+    initBuilderWaveEventSubs();
+    subscribeToConnEvents();
 
     let appIdToUse: string = null;
     try {

@@ -179,6 +179,7 @@ func handleWaveFile(w http.ResponseWriter, r *http.Request) {
 	jsonFileBArr, err := json.Marshal(file)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("error serializing file info: %v", err), http.StatusInternalServerError)
+		return
 	}
 	// can make more efficient by checking modtime + If-Modified-Since headers to allow caching
 	dataStartIdx := file.DataStartIdx()
@@ -238,6 +239,7 @@ func handleLocalStreamFile(w http.ResponseWriter, r *http.Request, path string, 
 		path, err := remotetermbase.ExpandHomeDir(path)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
 		http.ServeFile(w, r, path)
 	}

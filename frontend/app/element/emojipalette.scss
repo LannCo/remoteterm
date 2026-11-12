@@ -30,11 +30,15 @@
     &:hover {
         background-color: rgba(0, 0, 0, 0.1);
         border-radius: 5px;
+
+        :root[data-theme="light"] & {
+            background-color: rgba(0, 0, 0, 0.06);
+        }
     }
 }
 
 .no-emojis {
     font-size: 14px;
-    color: #888;
+    color: var(--grey-text-color);
     text-align: center;
 }

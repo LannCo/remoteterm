@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>popup child</title>
+<style>body{font:14px system-ui;padding:16px}</style>
+<h1>child</h1>
+<p id="opener"></p>
+<button id="post">postMessage to opener</button>
+<button id="close">window.close()</button>
+<button id="nested">nested window.open (features)</button>
+<script>
+document.getElementById("opener").textContent = "window.opener is " + (window.opener ? "SET" : "NULL");
+document.getElementById("post").onclick = () => window.opener && window.opener.postMessage({ ok: true, from: "child" }, "*");
+document.getElementById("close").onclick = () => window.close();
+document.getElementById("nested").onclick = () => window.open(location.href, "nested", "width=320,height=320");
+</script>

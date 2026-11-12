@@ -277,6 +277,14 @@
         "window:zoom": {
           "type": "number"
         },
+        "window:appearancemode": {
+          "type": "string",
+          "enum": [
+            "system",
+            "light",
+            "dark"
+          ]
+        },
         "conn:*": {
           "type": "boolean"
         },
@@ -299,6 +307,12 @@
           "type": "integer"
         },
         "debug:webglstatus": {
+          "type": "boolean"
+        },
+        "builder:*": {
+          "type": "boolean"
+        },
+        "builder:liverebuild": {
           "type": "boolean"
         },
         "tsunami:*": {

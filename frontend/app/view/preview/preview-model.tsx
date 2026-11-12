@@ -218,8 +218,8 @@ export class PreviewModel implements ViewModel {
         this.directoryColumnSizing = atom<ColumnSizingState>({});
         this.directoryColumnVisibility = atom<VisibilityState>({ path: false });
         this.dragSource = atom(null) as PrimitiveAtom<DragSourceState | null>;
-        this.selectedPaths = atom<Set<string>>(new Set());
-        this.selectionAnchor = atom<string | null>(null);
+        this.selectedPaths = atom<Set<string>>(new Set<string>());
+        this.selectionAnchor = atom(null) as PrimitiveAtom<string | null>;
         this.fileClipboard = atom(null) as PrimitiveAtom<FileClipboardState | null>;
         this.directorySelectablePaths = atom<string[]>([]);
         this.uploadProgress = atom(null) as PrimitiveAtom<UploadProgress | null>;

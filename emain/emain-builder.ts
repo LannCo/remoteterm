@@ -8,6 +8,7 @@ import { BrowserWindow, webContents } from "electron";
 import { globalEvents } from "emain/emain-events";
 import path from "path";
 import { getElectronAppBasePath, isDevVite, unamePlatform } from "./emain-platform";
+import { registerAppWebContents } from "./emain-websecurity";
 import { calculateWindowBounds, LinuxWindowIconPath, MinWindowHeight, MinWindowWidth } from "./emain-window";
 import { ElectronWshClient } from "./emain-wsh";
 
@@ -15,6 +16,7 @@ export type BuilderWindowType = BrowserWindow & {
     builderId: string;
     builderAppId?: string;
     savedInitOpts: BuilderInitOpts;
+    tearingDown?: boolean;
 };
 
 const builderWindows: BuilderWindowType[] = [];
@@ -66,6 +68,7 @@ export async function createBuilderWindow(appId: string): Promise<BuilderWindowT
             webviewTag: true,
         },
     });
+    registerAppWebContents(builderWindow.webContents);
 
     if (isDevVite) {
         await builderWindow.loadURL(`${process.env.ELECTRON_RENDERER_URL}/index.html`);

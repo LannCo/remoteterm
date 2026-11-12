@@ -98,6 +98,7 @@ const (
 	ConfigKey_WindowSaveLastWindow           = "window:savelastwindow"
 	ConfigKey_WindowDimensions               = "window:dimensions"
 	ConfigKey_WindowZoom                     = "window:zoom"
+	ConfigKey_WindowAppearanceMode           = "window:appearancemode"
 
 	ConfigKey_ConnClear                      = "conn:*"
 	ConfigKey_ConnAskBeforeWshInstall        = "conn:askbeforewshinstall"
@@ -108,6 +109,9 @@ const (
 	ConfigKey_DebugPprofPort                 = "debug:pprofport"
 	ConfigKey_DebugPprofMemProfileRate       = "debug:pprofmemprofilerate"
 	ConfigKey_DebugWebGlStatus               = "debug:webglstatus"
+
+	ConfigKey_BuilderClear                   = "builder:*"
+	ConfigKey_BuilderLiveRebuild             = "builder:liverebuild"
 
 	ConfigKey_TsunamiClear                   = "tsunami:*"
 	ConfigKey_TsunamiScaffoldPath            = "tsunami:scaffoldpath"

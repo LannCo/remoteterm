@@ -34,13 +34,21 @@ func TestH(t *testing.T) {
 }
 
 func TestJsonH(t *testing.T) {
-	elem := H("div", map[string]any{
+	origElem := H("div", map[string]any{
 		"data1": 5,
 		"data2": []any{1, 2, 3},
 		"data3": map[string]any{"a": 1},
 	})
-	if elem == nil {
+	if origElem == nil {
 		t.Fatalf("elem is nil")
+	}
+	jsonBytes, err := json.Marshal(origElem)
+	if err != nil {
+		t.Fatalf("marshal: %v\n", err)
+	}
+	elem := &VDomElem{}
+	if err := json.Unmarshal(jsonBytes, elem); err != nil {
+		t.Fatalf("unmarshal: %v\n", err)
 	}
 	if elem.Tag != "div" {
 		t.Fatalf("elem.Tag: %s (expected 'div')\n", elem.Tag)

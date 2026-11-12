@@ -14,6 +14,10 @@ vi.mock("@/app/store/wshrpcutil", () => ({ TabRpcClient: {} }));
 vi.mock("@/app/monaco/monaco-react", () => ({ MonacoDiffViewer: () => null }));
 vi.mock("monaco-editor", () => ({}));
 vi.mock("@/app/element/directorydropdown", () => ({ DirectoryDropdown: () => null }));
+vi.mock("@/app/store/appearance-atoms", async () => {
+    const { atom } = await import("jotai");
+    return { resolvedAppearanceModeAtom: atom("dark") };
+});
 
 const PartialRevertError = "hunk unstaged, but the working tree has since changed and was left as is: git apply failed";
 

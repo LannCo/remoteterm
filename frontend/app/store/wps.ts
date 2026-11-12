@@ -89,11 +89,11 @@ function waveEventUnsubscribe(...unsubscribes: WaveEventUnsubscribe[]) {
     for (const unsubscribe of unsubscribes) {
         const subjects = waveEventSubjects.get(unsubscribe.eventType);
         if (subjects == null) {
-            return;
+            continue;
         }
         const idx = subjects.findIndex((s) => s.id === unsubscribe.id);
         if (idx === -1) {
-            return;
+            continue;
         }
         subjects.splice(idx, 1);
         if (subjects.length === 0) {
@@ -126,6 +126,11 @@ function getFileSubject(zoneId: string, fileName: string): SubjectWithRef<WSFile
     return subject;
 }
 
+function peekFileSubject(zoneId: string, fileName: string): SubjectWithRef<WSFileEventData> | null {
+    const subjectKey = zoneId + "|" + fileName;
+    return fileSubjects.get(subjectKey) ?? null;
+}
+
 function handleWaveEvent(event: WaveEvent) {
     const subjects = waveEventSubjects.get(event.event);
     if (subjects == null) {
@@ -148,6 +153,7 @@ function handleWaveEvent(event: WaveEvent) {
 export {
     getFileSubject,
     handleWaveEvent,
+    peekFileSubject,
     setWpsRpcClient,
     waveEventSubscribeSingle,
     waveEventUnsubscribe,

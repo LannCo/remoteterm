@@ -279,6 +279,12 @@ func ElectronSystemBellCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) error {
 	return err
 }
 
+// command "ensurebuildertab", wshserver.EnsureBuilderTabCommand
+func EnsureBuilderTabCommand(w *wshutil.WshRpc, data wshrpc.CommandEnsureBuilderTabData, opts *wshrpc.RpcOpts) (*wshrpc.CommandEnsureBuilderTabRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandEnsureBuilderTabRtnData](w, "ensurebuildertab", data, opts)
+	return resp, err
+}
+
 // command "eventpublish", wshserver.EventPublishCommand
 func EventPublishCommand(w *wshutil.WshRpc, data wps.WaveEvent, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "eventpublish", data, opts)
@@ -434,9 +440,21 @@ func GetBlockInputStateCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcO
 	return resp, err
 }
 
+// command "getbuilderappdir", wshserver.GetBuilderAppDirCommand
+func GetBuilderAppDirCommand(w *wshutil.WshRpc, data wshrpc.CommandGetBuilderAppDirData, opts *wshrpc.RpcOpts) (string, error) {
+	resp, err := sendRpcRequestCallHelper[string](w, "getbuilderappdir", data, opts)
+	return resp, err
+}
+
 // command "getbuilderoutput", wshserver.GetBuilderOutputCommand
 func GetBuilderOutputCommand(w *wshutil.WshRpc, data string, opts *wshrpc.RpcOpts) ([]string, error) {
 	resp, err := sendRpcRequestCallHelper[[]string](w, "getbuilderoutput", data, opts)
+	return resp, err
+}
+
+// command "getbuilderpreviewauth", wshserver.GetBuilderPreviewAuthCommand
+func GetBuilderPreviewAuthCommand(w *wshutil.WshRpc, data wshrpc.CommandGetBuilderPreviewAuthData, opts *wshrpc.RpcOpts) (*wshrpc.BuilderPreviewAuthData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.BuilderPreviewAuthData](w, "getbuilderpreviewauth", data, opts)
 	return resp, err
 }
 
@@ -722,6 +740,12 @@ func NotifySystemResumeCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) error {
 	return err
 }
 
+// command "openbuilderterminal", wshserver.OpenBuilderTerminalCommand
+func OpenBuilderTerminalCommand(w *wshutil.WshRpc, data wshrpc.CommandOpenBuilderTerminalData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "openbuilderterminal", data, opts)
+	return err
+}
+
 // command "path", wshserver.PathCommand
 func PathCommand(w *wshutil.WshRpc, data wshrpc.PathCommandData, opts *wshrpc.RpcOpts) (string, error) {
 	resp, err := sendRpcRequestCallHelper[string](w, "path", data, opts)
@@ -876,6 +900,12 @@ func RenameAppFileCommand(w *wshutil.WshRpc, data wshrpc.CommandRenameAppFileDat
 	return err
 }
 
+// command "requestbuilderrebuild", wshserver.RequestBuilderRebuildCommand
+func RequestBuilderRebuildCommand(w *wshutil.WshRpc, data wshrpc.CommandRequestBuilderRebuildData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "requestbuilderrebuild", data, opts)
+	return err
+}
+
 // command "resolvedirectional", wshserver.ResolveDirectionalCommand
 func ResolveDirectionalCommand(w *wshutil.WshRpc, data wshrpc.CommandResolveDirectionalData, opts *wshrpc.RpcOpts) (*remotetermobj.ORef, error) {
 	resp, err := sendRpcRequestCallHelper[*remotetermobj.ORef](w, "resolvedirectional", data, opts)
@@ -885,12 +915,6 @@ func ResolveDirectionalCommand(w *wshutil.WshRpc, data wshrpc.CommandResolveDire
 // command "resolveids", wshserver.ResolveIdsCommand
 func ResolveIdsCommand(w *wshutil.WshRpc, data wshrpc.CommandResolveIdsData, opts *wshrpc.RpcOpts) (wshrpc.CommandResolveIdsRtnData, error) {
 	resp, err := sendRpcRequestCallHelper[wshrpc.CommandResolveIdsRtnData](w, "resolveids", data, opts)
-	return resp, err
-}
-
-// command "restartbuilderandwait", wshserver.RestartBuilderAndWaitCommand
-func RestartBuilderAndWaitCommand(w *wshutil.WshRpc, data wshrpc.CommandRestartBuilderAndWaitData, opts *wshrpc.RpcOpts) (*wshrpc.RestartBuilderAndWaitResult, error) {
-	resp, err := sendRpcRequestCallHelper[*wshrpc.RestartBuilderAndWaitResult](w, "restartbuilderandwait", data, opts)
 	return resp, err
 }
 
@@ -904,6 +928,12 @@ func RouteAnnounceCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) error {
 func RouteUnannounceCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "routeunannounce", nil, opts)
 	return err
+}
+
+// command "seedbuilderapp", wshserver.SeedBuilderAppCommand
+func SeedBuilderAppCommand(w *wshutil.WshRpc, data wshrpc.CommandSeedBuilderAppData, opts *wshrpc.RpcOpts) (*wshrpc.CommandSeedBuilderAppRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.CommandSeedBuilderAppRtnData](w, "seedbuilderapp", data, opts)
+	return resp, err
 }
 
 // command "setactivetab", wshserver.SetActiveTabCommand
@@ -1067,6 +1097,12 @@ func VDomUrlRequestCommand(w *wshutil.WshRpc, data wshrpc.VDomUrlRequestData, op
 // command "waitforroute", wshserver.WaitForRouteCommand
 func WaitForRouteCommand(w *wshutil.WshRpc, data wshrpc.CommandWaitForRouteData, opts *wshrpc.RpcOpts) (bool, error) {
 	resp, err := sendRpcRequestCallHelper[bool](w, "waitforroute", data, opts)
+	return resp, err
+}
+
+// command "watchbuilderapp", wshserver.WatchBuilderAppCommand
+func WatchBuilderAppCommand(w *wshutil.WshRpc, data wshrpc.CommandWatchBuilderAppData, opts *wshrpc.RpcOpts) (*wshrpc.BuilderWatchStatusData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.BuilderWatchStatusData](w, "watchbuilderapp", data, opts)
 	return resp, err
 }
 

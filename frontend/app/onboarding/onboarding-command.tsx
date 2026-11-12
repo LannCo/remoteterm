@@ -51,7 +51,7 @@ export const CommandReveal = ({
 
     return (
         <div className="flex items-center gap-2 font-mono text-sm">
-            <span className="text-accent">&gt;</span>
+            <span className="text-accent-text">&gt;</span>
             <span className="text-foreground/80">
                 {displayedText}
                 {showCursorProp && !isComplete && showCursor && (

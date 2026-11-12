@@ -190,7 +190,7 @@ export function VTab({
                 className={cn(
                     "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap transition-[padding-right] pr-3",
                     onClose && !isReordering && "group-hover:pr-6",
-                    isEditable && "rounded-[2px] bg-white/15 outline-none"
+                    isEditable && "rounded-[2px] bg-foreground/10 outline-none"
                 )}
                 contentEditable={isEditable}
                 role="textbox"

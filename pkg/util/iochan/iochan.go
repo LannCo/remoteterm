@@ -28,30 +28,35 @@ func ReaderChan(ctx context.Context, r io.Reader, chunkSize int64, callback func
 			close(ch)
 			callback()
 		}()
-		sha256Hash := sha256.New()
-		for {
+		send := func(pkt wshrpc.RespOrErrorUnion[iochantypes.Packet]) bool {
 			select {
+			case ch <- pkt:
+				return true
 			case <-ctx.Done():
-				if ctx.Err() == context.Canceled {
+				return false
+			}
+		}
+		sha256Hash := sha256.New()
+		for ctx.Err() == nil {
+			buf := make([]byte, chunkSize)
+			n, err := r.Read(buf)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					send(wshrpc.RespOrErrorUnion[iochantypes.Packet]{Response: iochantypes.Packet{Checksum: sha256Hash.Sum(nil)}})
 					return
 				}
+				send(wshutil.RespErr[iochantypes.Packet](fmt.Errorf("ReaderChan: read error: %v", err)))
 				return
-			default:
-				buf := make([]byte, chunkSize)
-				if n, err := r.Read(buf); err != nil {
-					if errors.Is(err, io.EOF) {
-						ch <- wshrpc.RespOrErrorUnion[iochantypes.Packet]{Response: iochantypes.Packet{Checksum: sha256Hash.Sum(nil)}} // send the checksum
-						return
-					}
-					ch <- wshutil.RespErr[iochantypes.Packet](fmt.Errorf("ReaderChan: read error: %v", err))
-					return
-				} else if n > 0 {
-					if _, err := sha256Hash.Write(buf[:n]); err != nil {
-						ch <- wshutil.RespErr[iochantypes.Packet](fmt.Errorf("ReaderChan: error writing to sha256 hash: %v", err))
-						return
-					}
-					ch <- wshrpc.RespOrErrorUnion[iochantypes.Packet]{Response: iochantypes.Packet{Data: buf[:n]}}
-				}
+			}
+			if n == 0 {
+				continue
+			}
+			if _, err := sha256Hash.Write(buf[:n]); err != nil {
+				send(wshutil.RespErr[iochantypes.Packet](fmt.Errorf("ReaderChan: error writing to sha256 hash: %v", err)))
+				return
+			}
+			if !send(wshrpc.RespOrErrorUnion[iochantypes.Packet]{Response: iochantypes.Packet{Data: buf[:n]}}) {
+				return
 			}
 		}
 	}()

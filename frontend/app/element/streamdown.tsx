@@ -27,7 +27,7 @@ function CodePlain({ className = "", isCodeBlock, text }: { className?: string; 
     }
 
     return (
-        <code className={cn("text-secondary font-mono text-[12px] rounded-sm bg-zinc-800/80 px-1.5 py-0.5", className)}>
+        <code className={cn("text-foreground font-mono text-[12px] rounded-sm bg-highlightbg px-1.5 py-0.5", className)}>
             {text}
         </code>
     );
@@ -291,7 +291,7 @@ export const WaveStreamdown = ({
             },
             summary: () => null, // Don't render summary separately
             a: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
-                <a {...props} className="text-accent hover:underline" />
+                <a {...props} className="text-accent-text hover:underline" />
             ),
             strong: (props: React.HTMLAttributes<HTMLElement>) => (
                 <strong {...props} className="font-semibold text-secondary" />

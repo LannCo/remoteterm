@@ -39,6 +39,9 @@ contextBridge.exposeInMainWorld("api", {
         ipcRenderer.on("fullscreen-change", (_event, isFullScreen) => callback(isFullScreen)),
     onZoomFactorChange: (callback) =>
         ipcRenderer.on("zoom-factor-change", (_event, zoomFactor) => callback(zoomFactor)),
+    getNativeTheme: () => ipcRenderer.sendSync("get-native-theme"),
+    onNativeThemeChange: (callback) =>
+        ipcRenderer.on("native-theme-change", (_event, shouldUseDarkColors) => callback(shouldUseDarkColors)),
     onMenuItemAbout: (callback) => ipcRenderer.on("menu-item-about", callback),
     updateWindowControlsOverlay: (rect) => ipcRenderer.send("update-window-controls-overlay", rect),
     onReinjectKey: (callback) => ipcRenderer.on("reinject-key", (_event, waveEvent) => callback(waveEvent)),
@@ -64,7 +67,10 @@ contextBridge.exposeInMainWorld("api", {
     closeBuilderWindow: () => ipcRenderer.send("close-builder-window"),
     nativePaste: () => ipcRenderer.send("native-paste"),
     openBuilder: (appId?: string) => ipcRenderer.send("open-builder", appId),
-    setBuilderWindowAppId: (appId: string) => ipcRenderer.send("set-builder-window-appid", appId),
+    setBuilderWindowAppId: (appId: string) => ipcRenderer.invoke("set-builder-window-appid", appId),
+    ensureBuilderTab: () => ipcRenderer.invoke("ensure-builder-tab"),
+    openBuilderTerminal: (target?: BuilderTerminalTarget) => ipcRenderer.invoke("open-builder-terminal", target),
+    openBuilderFolder: () => ipcRenderer.invoke("open-builder-folder"),
     doRefresh: () => ipcRenderer.send("do-refresh"),
     getPathForFile: (file: File): string => webUtils.getPathForFile(file),
     saveTextFile: (fileName: string, content: string) => ipcRenderer.invoke("save-text-file", fileName, content),

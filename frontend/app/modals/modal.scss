@@ -18,7 +18,7 @@
         left: 0;
         right: 0;
         bottom: 0;
-        background-color: rgba(21, 23, 21, 0.7);
+        background-color: var(--modal-backdrop-color);
         z-index: var(--zindex-modal-backdrop);
     }
 }
@@ -38,7 +38,7 @@
     border-radius: 8px;
     border: 0.5px solid var(--modal-border-color);
     background: var(--modal-bg-color);
-    box-shadow: 0px 8px 32px 0px rgba(0, 0, 0, 0.25);
+    box-shadow: 0px 8px 32px 0px var(--modal-shadow-color);
 
     .modal-close-btn {
         position: absolute;
@@ -68,7 +68,7 @@
         justify-content: flex-end;
         width: 100%;
         padding-top: 16px;
-        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        border-top: 1px solid var(--modal-border-color);
 
         .remoteterm-button:last-child {
             margin-left: 8px;

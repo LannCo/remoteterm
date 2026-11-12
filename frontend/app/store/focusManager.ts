@@ -1,7 +1,7 @@
 // Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { getBlockComponentModel } from "@/app/store/global";
+import { atoms, getBlockComponentModel } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
 import { getLayoutModelForStaticTab } from "@/layout/index";
 import { focusedBlockId } from "@/util/focusutil";
@@ -14,7 +14,12 @@ export class FocusManager {
 
     private constructor() {
         this.blockFocusAtom = atom((get) => {
+            // Read so the atom recomputes when a builder window sets its tab after init.
+            get(atoms.staticTabId);
             const layoutModel = getLayoutModelForStaticTab();
+            if (layoutModel == null) {
+                return null;
+            }
             const lnode = get(layoutModel.focusedNode);
             return lnode?.data?.blockId;
         });
@@ -33,6 +38,9 @@ export class FocusManager {
 
     refocusNode() {
         const layoutModel = getLayoutModelForStaticTab();
+        if (layoutModel == null) {
+            return;
+        }
         const lnode = globalStore.get(layoutModel.focusedNode);
         if (lnode == null || lnode.data?.blockId == null) {
             return;

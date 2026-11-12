@@ -43,6 +43,8 @@ import (
 
 const SshProxyJumpMaxDepth = 10
 
+const authSockProbeTimeout = 3 * time.Second
+
 type cachedPasswordContextKeyType struct{}
 
 var cachedPasswordContextKey cachedPasswordContextKeyType
@@ -1414,8 +1416,12 @@ func findSshConfigKeywords(hostPattern string) (connKeywords *rtconfig.ConnKeywo
 			sshKeywords.SshIdentityAgent = utilfn.Ptr(`\\.\pipe\openssh-ssh-agent`)
 		} else {
 			shellPath := shellutil.DetectLocalShellPath()
-			authSockCommand := exec.Command(shellPath, "-c", "echo ${SSH_AUTH_SOCK}")
+			// The user's shell startup files run here; one that blocks must not hang the connect.
+			authSockCtx, cancelAuthSock := context.WithTimeout(context.Background(), authSockProbeTimeout)
+			authSockCommand := exec.CommandContext(authSockCtx, shellPath, "-c", "echo ${SSH_AUTH_SOCK}")
+			authSockCommand.WaitDelay = time.Second
 			sshAuthSock, err := authSockCommand.Output()
+			cancelAuthSock()
 			if err == nil {
 				trimmedSock := strings.TrimSpace(string(sshAuthSock))
 				if trimmedSock == "" {

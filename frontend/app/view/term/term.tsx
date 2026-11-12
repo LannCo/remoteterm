@@ -6,6 +6,7 @@ import { SubBlock } from "@/app/block/block";
 import type { BlockNodeModel } from "@/app/block/blocktypes";
 import { NullErrorBoundary } from "@/app/element/errorboundary";
 import { Search, useSearch } from "@/app/element/search";
+import { resolvedAppearanceModeAtom } from "@/app/store/appearance-atoms";
 import { ContextMenuModel } from "@/app/store/contextmenu";
 import { globalStore } from "@/app/store/jotaiStore";
 import { useTabModel } from "@/app/store/tab-model";
@@ -24,7 +25,14 @@ import * as React from "react";
 import { TermLinkTooltip } from "./term-tooltip";
 import { TermStickers } from "./termsticker";
 import { TermThemeUpdater } from "./termtheme";
-import { computeTheme, normalizeCursorStyle } from "./termutil";
+import {
+    computeMinimumContrastRatio,
+    computeReportedColours,
+    computeTheme,
+    getDefaultTermThemeName,
+    needsLightTextFixes,
+    normalizeCursorStyle,
+} from "./termutil";
 import { TermWrap } from "./termwrap";
 import "./xterm.css";
 
@@ -274,7 +282,13 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
         const termThemeName = globalStore.get(model.termThemeNameAtom);
         const termTransparency = globalStore.get(model.termTransparencyAtom);
         const termMacOptionIsMetaAtom = getOverrideConfigAtom(blockId, "term:macoptionismeta");
-        const [termTheme, _] = computeTheme(fullConfig, termThemeName, termTransparency);
+        const appearanceMode = globalStore.get(resolvedAppearanceModeAtom);
+        const [termTheme, termBgColor] = computeTheme(
+            fullConfig,
+            termThemeName,
+            termTransparency,
+            getDefaultTermThemeName(appearanceMode)
+        );
         let termScrollback = 2000;
         if (termSettings?.["term:scrollback"]) {
             termScrollback = Math.floor(termSettings["term:scrollback"]);
@@ -299,6 +313,7 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
             connectElemRef.current,
             {
                 theme: termTheme,
+                minimumContrastRatio: computeMinimumContrastRatio(termTheme, termBgColor),
                 fontSize: termFontSize,
                 fontFamily: termSettings?.["term:fontfamily"] ?? connFontFamily ?? "Hack",
                 drawBoldTextInBrightColors: false,
@@ -311,13 +326,15 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
                 macOptionIsMeta: termMacOptionIsMeta,
                 cursorStyle: termCursorStyle,
                 cursorBlink: termCursorBlink,
-                overviewRuler: { width: 6 },
+                scrollbar: { width: 6 },
             },
             {
                 keydownHandler: model.handleTerminalKeydown.bind(model),
                 useWebGl: !termSettings?.["term:disablewebgl"],
                 sendDataHandler: model.sendDataToController.bind(model),
                 nodeModel: model.nodeModel,
+                reportedColours: computeReportedColours(termTheme, termBgColor),
+                lightTextFixes: needsLightTextFixes(termTheme, termBgColor),
             }
         );
         (window as any).term = termWrap;
@@ -338,6 +355,9 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
             }, 10);
         }
         return () => {
+            if ((window as any).term === termWrap) {
+                (window as any).term = null;
+            }
             termWrap.dispose();
             rszObs.disconnect();
             setTermWrapInst(null);

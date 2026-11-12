@@ -3,7 +3,7 @@
 
 import { atoms } from "@/app/store/global";
 import { isBlank, makeIconClass } from "@/util/util";
-import { offset, useFloating } from "@floating-ui/react";
+import { autoUpdate, offset, useFloating } from "@floating-ui/react";
 import clsx from "clsx";
 import { Atom, useAtomValue } from "jotai";
 import React, { ReactNode, useEffect, useId, useRef, useState } from "react";
@@ -117,7 +117,7 @@ function SuggestionContent({ suggestion }: { suggestion: SuggestionType }) {
         return (
             <div className="flex flex-col">
                 {/* Title on the first line, with highlighting */}
-                <div className="truncate text-white">{highlightPositions(suggestion.display, suggestion.matchpos)}</div>
+                <div className="truncate text-primary">{highlightPositions(suggestion.display, suggestion.matchpos)}</div>
                 {/* Subtext on the second line in a smaller, grey style */}
                 <div className="truncate text-sm text-secondary">
                     {highlightPositions(suggestion.subtext, suggestion.submatchpos)}
@@ -180,7 +180,7 @@ function SuggestionControlInner({
     const widgetId = useId();
     const [query, setQuery] = useState("");
     const reqNumRef = useRef(0);
-    let [suggestions, setSuggestions] = useState<SuggestionType[]>([]);
+    const [suggestions, setSuggestions] = useState<SuggestionType[]>([]);
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [fetched, setFetched] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -189,6 +189,7 @@ function SuggestionControlInner({
         placement: "bottom",
         strategy: "absolute",
         middleware: [offset(-1)],
+        whileElementsMounted: autoUpdate,
     });
     const emptyStateChild = React.Children.toArray(children).find(
         (child) => React.isValidElement(child) && child.type === SuggestionControlNoResults
@@ -225,12 +226,20 @@ function SuggestionControlInner({
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                onClose();
+            // Exempt the whole floating menu (filter input + list + empty
+            // states). dropdownRef wraps only the list, so a list-scoped check
+            // left outside mousedown unable to close the control while
+            // loading or at zero matches.
+            const menu = refs.floating.current ?? dropdownRef.current;
+            if (!menu || menu.contains(event.target as Node)) {
+                return;
             }
+            onClose();
         };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
+        // Capture phase: see connectiondropdown — bubble-phase stopPropagation
+        // elsewhere can starve this handler
+        document.addEventListener("mousedown", handleClickOutside, true);
+        return () => document.removeEventListener("mousedown", handleClickOutside, true);
     }, [onClose, anchorRef]);
 
     useEffect(() => {
@@ -321,7 +330,7 @@ function SuggestionControlInner({
                                 className={clsx(
                                     "flex items-center gap-3 px-4 py-2 cursor-pointer",
                                     index === selectedIndex ? "bg-accentbg" : "hover:bg-hoverbg",
-                                    "text-gray-100"
+                                    "text-foreground"
                                 )}
                                 onClick={() => {
                                     onSelect(suggestion, query);

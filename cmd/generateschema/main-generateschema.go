@@ -16,6 +16,7 @@ import (
 	"github.com/invopop/jsonschema"
 )
 
+const ModulePath = "github.com/LannCo/remoteterm"
 const WaveSchemaSettingsFileName = "schema/settings.json"
 const WaveSchemaConnectionsFileName = "schema/connections.json"
 const WaveSchemaWidgetsFileName = "schema/widgets.json"
@@ -29,7 +30,7 @@ func (ViewNameType) JSONSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{
 		AnyOf: []*jsonschema.Schema{
 			{
-				Enum: []any{"term", "preview", "web", "sysinfo", "launcher"},
+				Enum: []any{"term", "preview", "web", "sysinfo", "cpuplot", "launcher", "help", "tips", "processviewer", "remotetermconfig", "sourcecontrol", "tsunami", "vdom"},
 			},
 			{
 				Type: "string",
@@ -46,7 +47,7 @@ func (ControllerNameType) JSONSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{
 		AnyOf: []*jsonschema.Schema{
 			{
-				Enum: []any{"shell", "cmd"},
+				Enum: []any{"shell", "cmd", "tsunami"},
 			},
 			{
 				Type: "string",
@@ -129,11 +130,11 @@ func generateSchema(template any, dir string, allowNull bool) error {
 		return fmt.Errorf("failed to parse local schema: %w", err)
 	}
 	written, err := utilfn.WriteFileIfDifferent(dir, jsonSettingsSchema)
-	if !written {
-		fmt.Fprintf(os.Stderr, "no changes to %s\n", dir)
-	}
 	if err != nil {
 		return fmt.Errorf("failed to write local schema: %w", err)
+	}
+	if !written {
+		fmt.Fprintf(os.Stderr, "no changes to %s\n", dir)
 	}
 	return nil
 }
@@ -170,17 +171,22 @@ func generateWidgetsSchema(dir string) error {
 		return fmt.Errorf("failed to parse widgets schema: %w", err)
 	}
 	written, err := utilfn.WriteFileIfDifferent(dir, jsonWidgetsSchema)
-	if !written {
-		fmt.Fprintf(os.Stderr, "no changes to %s\n", dir)
-	}
 	if err != nil {
 		return fmt.Errorf("failed to write widgets schema: %w", err)
+	}
+	if !written {
+		fmt.Fprintf(os.Stderr, "no changes to %s\n", dir)
 	}
 	return nil
 }
 
 func main() {
-	err := generateSchema(&rtconfig.SettingsType{}, WaveSchemaSettingsFileName, false)
+	err := utilfn.ChdirToModuleRoot(ModulePath)
+	if err != nil {
+		log.Fatalf("locating repo root: %v", err)
+	}
+
+	err = generateSchema(&rtconfig.SettingsType{}, WaveSchemaSettingsFileName, false)
 	if err != nil {
 		log.Fatalf("settings schema error: %v", err)
 	}

@@ -8,7 +8,7 @@
     width: 100vw;
     height: 100%;
     z-index: var(--zindex-elem-modal);
-    background-color: rgba(21, 23, 21, 0.7);
+    background-color: var(--modal-backdrop-color);
 
     .modal {
         display: flex;

@@ -235,7 +235,7 @@ const DeployLogOutput = ({
                         ))}
                         {showPrompt && (
                             <div className="flex items-center gap-2">
-                                <span className="text-accent">&gt;</span>
+                                <span className="text-accent-text">&gt;</span>
                                 {showCursor && (
                                     <span className="inline-block w-2 h-4 bg-foreground/80 align-middle"></span>
                                 )}

@@ -10,6 +10,7 @@ import { Atom, atom, Getter, PrimitiveAtom, Setter } from "jotai";
 import { splitAtom } from "jotai/utils";
 import { createRef, CSSProperties } from "react";
 import { debounce } from "throttle-debounce";
+import { makeBackendSplitAction } from "./backendsplit";
 import { getLayoutStateAtomFromTab } from "./layoutAtom";
 import { balanceNode, findNode, newLayoutNode, walkNodes } from "./layoutNode";
 import {
@@ -512,60 +513,22 @@ export class LayoutModel {
                 this.treeReducer(replaceAction, false);
                 break;
             }
-            case LayoutTreeActionType.SplitHorizontal: {
-                const targetNode = this?.getNodeByBlockId(action.targetblockid);
-                if (!targetNode) {
-                    console.error(
-                        "Cannot apply eventbus layout action SplitHorizontal, could not find target node with blockId",
-                        action.targetblockid
-                    );
-                    break;
-                }
-                if (action.position != "before" && action.position != "after") {
-                    console.error(
-                        "Cannot apply eventbus layout action SplitHorizontal, invalid position",
-                        action.position
-                    );
-                    break;
-                }
-                const newNode = newLayoutNode(undefined, action.nodesize, undefined, {
-                    blockId: action.blockid,
-                });
-                const splitAction: LayoutTreeSplitHorizontalAction = {
-                    type: LayoutTreeActionType.SplitHorizontal,
-                    targetNodeId: targetNode.id,
-                    newNode: newNode,
-                    position: action.position,
-                };
-                this.treeReducer(splitAction, false);
-                break;
-            }
+            case LayoutTreeActionType.SplitHorizontal:
             case LayoutTreeActionType.SplitVertical: {
-                const targetNode = this?.getNodeByBlockId(action.targetblockid);
-                if (!targetNode) {
-                    console.error(
-                        "Cannot apply eventbus layout action SplitVertical, could not find target node with blockId",
-                        action.targetblockid
-                    );
-                    break;
-                }
                 if (action.position != "before" && action.position != "after") {
                     console.error(
-                        "Cannot apply eventbus layout action SplitVertical, invalid position",
+                        "Cannot apply eventbus layout action",
+                        action.actiontype,
+                        "invalid position",
                         action.position
                     );
                     break;
                 }
-                const newNode = newLayoutNode(undefined, action.nodesize, undefined, {
-                    blockId: action.blockid,
-                });
-                const splitAction: LayoutTreeSplitVerticalAction = {
-                    type: LayoutTreeActionType.SplitVertical,
-                    targetNodeId: targetNode.id,
-                    newNode: newNode,
-                    position: action.position,
-                };
-                this.treeReducer(splitAction, false);
+                const targetNode = this?.getNodeByBlockId(action.targetblockid);
+                if (!targetNode) {
+                    console.warn("Split target is gone, inserting the new block instead", action.targetblockid);
+                }
+                this.treeReducer(makeBackendSplitAction(action, targetNode), false);
                 break;
             }
             case "cleanuporphaned": {

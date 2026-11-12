@@ -347,14 +347,14 @@ describe("applySelectionClick", () => {
     });
 
     it("shift-click with a null anchor falls back to plain selection", () => {
-        const prev = { selectedPaths: new Set(), anchor: null };
+        const prev = { selectedPaths: new Set<string>(), anchor: null };
         const next = applySelectionClick(prev, "/b", { cmd: false, shift: true }, selectablePaths);
         expect([...next.selectedPaths]).toEqual(["/b"]);
         expect(next.anchor).toBe("/b");
     });
 
     it("shift-click with an anchor not in selectablePaths falls back to plain selection", () => {
-        const prev = { selectedPaths: new Set(), anchor: "/missing" };
+        const prev = { selectedPaths: new Set<string>(), anchor: "/missing" };
         const next = applySelectionClick(prev, "/b", { cmd: false, shift: true }, selectablePaths);
         expect([...next.selectedPaths]).toEqual(["/b"]);
         expect(next.anchor).toBe("/b");

@@ -304,10 +304,7 @@ func tabListRun(cmd *cobra.Command, args []string) (rtnErr error) {
 	return nil
 }
 
-func tabMoveRun(cmd *cobra.Command, args []string) (rtnErr error) {
-	defer func() {
-	}()
-
+func tabMoveRun(cmd *cobra.Command, args []string) error {
 	tabId := args[0]
 	wsId, err := resolveWorkspaceId()
 	if err != nil {

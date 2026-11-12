@@ -17,6 +17,15 @@ import (
 	"github.com/LannCo/remoteterm/pkg/wshrpc"
 )
 
+// Credentials reach the askpass script only through its environment and are emitted with
+// printf '%s', so the shell never expands them and nothing secret is written to disk.
+const gitAskpassScript = `#!/bin/sh
+case "$1" in
+*Username*) printf '%s\n' "$RT_GIT_ASKPASS_USER";;
+*Password*) printf '%s\n' "$RT_GIT_ASKPASS_PASS";;
+esac
+`
+
 // GitStatusCommand returns the working tree status for a git repository
 func (impl *ServerImpl) GitStatusCommand(ctx context.Context, data wshrpc.CommandGitStatusData) (*wshrpc.GitStatusResponse, error) {
 	dir := data.Dir
@@ -418,6 +427,10 @@ func (impl *ServerImpl) GitPushCommand(ctx context.Context, data wshrpc.CommandG
 		}
 		branch = strings.TrimSpace(branchOutput)
 	}
+	// A leading "-" would be parsed as a git option, e.g. --receive-pack=<command>.
+	if strings.HasPrefix(remote, "-") || strings.HasPrefix(branch, "-") {
+		return nil, fmt.Errorf("invalid remote or branch name")
+	}
 	if branch != "" {
 		args = append(args, branch)
 	}
@@ -442,41 +455,18 @@ func (impl *ServerImpl) GitPushCommand(ctx context.Context, data wshrpc.CommandG
 	remoteURL = strings.TrimSpace(remoteURL)
 	authHost := parseHostFromURL(remoteURL)
 
-	// If credentials provided, use GIT_ASKPASS
-	var cmd *exec.Cmd
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = data.Dir
 	if data.Username != "" || data.Password != "" {
-		credScript := fmt.Sprintf("#!/bin/sh\ncase \"$1\" in\n*Username*) echo %q;;\n*Password*) echo %q;;\nesac\n", data.Username, data.Password)
-		f, err := os.CreateTemp("", "wave-git-askpass-*.sh")
+		scriptPath, err := writeGitAskpassScript()
 		if err != nil {
 			return &wshrpc.GitPushResponse{
 				Success: false,
 				Output:  "Failed to create credential script: " + err.Error(),
 			}, nil
 		}
-		scriptPath := f.Name()
-		if _, err := f.Write([]byte(credScript)); err != nil {
-			f.Close()
-			return &wshrpc.GitPushResponse{
-				Success: false,
-				Output:  "Failed to write credential script: " + err.Error(),
-			}, nil
-		}
-		if err := f.Chmod(0700); err != nil {
-			f.Close()
-			return &wshrpc.GitPushResponse{
-				Success: false,
-				Output:  "Failed to chmod credential script: " + err.Error(),
-			}, nil
-		}
-		f.Close()
 		defer os.Remove(scriptPath)
-
-		cmd = exec.CommandContext(ctx, "git", args...)
-		cmd.Dir = data.Dir
-		cmd.Env = append(os.Environ(), "GIT_ASKPASS="+scriptPath)
-	} else {
-		cmd = exec.CommandContext(ctx, "git", args...)
-		cmd.Dir = data.Dir
+		cmd.Env = append(os.Environ(), gitAskpassEnv(scriptPath, data.Username, data.Password)...)
 	}
 
 	output, err := cmd.CombinedOutput()
@@ -499,6 +489,34 @@ func (impl *ServerImpl) GitPushCommand(ctx context.Context, data wshrpc.CommandG
 		Success: true,
 		Output:  outputStr,
 	}, nil
+}
+
+func writeGitAskpassScript() (string, error) {
+	f, err := os.CreateTemp("", "rt-git-askpass-*.sh")
+	if err != nil {
+		return "", err
+	}
+	scriptPath := f.Name()
+	_, err = f.WriteString(gitAskpassScript)
+	if err == nil {
+		err = f.Chmod(0700)
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		os.Remove(scriptPath)
+		return "", err
+	}
+	return scriptPath, nil
+}
+
+func gitAskpassEnv(scriptPath, username, password string) []string {
+	return []string{
+		"GIT_ASKPASS=" + scriptPath,
+		"RT_GIT_ASKPASS_USER=" + username,
+		"RT_GIT_ASKPASS_PASS=" + password,
+	}
 }
 
 // isGitAuthError checks if the git output indicates an auth error

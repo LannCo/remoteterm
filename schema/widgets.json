@@ -19,7 +19,15 @@
                     "preview",
                     "web",
                     "sysinfo",
-                    "launcher"
+                    "cpuplot",
+                    "launcher",
+                    "help",
+                    "tips",
+                    "processviewer",
+                    "remotetermconfig",
+                    "sourcecontrol",
+                    "tsunami",
+                    "vdom"
                   ]
                 },
                 {
@@ -38,7 +46,8 @@
                 {
                   "enum": [
                     "shell",
-                    "cmd"
+                    "cmd",
+                    "tsunami"
                   ]
                 },
                 {

@@ -128,6 +128,7 @@ type SettingsType struct {
 	WindowSaveLastWindow                bool     `json:"window:savelastwindow,omitempty"`
 	WindowDimensions                    string   `json:"window:dimensions,omitempty"`
 	WindowZoom                          *float64 `json:"window:zoom,omitempty"`
+	WindowAppearanceMode                string   `json:"window:appearancemode,omitempty" jsonschema:"enum=system,enum=light,enum=dark"`
 
 	ConnClear                bool    `json:"conn:*,omitempty"`
 	ConnAskBeforeWshInstall  *bool   `json:"conn:askbeforewshinstall,omitempty"`
@@ -138,6 +139,9 @@ type SettingsType struct {
 	DebugPprofPort           *int `json:"debug:pprofport,omitempty"`
 	DebugPprofMemProfileRate *int `json:"debug:pprofmemprofilerate,omitempty"`
 	DebugWebGlStatus         bool `json:"debug:webglstatus,omitempty"`
+
+	BuilderClear       bool `json:"builder:*,omitempty"`
+	BuilderLiveRebuild bool `json:"builder:liverebuild,omitempty"`
 
 	TsunamiClear          bool   `json:"tsunami:*,omitempty"`
 	TsunamiScaffoldPath   string `json:"tsunami:scaffoldpath,omitempty"`

@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { RpcApi } from "@/app/store/wshclientapi";
+import { setElectronNet } from "../frontend/util/fetchutil";
 import * as electron from "electron";
 import { focusedBuilderWindow, getAllBuilderWindows } from "emain/emain-builder";
 import { globalEvents } from "emain/emain-events";
 import { sprintf } from "sprintf-js";
 import * as services from "../frontend/app/store/services";
 import { initElectronWshrpc, shutdownWshrpc } from "../frontend/app/store/wshrpcutil-base";
-import { fireAndForget, sleep } from "../frontend/util/util";
+import { fireAndForget } from "../frontend/util/util";
 import { AuthKey, configureAuthKeyRequestInjection } from "./authkey";
 import {
     getActivityState,
@@ -23,22 +24,27 @@ import {
     setWasInFg,
 } from "./emain-activity";
 import { initIpcHandlers } from "./emain-ipc";
+import { registerNativeThemeListener } from "./emain-native-theme";
 import { log } from "./emain-log";
 import { initMenuEventSubscriptions, makeAndSetAppMenu, makeDockTaskbar } from "./emain-menu";
 import {
     checkIfRunningUnderARM64Translation,
     getElectronAppBasePath,
     getElectronAppUnpackedBasePath,
+    getElectronUserDataDir,
     getMigrationFailures,
     getRemoteTermConfigDir,
     getRemoteTermDataDir,
+    getWebviewPreloadPath,
     isDev,
+    isRemoteTermIsolatedProfileActive,
     resolveIncompleteMigrationBlock,
     resolveLegacyInstanceBlock,
     unameArch,
     unamePlatform,
 } from "./emain-platform";
 import { ensureHotSpareTab, setMaxTabCacheSize } from "./emain-tabview";
+import { hardenWebviewAttach, installPermissionHandlers, isAppWebContentsId } from "./emain-websecurity";
 import { getIsRemoteTermSrvDead, getRemoteTermSrvProc, getRemoteTermSrvReady, runRemoteTermSrv } from "./emain-remotetermsrv";
 import {
     createBrowserWindow,
@@ -58,13 +64,15 @@ import { getLaunchSettings } from "./launchsettings";
 
 
 const electronApp = electron.app;
+setElectronNet(electron.net);
 
 let confirmQuit = true;
 
 const remoteTermDataDir = getRemoteTermDataDir();
 const remoteTermConfigDir = getRemoteTermConfigDir();
 
-electron.nativeTheme.themeSource = "dark";
+electron.nativeTheme.themeSource = "system";
+registerNativeThemeListener();
 
 console.log = log;
 console.log(
@@ -137,6 +145,18 @@ function hideWindowWithCatch(window: RemoteTermBrowserWindow) {
         console.log("error hiding window", e);
     }
 }
+
+electronApp.on("session-created", installPermissionHandlers);
+electronApp.on("web-contents-created", (_event, contents) => {
+    contents.on("will-attach-webview", (event, webPreferences, params) => {
+        if (
+            !isAppWebContentsId(contents.id) ||
+            !hardenWebviewAttach(webPreferences, params, getWebviewPreloadPath())
+        ) {
+            event.preventDefault();
+        }
+    });
+});
 
 electronApp.on("window-all-closed", () => {
     if (getGlobalIsRelaunching()) {
@@ -263,6 +283,19 @@ async function appMain() {
         electronApp.disableHardwareAcceleration();
     }
     const startTs = Date.now();
+    // Only relocate userData for a launch that explicitly opted in via REMOTETERM_ISOLATED_PROFILE=1:
+    // the lock is keyed on Electron's userData path, which otherwise defaults to a fixed OS path
+    // regardless of REMOTETERM_CONFIG_HOME/REMOTETERM_DATA_HOME, so an isolated dev/test launch's
+    // lock collided with an unrelated already-running instance and spawned a phantom window in it
+    // (see getElectronUserDataDir). A real launch — even one with REMOTETERM_CONFIG_HOME/_DATA_HOME/
+    // _HOME left over in a persistent shell profile from before the rebrand — must NOT relocate:
+    // that path is where an existing install's actual Chromium profile (cookies, web-block logins)
+    // already lives, and there's no migration for it — moving it unconditionally would silently
+    // reset every upgrading user's session with no warning. Isolated dev/test launch scripts must
+    // set REMOTETERM_ISOLATED_PROFILE=1 together with REMOTETERM_CONFIG_HOME and REMOTETERM_DATA_HOME.
+    if (isRemoteTermIsolatedProfileActive()) {
+        electronApp.setPath("userData", getElectronUserDataDir());
+    }
     const instanceLock = electronApp.requestSingleInstanceLock();
     if (!instanceLock) {
         console.log("remoteterm-app could not get single-instance-lock, shutting down");
@@ -306,21 +339,26 @@ async function appMain() {
     configureAuthKeyRequestInjection(electron.session.defaultSession);
     initIpcHandlers();
 
-    await sleep(10); // wait a bit for remotetermsrv to be ready
     try {
         initElectronWshClient();
         initElectronWshrpc(ElectronWshClient, { authKey: AuthKey });
-        initMenuEventSubscriptions();
     } catch (e) {
         console.log("error initializing wshrpc", e);
     }
     const fullConfig = await RpcApi.GetFullConfigCommand(ElectronWshClient);
+    // After GetFullConfig, not before: a subscription made before the socket opens queues ahead of
+    // it and the WS queue drains one message per 100 ms. The menu is first built below, after this.
+    try {
+        initMenuEventSubscriptions();
+    } catch (e) {
+        console.log("error initializing menu event subscriptions", e);
+    }
     checkIfRunningUnderARM64Translation(fullConfig);
     if (fullConfig?.settings?.["app:confirmquit"] != null) {
         confirmQuit = fullConfig.settings["app:confirmquit"];
     }
     ensureHotSpareTab(fullConfig);
-    await relaunchBrowserWindows();
+    await relaunchBrowserWindows(fullConfig);
     setTimeout(runActiveTimer, 5000); // start active timer, wait 5s just to be safe
     makeAndSetAppMenu();
     makeDockTaskbar();

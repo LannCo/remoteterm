@@ -124,9 +124,7 @@ func (r *RootElem) unmount(comp **ComponentImpl) {
 	}
 	waveId := (*comp).WaveId
 	for _, hook := range (*comp).Hooks {
-		if hook.UnmountFn != nil {
-			hook.UnmountFn()
-		}
+		r.runEffectUnmount(&EffectWorkElem{WaveId: waveId, EffectIndex: hook.Idx, CompTag: (*comp).Tag}, hook)
 	}
 	if (*comp).RenderedComp != nil {
 		r.unmount(&(*comp).RenderedComp)
@@ -152,6 +150,7 @@ func (r *RootElem) renderChildren(elems []vdom.VDomElem, curChildren []*Componen
 	newChildren := make([]*ComponentImpl, len(elems))
 	curCM := make(map[ChildKey]*ComponentImpl)
 	usedMap := make(map[*ComponentImpl]bool)
+	seenKeys := make(map[ChildKey]bool)
 	for idx, child := range curChildren {
 		if child.Key != "" {
 			curCM[ChildKey{Tag: child.Tag, Idx: 0, Key: child.Key}] = child
@@ -162,12 +161,22 @@ func (r *RootElem) renderChildren(elems []vdom.VDomElem, curChildren []*Componen
 	for idx, elem := range elems {
 		elemKey := getElemKey(&elem)
 		var curChild *ComponentImpl
+		var childKey ChildKey
 		if elemKey != "" {
-			curChild = curCM[ChildKey{Tag: elem.Tag, Idx: 0, Key: elemKey}]
+			childKey = ChildKey{Tag: elem.Tag, Idx: 0, Key: elemKey}
 		} else {
-			curChild = curCM[ChildKey{Tag: elem.Tag, Idx: idx, Key: ""}]
+			childKey = ChildKey{Tag: elem.Tag, Idx: idx, Key: ""}
 		}
-		usedMap[curChild] = true
+		if elemKey != "" && seenKeys[childKey] {
+			log.Printf("warning: duplicate key %q among <%s> siblings in %s; keys must be unique\n", elemKey, elem.Tag, containingComp)
+		}
+		seenKeys[childKey] = true
+		// delete so a duplicate key gets a fresh component instead of aliasing the first match
+		curChild = curCM[childKey]
+		delete(curCM, childKey)
+		if curChild != nil {
+			usedMap[curChild] = true
+		}
 		newChildren[idx] = curChild
 		r.render(&elem, &newChildren[idx], containingComp, opts)
 	}

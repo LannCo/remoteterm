@@ -455,8 +455,30 @@ func UpdateWorkspaceTabIds(ctx context.Context, workspaceId string, tabIds []str
 	if ws == nil {
 		return fmt.Errorf("workspace not found: %q", workspaceId)
 	}
+	if err := checkNoNewBuilderTabs(ctx, ws, tabIds); err != nil {
+		return err
+	}
 	ws.TabIds = tabIds
 	rtstore.DBUpdate(ctx, ws)
+	return nil
+}
+
+// A tab already in this workspace can carry builder:owner only through a direct DB write; it stays
+// reorderable and is never treated as a builder tab. Any other tab with an owner must stay out, and a
+// failed lookup refuses the update.
+func checkNoNewBuilderTabs(ctx context.Context, ws *remotetermobj.Workspace, tabIds []string) error {
+	for _, tabId := range tabIds {
+		if slices.Contains(ws.TabIds, tabId) {
+			continue
+		}
+		tab, err := rtstore.DBGet[*remotetermobj.Tab](ctx, tabId)
+		if err != nil {
+			return fmt.Errorf("cannot check tab %s: %w", tabId, err)
+		}
+		if tab != nil && tab.Meta.GetString(rtstore.MetaKey_BuilderOwner, "") != "" {
+			return fmt.Errorf("tab %s belongs to a builder window and cannot join a workspace", tabId)
+		}
+	}
 	return nil
 }
 

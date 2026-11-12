@@ -249,7 +249,7 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
                                                         className={`px-3 py-1 rounded transition-colors text-sm ${
                                                             !hasChanges || isSaving
                                                                 ? "border border-border text-muted-foreground opacity-50"
-                                                                : "bg-accent/80 text-background hover:bg-accent cursor-pointer"
+                                                                : "bg-accent/80 text-onaccent hover:bg-accent cursor-pointer"
                                                         }`}
                                                     >
                                                         {isSaving ? "Saving..." : "Save"}
@@ -293,7 +293,7 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
                                 </div>
                             )}
                             {errorMessage && (
-                                <div className="bg-error text-black px-4 py-2 border-b border-error flex items-center justify-between">
+                                <div className="bg-error text-onerror px-4 py-2 border-b border-error flex items-center justify-between">
                                     <span role="alert">{errorMessage}</span>
                                     <button
                                         onClick={() => dismissBanner(() => model.clearError())}
@@ -305,7 +305,7 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
                                 </div>
                             )}
                             {validationError && (
-                                <div className="bg-error text-black px-4 py-2 border-b border-error flex items-center justify-between">
+                                <div className="bg-error text-onerror px-4 py-2 border-b border-error flex items-center justify-between">
                                     <span role="alert">{validationError}</span>
                                     <button
                                         onClick={() => dismissBanner(() => model.clearValidationError())}
@@ -346,7 +346,7 @@ const RemoteTermConfigView = memo(({ blockId, model }: ViewComponentProps<Remote
             {configErrors?.length > 0 && (
                 <div
                     role="alert"
-                    className="bg-error text-black px-4 py-1 max-h-12 overflow-y-auto border-t border-error/50 shrink-0"
+                    className="bg-error text-onerror px-4 py-1 max-h-12 overflow-y-auto border-t border-error/50 shrink-0"
                 >
                     {configErrors.map((cerr, i) => (
                         <div key={i} className="text-sm">

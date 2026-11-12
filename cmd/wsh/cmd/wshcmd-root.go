@@ -77,7 +77,8 @@ func WriteStdout(fmtStr string, args ...interface{}) {
 }
 
 func OutputHelpMessage(cmd *cobra.Command) {
-	cmd.SetOutput(WrappedStderr)
+	cmd.SetOut(WrappedStderr)
+	cmd.SetErr(WrappedStderr)
 	cmd.Help()
 	WriteStderr("\n")
 }

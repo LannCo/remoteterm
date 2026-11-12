@@ -899,7 +899,7 @@ export async function createNewRemoteTermWindow() {
     newBrowserWindow.show();
 }
 
-export async function relaunchBrowserWindows() {
+export async function relaunchBrowserWindows(startupConfig?: FullConfigType) {
     console.log("relaunchBrowserWindows");
     setGlobalIsRelaunching(true);
     const windows = getAllRemoteTermWindows();
@@ -913,7 +913,7 @@ export async function relaunchBrowserWindows() {
     setGlobalIsRelaunching(false);
 
     const clientData = await ClientService.GetClientData();
-    const fullConfig = await RpcApi.GetFullConfigCommand(ElectronWshClient);
+    const fullConfig = startupConfig ?? (await RpcApi.GetFullConfigCommand(ElectronWshClient));
     const windowIds = clientData.windowids ?? [];
     const wins: RemoteTermBrowserWindow[] = [];
     const isFirstRelaunch = !hasCompletedFirstRelaunch;

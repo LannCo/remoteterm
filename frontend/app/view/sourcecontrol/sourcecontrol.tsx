@@ -8,31 +8,36 @@ import { Tooltip } from "@/app/element/tooltip";
 import { makeIconClass } from "@/util/util";
 import * as jotai from "jotai";
 import * as monaco from "monaco-editor";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { ActionErrorBanner } from "./action-error";
 import { DiffGutter } from "./DiffGutter";
 import { ReviewMode } from "./review-mode";
 import type { SourceControlViewModel } from "./sourcecontrol-model";
 import type { FileTreeNode, ReviewFile, SelectedFile } from "./types";
+import { useStatusColour } from "./use-status-colour";
 
 type SourceControlViewProps = ViewComponentProps<SourceControlViewModel>;
 
 // File status badge component
-const StatusBadge = memo(({ status, color }: { status: string; color: string }) => (
-    <span
-        className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold rounded"
-        style={{ color, backgroundColor: `${color}20` }}
-    >
-        {status}
-    </span>
-));
+const StatusBadge = memo(({ status, color }: { status: string; color: string }) => {
+    const shown = useStatusColour(color);
+    return (
+        <span
+            className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold rounded"
+            style={{ color: shown, backgroundColor: `${shown}20` }}
+        >
+            {status}
+        </span>
+    );
+});
 StatusBadge.displayName = "StatusBadge";
 
 // File icon component
-const FileIcon = memo(({ icon, color }: { icon: string; color: string }) => (
-    <i className={makeIconClass(icon, false)} style={{ color, fontSize: "11px" }} />
-));
+const FileIcon = memo(({ icon, color }: { icon: string; color: string }) => {
+    const shown = useStatusColour(color);
+    return <i className={makeIconClass(icon, false)} style={{ color: shown, fontSize: "11px" }} />;
+});
 FileIcon.displayName = "FileIcon";
 
 // Single file row component
@@ -54,7 +59,7 @@ const FileRow = memo(({ data, isSelected, onClick, onMiddleClick, stageLabel, on
     return (
         <div
             className={`flex items-center gap-2 px-2 py-1 cursor-pointer text-xs group ${
-                isSelected ? "bg-activebg text-white" : "hover:bg-hoverbg text-secondary"
+                isSelected ? "bg-activebg text-foreground" : "hover:bg-hoverbg text-secondary"
             }`}
             onClick={onClick}
             onMouseDown={handleMouseDown}
@@ -139,6 +144,9 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
     const [saveScope, setSaveScope] = useState<"repo" | "host">("repo");
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    const dialogRef = useRef<HTMLDivElement>(null);
+    const titleId = useId();
+
     // Pre-fill username when dialog opens
     useEffect(() => {
         if (showAuthDialog) {
@@ -189,6 +197,30 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
         }
     }, [handleSubmit, handleCancel]);
 
+    // No shared FocusTrap component exists in this codebase (single use site) — trap directly here.
+    const handleDialogKeyDown = useCallback((e: React.KeyboardEvent) => {
+        if (e.key === "Escape") {
+            handleCancel();
+            return;
+        }
+        if (e.key !== "Tab") return;
+        const dialog = dialogRef.current;
+        if (!dialog) return;
+        const focusable = dialog.querySelectorAll<HTMLElement>(
+            'button, input, [href], select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+        }
+    }, [handleCancel]);
+
     if (!showAuthDialog) {
         return null;
     }
@@ -198,21 +230,28 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
-            <div className="bg-[#1e1e1e] border border-[#3e3e3e] rounded-lg shadow-2xl w-96 p-6">
+            <div
+                ref={dialogRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
+                onKeyDown={handleDialogKeyDown}
+                className="bg-modalbg border border-border rounded-lg shadow-2xl w-96 p-6"
+            >
                 <div className="flex items-center justify-center gap-2 mb-4">
-                    <i className="fa-solid fa-lock text-[#888]" />
-                    <h3 className="text-sm font-medium text-white">
+                    <i className="fa-solid fa-lock text-muted" />
+                    <h3 id={titleId} className="text-sm font-medium text-primary">
                         {authIsRetry ? "Authentication Failed" : "Authentication Required"}
                     </h3>
                 </div>
 
                 {authError && (
-                    <div className="mb-4 p-2 bg-red-500/20 border border-red-500/30 rounded text-xs text-red-400">
+                    <div role="alert" className="mb-4 p-2 bg-red-500/20 border border-red-500/30 rounded text-xs text-red-400">
                         {authError}
                     </div>
                 )}
 
-                <p className="text-xs text-[#888] mb-4">
+                <p className="text-xs text-muted mb-4">
                     {authIsRetry
                         ? `Stored credentials for ${displayHost} were rejected. Enter new credentials:`
                         : `git push to ${displayHost}`
@@ -221,10 +260,10 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
 
                 <div className="space-y-4">
                     <div className="flex items-center gap-3">
-                        <label className="text-xs text-[#888] w-20 text-right">Username</label>
+                        <label className="text-xs text-muted w-20 text-right">Username</label>
                         <input
                             type="text"
-                            className="flex-1 px-3 py-2 text-xs bg-[#2d2d2d] border border-[#3e3e3e] rounded outline-none focus:border-[#555] text-white"
+                            className="flex-1 px-3 py-2 text-xs bg-inputbg border border-border rounded outline-none focus:border-accent-text text-primary"
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}
                             onKeyDown={handleKeyDown}
@@ -234,10 +273,10 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
                     </div>
 
                     <div className="flex items-center gap-3">
-                        <label className="text-xs text-[#888] w-20 text-right">Password</label>
+                        <label className="text-xs text-muted w-20 text-right">Password</label>
                         <input
                             type="password"
-                            className="flex-1 px-3 py-2 text-xs bg-[#2d2d2d] border border-[#3e3e3e] rounded outline-none focus:border-[#555] text-white"
+                            className="flex-1 px-3 py-2 text-xs bg-inputbg border border-border rounded outline-none focus:border-accent-text text-primary"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             onKeyDown={handleKeyDown}
@@ -254,7 +293,7 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
                                     onChange={(e) => setSaveToSecrets(e.target.checked)}
                                     className="w-3 h-3"
                                 />
-                                <span className="text-xs text-[#888]">Save credentials in secrets store</span>
+                                <span className="text-xs text-muted">Save credentials in secrets store</span>
                             </label>
 
                             {saveToSecrets && (
@@ -267,7 +306,7 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
                                             onChange={() => setSaveScope("repo")}
                                             className="w-3 h-3"
                                         />
-                                        <span className="text-xs text-[#888]">This repo</span>
+                                        <span className="text-xs text-muted">This repo</span>
                                     </label>
                                     <label className="flex items-center gap-2 cursor-pointer">
                                         <input
@@ -277,7 +316,7 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
                                             onChange={() => setSaveScope("host")}
                                             className="w-3 h-3"
                                         />
-                                        <span className="text-xs text-[#888]">All repos for this remote</span>
+                                        <span className="text-xs text-muted">All repos for this remote</span>
                                     </label>
                                 </div>
                             )}
@@ -293,7 +332,7 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
                                     readOnly
                                     className="w-3 h-3"
                                 />
-                                <span className="text-xs text-[#888]">Update stored credentials</span>
+                                <span className="text-xs text-muted">Update stored credentials</span>
                             </label>
                         </div>
                     )}
@@ -301,17 +340,17 @@ const GitAuthDialog = memo(({ model }: { model: SourceControlViewModel }) => {
 
                 <div className="flex justify-end gap-2 mt-6">
                     <button
-                        className="px-3 py-1.5 text-xs rounded bg-[#3e3e3e] hover:bg-[#4e4e4e] text-white transition-colors"
+                        className="px-3 py-1.5 text-xs rounded bg-panel hover:bg-hoverbg text-primary transition-colors cursor-pointer"
                         onClick={handleCancel}
                         disabled={isSubmitting}
                     >
                         Cancel
                     </button>
                     <button
-                        className={`px-3 py-1.5 text-xs rounded font-medium transition-colors ${
+                        className={`px-3 py-1.5 text-xs rounded font-medium transition-colors cursor-pointer ${
                             username && password && !isSubmitting
-                                ? "bg-[#0e639c] hover:bg-[#1177bb] text-white"
-                                : "bg-[#3e3e3e] text-[#888] cursor-not-allowed"
+                                ? "bg-accent/80 hover:bg-accent text-onaccent"
+                                : "bg-panel text-muted"
                         }`}
                         onClick={handleSubmit}
                         disabled={!username || !password || isSubmitting}
@@ -447,7 +486,7 @@ const CommitInput = memo(({ model, hasStagedChanges, hasUnpushedCommits }: {
     return (
         <div className="flex flex-col gap-2">
             <textarea
-                className="w-full px-2 py-1.5 text-xs bg-surface border border-border rounded resize-none outline-none focus:border-zinc-500 placeholder:text-muted overflow-hidden text-ellipsis [&::placeholder]:whitespace-nowrap [&::placeholder]:overflow-hidden [&::placeholder]:text-ellipsis"
+                className="w-full px-2 py-1.5 text-xs bg-surface border border-border rounded resize-none outline-none focus:border-accent-text placeholder:text-muted overflow-hidden text-ellipsis [&::placeholder]:whitespace-nowrap [&::placeholder]:overflow-hidden [&::placeholder]:text-ellipsis"
                 placeholder="Commit message (Ctrl+Enter to commit)"
                 rows={1}
                 value={commitMessage}
@@ -512,7 +551,7 @@ const ReviewDropdown = memo(({ totalCount, stagedCount, unstagedCount, onReviewA
     return (
         <div className="relative">
             <button
-                className="flex items-center gap-1 px-2 py-1 text-[11px] rounded bg-surface hover:bg-hoverbg text-secondary hover:text-white transition-colors"
+                className="flex items-center gap-1 px-2 py-1 text-[11px] rounded bg-surface hover:bg-hoverbg text-secondary hover:text-foreground transition-colors"
                 onClick={() => setOpen(!open)}
             >
                 <i className="fa-solid fa-eye text-[10px]" />
@@ -522,16 +561,16 @@ const ReviewDropdown = memo(({ totalCount, stagedCount, unstagedCount, onReviewA
             {open && (
                 <>
                     <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-                    <div className="absolute right-0 top-full mt-1 z-50 bg-[#252526] border border-[#3e3e3e] rounded shadow-lg min-w-[160px]">
+                    <div className="absolute right-0 top-full mt-1 z-50 bg-modalbg border border-border rounded shadow-lg min-w-[160px]">
                         <button
-                            className="w-full text-left px-3 py-1.5 text-xs text-secondary hover:bg-hoverbg hover:text-white"
+                            className="w-full text-left px-3 py-1.5 text-xs text-secondary hover:bg-hoverbg hover:text-foreground"
                             onClick={() => { setOpen(false); onReviewAll(); }}
                         >
                             Review All ({totalCount})
                         </button>
                         {stagedCount > 0 && (
                             <button
-                                className="w-full text-left px-3 py-1.5 text-xs text-secondary hover:bg-hoverbg hover:text-white"
+                                className="w-full text-left px-3 py-1.5 text-xs text-secondary hover:bg-hoverbg hover:text-foreground"
                                 onClick={() => { setOpen(false); onReviewStaged(); }}
                             >
                                 Review Staged ({stagedCount})
@@ -539,7 +578,7 @@ const ReviewDropdown = memo(({ totalCount, stagedCount, unstagedCount, onReviewA
                         )}
                         {unstagedCount > 0 && (
                             <button
-                                className="w-full text-left px-3 py-1.5 text-xs text-secondary hover:bg-hoverbg hover:text-white"
+                                className="w-full text-left px-3 py-1.5 text-xs text-secondary hover:bg-hoverbg hover:text-foreground"
                                 onClick={() => { setOpen(false); onReviewUnstaged(); }}
                             >
                                 Review Unstaged ({unstagedCount})
@@ -716,7 +755,7 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
                     ref={panelFocusAnchorRef}
                     tabIndex={-1}
                     aria-label={`Source Control: ${status?.branch || "detached"}`}
-                    className="flex items-center gap-2 text-xs rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+                    className="flex items-center gap-2 text-xs rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-text focus-visible:outline-offset-2"
                 >
                     <i className="fa-solid fa-code-branch text-muted" />
                     <span className="font-medium">{status?.branch || "detached"}</span>
@@ -728,7 +767,7 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
                             className={`p-1.5 rounded transition-colors ${
                                 selectedFile?.untracked
                                     ? "text-muted cursor-not-allowed"
-                                    : "hover:bg-hoverbg text-secondary hover:text-white"
+                                    : "hover:bg-hoverbg text-secondary hover:text-foreground"
                             }`}
                             onClick={handleViewModeToggle}
                             disabled={!!selectedFile?.untracked}
@@ -738,7 +777,7 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
                     </Tooltip>
                     <Tooltip content={wordWrap ? "Disable word wrap" : "Enable word wrap"} placement="bottom">
                         <button
-                            className={`p-1.5 rounded hover:bg-hoverbg transition-colors ${wordWrap ? "text-white" : "text-secondary hover:text-white"}`}
+                            className={`p-1.5 rounded hover:bg-hoverbg transition-colors ${wordWrap ? "text-foreground" : "text-secondary hover:text-foreground"}`}
                             onClick={handleWordWrapToggle}
                         >
                             <i className="fa-solid fa-text-width text-xs" />
@@ -746,7 +785,7 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
                     </Tooltip>
                     <Tooltip content="Refresh" placement="bottom">
                         <button
-                            className="p-1.5 rounded hover:bg-hoverbg text-secondary hover:text-white transition-colors"
+                            className="p-1.5 rounded hover:bg-hoverbg text-secondary hover:text-foreground transition-colors"
                             onClick={handleRefresh}
                         >
                             <i className="fa-solid fa-arrows-rotate text-xs" />
@@ -800,7 +839,7 @@ export const SourceControlView = memo(({ model }: SourceControlViewProps) => {
                     />
                     {filter && (
                         <button
-                            className="text-muted hover:text-white"
+                            className="text-muted hover:text-foreground"
                             onClick={() => setFilter("")}
                         >
                             <i className="fa-solid fa-times text-xs" />

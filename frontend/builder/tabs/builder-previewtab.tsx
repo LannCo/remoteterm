@@ -1,12 +1,14 @@
 // Copyright 2025, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { BuilderAppPanelModel } from "@/builder/store/builder-apppanel-model";
-import { atoms } from "@/store/global";
+import { BuilderAppPanelModel, getBuilderPreviewPartition } from "@/builder/store/builder-apppanel-model";
+import { atoms, getApi } from "@/store/global";
 import { useAtomValue } from "jotai";
-import { memo, useState } from "react";
+import { memo, useEffect, useState } from "react";
 
-const EmptyStateView = memo(() => {
+const EmptyStateView = memo(({ showCreate }: { showCreate: boolean }) => {
+    const model = BuilderAppPanelModel.getInstance();
+    const isSeeding = useAtomValue(model.isSeedingAtom);
     return (
         <div className="w-full h-full flex items-center justify-center bg-background">
             <div className="flex flex-col items-center gap-6 max-w-[500px] text-center px-8">
@@ -17,9 +19,21 @@ const EmptyStateView = memo(() => {
                         Create an <span className="font-mono">app.go</span> file to get started.
                     </p>
                 </div>
-                <div className="text-base text-secondary mt-2">
-                    Your app will appear here once <span className="font-mono">app.go</span> is created
-                </div>
+                {showCreate ? (
+                    <button
+                        onClick={() => model.seedStarterApp()}
+                        disabled={isSeeding}
+                        className={`px-6 py-2 font-semibold bg-accent/80 text-onaccent rounded transition-colors ${
+                            isSeeding ? "opacity-50" : "hover:bg-accent cursor-pointer"
+                        }`}
+                    >
+                        Create starter app
+                    </button>
+                ) : (
+                    <div className="text-base text-secondary mt-2">
+                        Your app will appear here once <span className="font-mono">app.go</span> is created
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -131,32 +145,125 @@ const StoppedStateView = memo(({ onStart }: { onStart: () => void }) => {
 
 StoppedStateView.displayName = "StoppedStateView";
 
+const AutoRunDeclinedView = memo(({ onStart }: { onStart: () => void }) => {
+    return (
+        <div className="w-full h-full flex items-center justify-center bg-background">
+            <div className="flex flex-col items-center gap-6 max-w-[500px] text-center px-8">
+                <div className="flex flex-col gap-3">
+                    <h2 className="text-2xl font-semibold text-primary">Review before starting</h2>
+                    <p className="text-base text-secondary leading-relaxed">
+                        This app has changed since you last started it, so it was not started automatically. Building
+                        runs the app with its bound secrets: check the code, then start it.
+                    </p>
+                </div>
+                <button
+                    onClick={onStart}
+                    className="px-6 py-2 bg-accent text-primary font-semibold rounded hover:bg-accent/80 transition-colors cursor-pointer"
+                >
+                    Start App
+                </button>
+            </div>
+        </div>
+    );
+});
+
+AutoRunDeclinedView.displayName = "AutoRunDeclinedView";
+
+const MissingAppGoView = memo(() => {
+    const model = BuilderAppPanelModel.getInstance();
+    const isSeeding = useAtomValue(model.isSeedingAtom);
+    return (
+        <div className="w-full h-full flex items-center justify-center bg-background">
+            <div className="flex flex-col items-center gap-6 max-w-[500px] text-center px-8">
+                <div className="flex flex-col gap-3">
+                    <h2 className="text-2xl font-semibold text-primary">app.go is missing</h2>
+                    <p className="text-base text-secondary leading-relaxed">
+                        The app folder has no <span className="font-mono">app.go</span>. Create the starter app, or add
+                        one from your editor.
+                    </p>
+                </div>
+                <button
+                    onClick={() => model.seedStarterApp()}
+                    disabled={isSeeding}
+                    className={`px-6 py-2 font-semibold bg-accent/80 text-onaccent rounded transition-colors ${
+                        isSeeding ? "opacity-50" : "hover:bg-accent cursor-pointer"
+                    }`}
+                >
+                    Create starter app
+                </button>
+            </div>
+        </div>
+    );
+});
+
+MissingAppGoView.displayName = "MissingAppGoView";
+
 const BuilderPreviewTab = memo(() => {
     const model = BuilderAppPanelModel.getInstance();
     const isLoading = useAtomValue(model.isLoadingAtom);
     const originalContent = useAtomValue(model.originalContentAtom);
     const builderStatus = useAtomValue(model.builderStatusAtom);
     const builderId = useAtomValue(atoms.builderId);
+    const appGoMissing = useAtomValue(model.appGoMissingAtom);
+    const autoRunDeclined = useAtomValue(model.autoRunDeclinedAtom);
+    const previewAuth = useAtomValue(model.previewAuthAtom);
+    const isResizing = useAtomValue(model.resizeDraggingAtom);
     const fileExists = originalContent.length > 0;
     const [lastKnownUrl, setLastKnownUrl] = useState<string>(null);
 
+    const hasWebview = lastKnownUrl != null;
+
+    useEffect(() => {
+        const webview = model.webviewRef.current;
+        if (!hasWebview || webview == null) {
+            return;
+        }
+        let domReady = false;
+        const handleDomReady = () => {
+            domReady = true;
+        };
+        const handleFocus = () => {
+            if (!domReady) {
+                return;
+            }
+            getApi().setWebviewFocus(webview.getWebContentsId());
+        };
+        const handleBlur = () => {
+            getApi().setWebviewFocus(null);
+        };
+        webview.addEventListener("dom-ready", handleDomReady);
+        webview.addEventListener("focus", handleFocus);
+        webview.addEventListener("blur", handleBlur);
+        return () => {
+            webview.removeEventListener("dom-ready", handleDomReady);
+            webview.removeEventListener("focus", handleFocus);
+            webview.removeEventListener("blur", handleBlur);
+        };
+    }, [hasWebview]);
+
     const status = builderStatus?.status || "init";
-    const isWebViewActive = status === "running" && builderStatus?.port && builderStatus.port !== 0;
+    // The preview needs the run's token, and a token fetched for another port is not this run's.
+    const hasPreviewToken = previewAuth?.token != null && previewAuth.port === builderStatus?.port;
+    const isWebViewActive = status === "running" && builderStatus?.port && builderStatus.port !== 0 && hasPreviewToken;
 
     if (isWebViewActive) {
-        const previewUrl = `http://localhost:${builderStatus.port}/?clientid=wave:${builderId}`;
+        const previewUrl = `http://localhost:${builderStatus.port}/?clientid=wave:${builderId}&tsunamitoken=${previewAuth.token}`;
         if (previewUrl !== lastKnownUrl) {
             setLastKnownUrl(previewUrl);
         }
     }
 
     let overlay = null;
-    if (!isLoading && !isWebViewActive) {
+    if (appGoMissing) {
+        overlay = <MissingAppGoView />;
+    } else if (!isLoading && !isWebViewActive) {
         if (builderStatus?.status === "error") {
             overlay = <ErrorStateView errorMsg={builderStatus?.errormsg || ""} />;
+        } else if (fileExists && status === "init" && autoRunDeclined) {
+            overlay = <AutoRunDeclinedView onStart={() => model.startBuilder()} />;
         } else if (!fileExists || status === "init") {
-            overlay = <EmptyStateView />;
-        } else if (status === "building") {
+            overlay = <EmptyStateView showCreate={!fileExists} />;
+        } else if (status === "building" || status === "running") {
             overlay = <BuildingStateView />;
         } else if (status === "stopped") {
             overlay = <StoppedStateView onStart={() => model.startBuilder()} />;
@@ -169,10 +276,11 @@ const BuilderPreviewTab = memo(() => {
                 <webview
                     ref={model.webviewRef}
                     src={lastKnownUrl}
+                    partition={getBuilderPreviewPartition(builderId)}
                     className="w-full h-full"
                     style={{
                         visibility: isWebViewActive ? "visible" : "hidden",
-                        pointerEvents: isWebViewActive ? "auto" : "none",
+                        pointerEvents: isWebViewActive && !isResizing ? "auto" : "none",
                     }}
                 />
             )}

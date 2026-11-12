@@ -126,24 +126,13 @@ export default defineConfig({
         build: {
             target: CHROME,
             sourcemap: true,
+            minify: "esbuild",
+            // The renderer ships as one eager entry chunk by design (see the startup commits), so the default 500 kB warning is noise.
+            chunkSizeWarningLimit: 8000,
             outDir: "dist/frontend",
             rollupOptions: {
                 input: {
                     index: "index.html",
-                },
-                output: {
-                    manualChunks(id) {
-                        const p = id.replace(/\\/g, "/");
-                        if (p.includes("node_modules/monaco") || p.includes("node_modules/@monaco")) return "monaco";
-                        if (p.includes("node_modules/mermaid") || p.includes("node_modules/@mermaid")) return "mermaid";
-                        if (p.includes("node_modules/katex") || p.includes("node_modules/@katex")) return "katex";
-                        if (p.includes("node_modules/shiki") || p.includes("node_modules/@shiki")) {
-                            return "shiki";
-                        }
-                        if (p.includes("node_modules/cytoscape") || p.includes("node_modules/@cytoscape"))
-                            return "cytoscape";
-                        return undefined;
-                    },
                 },
             },
         },

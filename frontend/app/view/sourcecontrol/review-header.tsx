@@ -26,7 +26,7 @@ export const ReviewHeader = memo(({ fileCount, totalAdditions, totalDeletions, f
             )}
         </div>
         <button
-            className="flex items-center gap-1.5 px-2 py-1 text-[11px] rounded bg-surface hover:bg-hoverbg text-secondary hover:text-white transition-colors"
+            className="flex items-center gap-1.5 px-2 py-1 text-[11px] rounded bg-surface hover:bg-hoverbg text-secondary hover:text-foreground transition-colors"
             onClick={onExit}
         >
             <i className="fa-solid fa-times text-[10px]" />

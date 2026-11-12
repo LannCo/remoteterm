@@ -13,6 +13,7 @@ import { TsunamiTerm } from "@/element/tsunamiterm";
 import { getTextChildren } from "@/model/model-utils";
 import type { TsunamiModel } from "@/model/tsunami-model";
 import { RechartsTag } from "@/recharts/recharts";
+import { runVDomJsCode } from "@/util/jscode";
 import { adaptFromReactOrNativeKeyEvent, checkKeyPressed } from "@/util/keyutil";
 import OptimisticInput from "./input";
 
@@ -199,12 +200,7 @@ function convertVDomFunc(
         }
         let retVal: any;
         if (fnDecl.jscode) {
-            try {
-                const fn = eval(fnDecl.jscode);
-                if (typeof fn === "function") retVal = fn(...args);
-            } catch (err) {
-                console.error("vdom jscode error:", err);
-            }
+            retVal = runVDomJsCode(fnDecl.jscode, args);
         }
         if (!fnDecl.preventbackend) {
             model.callVDomFunc(fnDecl, e, compId, propName);

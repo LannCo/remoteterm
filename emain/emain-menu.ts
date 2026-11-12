@@ -5,9 +5,11 @@ import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import * as electron from "electron";
 import { fireAndForget } from "../frontend/util/util";
-import { focusedBuilderWindow, getBuilderWindowById } from "./emain-builder";
+import { focusedBuilderWindow, getBuilderWindowById, getBuilderWindowByWebContentsId } from "./emain-builder";
 import { openBuilderWindow } from "./emain-ipc";
+import { pickCloseTarget, wantsHiddenNewWindowItems } from "./emain-menu-select";
 import { isDev, unamePlatform } from "./emain-platform";
+import { isLivePopup } from "./emain-popup";
 import { clearTabCache } from "./emain-tabview";
 import { decreaseZoomLevel, increaseZoomLevel, resetZoomLevel } from "./emain-util";
 import {
@@ -43,12 +45,18 @@ function getWindowWebContents(window: electron.BaseWindow): electron.WebContents
     return null;
 }
 
+// On macOS the app menu stays global, so the focused window can be a web-block popup or a
+// builder window rather than a RemoteTermBrowserWindow.
+function asRemoteTermWindow(window: electron.BaseWindow): RemoteTermBrowserWindow {
+    return window instanceof RemoteTermBrowserWindow ? window : null;
+}
+
 async function getWorkspaceMenu(ww?: RemoteTermBrowserWindow): Promise<Electron.MenuItemConstructorOptions[]> {
     const workspaceList = await RpcApi.WorkspaceListCommand(ElectronWshClient);
     const workspaceMenu: Electron.MenuItemConstructorOptions[] = [
         {
             label: "Create Workspace",
-            click: (_, window) => fireAndForget(() => createWorkspace((window as RemoteTermBrowserWindow) ?? ww)),
+            click: (_, window) => fireAndForget(() => createWorkspace(asRemoteTermWindow(window) ?? ww)),
         },
     ];
     function getWorkspaceSwitchAccelerator(i: number): string {
@@ -63,7 +71,7 @@ async function getWorkspaceMenu(ww?: RemoteTermBrowserWindow): Promise<Electron.
                 return {
                     label: `${workspace.workspacedata.name}`,
                     click: (_, window) => {
-                        ((window as RemoteTermBrowserWindow) ?? ww)?.switchWorkspace(workspace.workspacedata.oid);
+                        (asRemoteTermWindow(window) ?? ww)?.switchWorkspace(workspace.workspacedata.oid);
                     },
                     accelerator: getWorkspaceSwitchAccelerator(i),
                 };
@@ -123,10 +131,16 @@ function makeEditMenu(fullConfig?: FullConfigType): Electron.MenuItemConstructor
     ];
 }
 
-function makeFileMenu(
+function isBuilderWindow(window: electron.BaseWindow): boolean {
+    const webContentsId = (window as electron.BrowserWindow)?.webContents?.id;
+    return webContentsId != null && getBuilderWindowByWebContentsId(webContentsId) != null;
+}
+
+export function makeFileMenu(
     numRemoteTermWindows: number,
     callbacks: AppMenuCallbacks,
-    fullConfig: FullConfigType
+    fullConfig: FullConfigType,
+    isBuilderWindowFocused: boolean
 ): Electron.MenuItemConstructorOptions[] {
     const fileMenu: Electron.MenuItemConstructorOptions[] = [
         {
@@ -137,8 +151,13 @@ function makeFileMenu(
         {
             role: "close",
             accelerator: "",
-            click: () => {
-                focusedRemoteTermWindow?.close();
+            click: (_, window) => {
+                pickCloseTarget<electron.BaseWindow>(
+                    window,
+                    focusedRemoteTermWindow,
+                    isLivePopup,
+                    isBuilderWindow
+                )?.close();
             },
         },
     ];
@@ -150,7 +169,7 @@ function makeFileMenu(
             click: () => openBuilderWindow(""),
         });
     }
-    if (numRemoteTermWindows == 0) {
+    if (wantsHiddenNewWindowItems(numRemoteTermWindows, isBuilderWindowFocused)) {
         fileMenu.push({
             label: "New Window (hidden-1)",
             accelerator: unamePlatform === "darwin" ? "Command+N" : "Alt+N",
@@ -335,7 +354,7 @@ async function makeFullAppMenu(callbacks: AppMenuCallbacks, workspaceOrBuilderId
         console.error("Error fetching config:", e);
     }
     const editMenu = makeEditMenu(fullConfig);
-    const fileMenu = makeFileMenu(numRemoteTermWindows, callbacks, fullConfig);
+    const fileMenu = makeFileMenu(numRemoteTermWindows, callbacks, fullConfig, isBuilderWindowFocused);
     const viewMenu = makeViewMenu(webContents, callbacks, isBuilderWindowFocused, fullscreenOnLaunch);
     let workspaceMenu: Electron.MenuItemConstructorOptions[] = null;
     try {
