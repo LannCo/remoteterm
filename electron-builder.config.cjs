@@ -106,6 +106,7 @@ const config = {
             NSLocationUsageDescription:
                 "A CLI application running in RemoteTerm wants to use your location information.",
             NSAppleEventsUsageDescription: "A CLI application running in RemoteTerm wants to use AppleScript.",
+            NSLocalNetworkUsageDescription: "RemoteTerm connects to development hosts on your local network over SSH.",
         },
     },
     linux: {
