@@ -1,6 +1,7 @@
 const { Arch } = require("electron-builder");
 const pkg = require("./package.json");
 const stagedResources = require("./build/staged-resources.cjs");
+const { stageServerHelper } = require("./build/stage-server-helper.cjs");
 
 // Fails here, before electron-builder spends minutes packaging an app without the SDK.
 // The config unit test loads this file on a tree that has not staged anything and sets the
@@ -166,6 +167,11 @@ const config = {
     beforePack: (context) => {
         if (context.electronPlatformName === "darwin") {
             stagedResources.failIfAny(stagedResources.checkMacArch(__dirname, Arch[context.arch]));
+        }
+    },
+    afterPack: (context) => {
+        if (context.electronPlatformName === "darwin") {
+            stageServerHelper(context, Arch[context.arch]);
         }
     },
 };

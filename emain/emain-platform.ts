@@ -828,11 +828,33 @@ function getElectronAppResourcesPath(): string {
 
 const remoteTermSrvBinName = `remotetermsrv.${unameArch}`;
 
+function getRemoteTermSrvHelperPath(): string {
+    // Packaged macOS apps ship the server inside a helper-app bundle so macOS
+    // can attribute its network activity to a bundle identity (Local Network
+    // permission / TCC). Contents/Resources -> ../Frameworks = Contents/Frameworks.
+    return path.join(
+        getElectronAppResourcesPath(),
+        "..",
+        "Frameworks",
+        "RemoteTerm Helper (server).app",
+        "Contents",
+        "MacOS",
+        "remotetermsrv"
+    );
+}
+
 function getRemoteTermSrvPath(): string {
     if (process.platform === "win32") {
         const winBinName = `${remoteTermSrvBinName}.exe`;
         const appPath = path.join(getElectronAppUnpackedBasePath(), "bin", winBinName);
         return `${appPath}`;
+    }
+    if (process.platform === "darwin" && !isDev) {
+        const helperPath = getRemoteTermSrvHelperPath();
+        if (existsSync(helperPath)) {
+            return helperPath;
+        }
+        // unpackaged/dev falls through to the bare binary below
     }
     return path.join(getElectronAppUnpackedBasePath(), "bin", remoteTermSrvBinName);
 }
