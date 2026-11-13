@@ -4,6 +4,9 @@
 const previewElectronApi: ElectronApi = {
     getAuthKey: () => "",
     getIsDev: () => false,
+    onDownloadProgress: () => {},
+    startFileDrag: (_items: { remoteUri: string; fileName: string }[]) => {},
+    cleanupDragTemp: () => {},
     getCursorPoint: () => ({ x: 0, y: 0 }) as Electron.Point,
     getPlatform: () => "darwin",
     getEnv: (_varName: string) => "",

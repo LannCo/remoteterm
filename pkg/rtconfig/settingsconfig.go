@@ -38,46 +38,48 @@ const AnySchema = `
 
 type SettingsType struct {
 	AppClear                      bool   `json:"app:*,omitempty"`
-	AppGlobalHotkey               string `json:"app:globalhotkey,omitempty"`
+	AppGlobalHotkey               string `json:"app:globalhotkey,omitempty" jsonschema:"description=Global hotkey to summon Wave" reload:"required"`
 	AppDismissArchitectureWarning bool   `json:"app:dismissarchitecturewarning,omitempty"`
 	AppDefaultNewBlock            string `json:"app:defaultnewblock,omitempty"`
 	AppShowOverlayBlockNums       *bool  `json:"app:showoverlayblocknums,omitempty"`
 	AppCtrlVPaste                 *bool  `json:"app:ctrlvpaste,omitempty"`
-	AppConfirmQuit                *bool  `json:"app:confirmquit,omitempty"`
+	AppConfirmQuit                *bool  `json:"app:confirmquit,omitempty" jsonschema:"description=Prompt for confirmation before quitting" reload:"required"`
 	AppDisableCtrlShiftArrows     bool   `json:"app:disablectrlshiftarrows,omitempty"`
 	AppDisableCtrlShiftDisplay    bool   `json:"app:disablectrlshiftdisplay,omitempty"`
 	AppFocusFollowsCursor         string `json:"app:focusfollowscursor,omitempty" jsonschema:"enum=off,enum=on,enum=term"`
-	AppTabBar                     string `json:"app:tabbar,omitempty" jsonschema:"enum=top,enum=left"`
+	AppTabBar                     string `json:"app:tabbar,omitempty" jsonschema:"enum=top,enum=left,description=Tab bar placement" reload:"required"`
 
 	FeatureRTAppBuilder bool `json:"feature:rtappbuilder,omitempty"`
 
-	TermClear                  bool     `json:"term:*,omitempty"`
-	TermFontSize               float64  `json:"term:fontsize,omitempty"`
-	TermFontFamily             string   `json:"term:fontfamily,omitempty"`
-	TermTheme                  string   `json:"term:theme,omitempty"`
-	TermDisableWebGl           bool     `json:"term:disablewebgl,omitempty"`
-	TermLocalShellPath         string   `json:"term:localshellpath,omitempty"`
-	TermLocalShellOpts         []string `json:"term:localshellopts,omitempty"`
-	TermGitBashPath            string   `json:"term:gitbashpath,omitempty"`
-	TermScrollback             *int64   `json:"term:scrollback,omitempty"`
-	TermCopyOnSelect           *bool    `json:"term:copyonselect,omitempty"`
-	TermTransparency           *float64 `json:"term:transparency,omitempty"`
-	TermAllowBracketedPaste    *bool    `json:"term:allowbracketedpaste,omitempty"`
-	TermShiftEnterNewline      *bool    `json:"term:shiftenternewline,omitempty"`
-	TermMacOptionIsMeta        *bool    `json:"term:macoptionismeta,omitempty"`
-	TermCursor                 string   `json:"term:cursor,omitempty"`
-	TermCursorBlink            *bool    `json:"term:cursorblink,omitempty"`
-	TermBellSound              *bool    `json:"term:bellsound,omitempty"`
-	TermBellIndicator          *bool    `json:"term:bellindicator,omitempty"`
-	TermOsc52                  string   `json:"term:osc52,omitempty" jsonschema:"enum=focus,enum=always"`
-	TermDurable                *bool    `json:"term:durable,omitempty"`
-	TermShowSplitButtons       bool     `json:"term:showsplitbuttons,omitempty"`
-	TermTrimTrailingWhitespace *bool    `json:"term:trimtrailingwhitespace,omitempty"`
+	AgentAllowRemoteLocalControl bool     `json:"agent:allowremotelocalcontrol,omitempty" jsonschema:"description=Allow remote wsh sessions to control the local machine"`
+	AgentAllowBrowserControl     bool     `json:"agent:allowbrowsercontrol,omitempty" jsonschema:"description=Allow wsh to drive the embedded web widget via CDP (snapshot/screenshot/run/get)"`
+	TermClear                    bool     `json:"term:*,omitempty"`
+	TermFontSize                 float64  `json:"term:fontsize,omitempty" jsonschema:"description=Terminal font size"`
+	TermFontFamily               string   `json:"term:fontfamily,omitempty" jsonschema:"description=Terminal font family"`
+	TermTheme                    string   `json:"term:theme,omitempty" jsonschema:"description=Terminal color theme"`
+	TermDisableWebGl             bool     `json:"term:disablewebgl,omitempty"`
+	TermLocalShellPath           string   `json:"term:localshellpath,omitempty" jsonschema:"description=Path to the local shell binary"`
+	TermLocalShellOpts           []string `json:"term:localshellopts,omitempty"`
+	TermGitBashPath              string   `json:"term:gitbashpath,omitempty"`
+	TermScrollback               *int64   `json:"term:scrollback,omitempty" jsonschema:"description=Terminal scrollback buffer size (lines)"`
+	TermCopyOnSelect             *bool    `json:"term:copyonselect,omitempty"`
+	TermTransparency             *float64 `json:"term:transparency,omitempty" jsonschema:"description=Terminal background transparency"`
+	TermAllowBracketedPaste      *bool    `json:"term:allowbracketedpaste,omitempty"`
+	TermShiftEnterNewline        *bool    `json:"term:shiftenternewline,omitempty"`
+	TermMacOptionIsMeta          *bool    `json:"term:macoptionismeta,omitempty"`
+	TermCursor                   string   `json:"term:cursor,omitempty"`
+	TermCursorBlink              *bool    `json:"term:cursorblink,omitempty"`
+	TermBellSound                *bool    `json:"term:bellsound,omitempty"`
+	TermBellIndicator            *bool    `json:"term:bellindicator,omitempty"`
+	TermOsc52                    string   `json:"term:osc52,omitempty" jsonschema:"enum=focus,enum=always"`
+	TermDurable                  *bool    `json:"term:durable,omitempty"`
+	TermShowSplitButtons         bool     `json:"term:showsplitbuttons,omitempty"`
+	TermTrimTrailingWhitespace   *bool    `json:"term:trimtrailingwhitespace,omitempty"`
 
 	EditorMinimapEnabled      bool    `json:"editor:minimapenabled,omitempty"`
 	EditorStickyScrollEnabled bool    `json:"editor:stickyscrollenabled,omitempty"`
 	EditorWordWrap            bool    `json:"editor:wordwrap,omitempty"`
-	EditorFontSize            float64 `json:"editor:fontsize,omitempty"`
+	EditorFontSize            float64 `json:"editor:fontsize,omitempty" jsonschema:"description=Editor font size"`
 	EditorInlineDiff          bool    `json:"editor:inlinediff,omitempty"`
 
 	WebClear               bool   `json:"web:*,omitempty"`
@@ -97,6 +99,8 @@ type SettingsType struct {
 	PreviewShowHiddenFiles *bool  `json:"preview:showhiddenfiles,omitempty"`
 	PreviewDefaultSort     string `json:"preview:defaultsort,omitempty" jsonschema:"enum=name,enum=modtime"`
 
+	FilesMaxUploadSize *int64 `json:"files:maxuploadsize,omitempty"`
+
 	TabPreset       string `json:"tab:preset,omitempty"`
 	TabConfirmClose bool   `json:"tab:confirmclose,omitempty"`
 	TabBackground   string `json:"tab:background,omitempty"`
@@ -113,8 +117,8 @@ type SettingsType struct {
 	WindowReducedMotion                 bool     `json:"window:reducedmotion,omitempty"`
 	WindowTileGapSize                   *int64   `json:"window:tilegapsize,omitempty"`
 	WindowShowMenuBar                   bool     `json:"window:showmenubar,omitempty"`
-	WindowNativeTitleBar                bool     `json:"window:nativetitlebar,omitempty"`
-	WindowDisableHardwareAcceleration   bool     `json:"window:disablehardwareacceleration,omitempty"`
+	WindowNativeTitleBar                bool     `json:"window:nativetitlebar,omitempty" reload:"required"`
+	WindowDisableHardwareAcceleration   bool     `json:"window:disablehardwareacceleration,omitempty" reload:"required"`
 	WindowMaxTabCacheSize               int      `json:"window:maxtabcachesize,omitempty"`
 	WindowMagnifiedBlockOpacity         *float64 `json:"window:magnifiedblockopacity,omitempty"`
 	WindowMagnifiedBlockSize            *float64 `json:"window:magnifiedblocksize,omitempty"`
@@ -275,24 +279,83 @@ type ConnKeywords struct {
 	CmdInitScriptPwsh string            `json:"cmd:initscript.pwsh,omitempty"`
 	CmdInitScriptFish string            `json:"cmd:initscript.fish,omitempty"`
 
-	SshUser                         *string  `json:"ssh:user,omitempty"`
-	SshHostName                     *string  `json:"ssh:hostname,omitempty"`
-	SshPort                         *string  `json:"ssh:port,omitempty"`
-	SshIdentityFile                 []string `json:"ssh:identityfile,omitempty"`
-	SshPasswordSecretName           *string  `json:"ssh:passwordsecretname,omitempty"`
-	SshBatchMode                    *bool    `json:"ssh:batchmode,omitempty"`
-	SshPubkeyAuthentication         *bool    `json:"ssh:pubkeyauthentication,omitempty"`
-	SshPasswordAuthentication       *bool    `json:"ssh:passwordauthentication,omitempty"`
-	SshKbdInteractiveAuthentication *bool    `json:"ssh:kbdinteractiveauthentication,omitempty"`
-	SshPreferredAuthentications     []string `json:"ssh:preferredauthentications,omitempty"`
-	SshAddKeysToAgent               *bool    `json:"ssh:addkeystoagent,omitempty"`
-	SshIdentityAgent                *string  `json:"ssh:identityagent,omitempty"`
-	SshIdentitiesOnly               *bool    `json:"ssh:identitiesonly,omitempty"`
-	SshProxyJump                    []string `json:"ssh:proxyjump,omitempty"`
-	SshUserKnownHostsFile           []string `json:"ssh:userknownhostsfile,omitempty"`
-	SshGlobalKnownHostsFile         []string `json:"ssh:globalknownhostsfile,omitempty"`
-	SshLocalForward                 []string `json:"ssh:localforward,omitempty"`
-	SshRemoteForward                []string `json:"ssh:remoteforward,omitempty"`
+	SshUser                         *string           `json:"ssh:user,omitempty"`
+	SshHostName                     *string           `json:"ssh:hostname,omitempty"`
+	SshPort                         *string           `json:"ssh:port,omitempty"`
+	SshIdentityFile                 []string          `json:"ssh:identityfile,omitempty"`
+	SshPasswordSecretName           *string           `json:"ssh:passwordsecretname,omitempty"`
+	SshBatchMode                    *bool             `json:"ssh:batchmode,omitempty"`
+	SshPubkeyAuthentication         *bool             `json:"ssh:pubkeyauthentication,omitempty"`
+	SshPasswordAuthentication       *bool             `json:"ssh:passwordauthentication,omitempty"`
+	SshKbdInteractiveAuthentication *bool             `json:"ssh:kbdinteractiveauthentication,omitempty"`
+	SshPreferredAuthentications     []string          `json:"ssh:preferredauthentications,omitempty"`
+	SshAddKeysToAgent               *bool             `json:"ssh:addkeystoagent,omitempty"`
+	SshIdentityAgent                *string           `json:"ssh:identityagent,omitempty"`
+	SshIdentitiesOnly               *bool             `json:"ssh:identitiesonly,omitempty"`
+	SshProxyJump                    []string          `json:"ssh:proxyjump,omitempty"`
+	SshUserKnownHostsFile           []string          `json:"ssh:userknownhostsfile,omitempty"`
+	SshGlobalKnownHostsFile         []string          `json:"ssh:globalknownhostsfile,omitempty"`
+	SshLocalForward                 []PortForwardRule `json:"ssh:localforward,omitempty"`
+	SshRemoteForward                []PortForwardRule `json:"ssh:remoteforward,omitempty"`
+}
+
+// PortForwardRule is a single LocalForward/RemoteForward entry. It supports two
+// JSON shapes for backward compatibility:
+//
+//	"8080 localhost:80"                             (bare string)
+//	{"rule":"8080 localhost:80","note":"...","enabled":true}
+//
+// Source is internal-only (json:"-") and records whether the rule originated in
+// ~/.ssh/config or connections.json; it is populated during config parsing and
+// merge, and never written back to connections.json.
+type PortForwardRule struct {
+	Rule    string `json:"rule"`
+	Note    string `json:"note,omitempty"`
+	Enabled *bool  `json:"enabled,omitempty"` // nil means enabled
+	Source  string `json:"-"`
+}
+
+// PortForwardSource values for PortForwardRule.Source.
+const (
+	PortForwardSourceSshConfig   = "sshconfig"
+	PortForwardSourceConnections = "connections"
+)
+
+// MarshalJSON emits a bare string when the rule carries no note and no explicit
+// enabled flag, preserving the historical compact form. Otherwise it emits the
+// structured object form.
+func (r PortForwardRule) MarshalJSON() ([]byte, error) {
+	if r.Note == "" && r.Enabled == nil {
+		return json.Marshal(r.Rule)
+	}
+	type portForwardRuleAlias PortForwardRule
+	return json.Marshal(portForwardRuleAlias(r))
+}
+
+// UnmarshalJSON accepts either a bare string or the structured object form.
+func (r *PortForwardRule) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 {
+		return fmt.Errorf("empty port forward rule")
+	}
+	if trimmed[0] == '"' {
+		var rule string
+		if err := json.Unmarshal(trimmed, &rule); err != nil {
+			return err
+		}
+		r.Rule = rule
+		r.Note = ""
+		r.Enabled = nil
+		r.Source = ""
+		return nil
+	}
+	type portForwardRuleAlias PortForwardRule
+	var a portForwardRuleAlias
+	if err := json.Unmarshal(trimmed, &a); err != nil {
+		return err
+	}
+	*r = PortForwardRule(a)
+	return nil
 }
 
 func DefaultBoolPtr(arg *bool, def bool) bool {

@@ -17,7 +17,6 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { useWaveEnv, WaveEnv, WaveEnvSubset } from "@/app/remotetermenv/remotetermenv";
 import { shouldIncludeWidgetForWorkspace, sortByDisplayOrder } from "@/app/workspace/widgetfilter";
 import { getLayoutModelForStaticTab } from "@/layout/index";
-import { modalsModel } from "@/store/modalmodel";
 import { fireAndForget, isBlank, makeIconClass } from "@/util/util";
 import {
     autoUpdate,
@@ -368,14 +367,6 @@ const SettingsFloatingWindow = memo(
                         },
                     };
                     env.createBlock(blockDef, false, true);
-                    onClose();
-                },
-            },
-            {
-                icon: "book-open",
-                label: "Release Notes",
-                onClick: () => {
-                    modalsModel.pushModal("UpgradeOnboardingPatch", { isReleaseNotes: true });
                     onClose();
                 },
             },

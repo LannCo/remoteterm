@@ -28,11 +28,19 @@ var (
 
 // BlockDetails represents the information about a block returned by the list command
 type BlockDetails struct {
-	BlockId     string                    `json:"blockid"`     // Unique identifier for the block
-	WorkspaceId string                    `json:"workspaceid"` // ID of the workspace containing the block
-	TabId       string                    `json:"tabid"`       // ID of the tab containing the block
-	View        string                    `json:"view"`        // Canonical view type (term, web, preview, edit, sysinfo)
-	Meta        remotetermobj.MetaMapType `json:"meta"`        // Block metadata including view type
+	BlockId     string                `json:"blockid"`     // Unique identifier for the block
+	Id          string                `json:"id"`          // Canonical block reference ("block:" + blockid)
+	WorkspaceId string                `json:"workspaceid"` // ID of the workspace containing the block
+	TabId       string                `json:"tabid"`       // ID of the tab containing the block
+	View        string                `json:"view"`        // Canonical view type (term, web, preview, edit, sysinfo)
+	Connection  string                `json:"connection,omitempty"`
+	Cwd         string                `json:"cwd,omitempty"`
+	Title       string                `json:"title,omitempty"`
+	Index       int                   `json:"index,omitempty"`
+	Geometry    *wshrpc.BlockGeometry `json:"geometry,omitempty"`
+	Focused     bool                  `json:"focused,omitempty"`
+	Magnified   bool                  `json:"magnified,omitempty"`
+	Meta        remotetermobj.MetaMapType   `json:"meta"` // Block metadata including view type
 }
 
 // blocksListCmd represents the 'blocks list' command
@@ -71,12 +79,7 @@ Examples:
 // init registers the blocks commands with the root command
 // It configures all the flags and command options
 func init() {
-	blocksListCmd.Flags().StringVar(&blocksWindowId, "window", "", "restrict to window id")
-	blocksListCmd.Flags().StringVar(&blocksWorkspaceId, "workspace", "", "restrict to workspace id")
-	blocksListCmd.Flags().StringVar(&blocksTabId, "tab", "", "restrict to specific tab id")
-	blocksListCmd.Flags().StringVar(&blocksView, "view", "", "restrict to view type (term/terminal, web/browser, preview/edit, sysinfo)")
-	blocksListCmd.Flags().BoolVar(&blocksJSON, "json", false, "output as JSON")
-	blocksListCmd.Flags().IntVar(&blocksTimeout, "timeout", 5000, "timeout in milliseconds for RPC calls (default: 5000)")
+	addBlockListFlags(blocksListCmd)
 
 	for _, cmd := range rootCmd.Commands() {
 		if cmd.Use == "blocks" {
@@ -93,6 +96,18 @@ func init() {
 
 	blocksCmd.AddCommand(blocksListCmd)
 	rootCmd.AddCommand(blocksCmd)
+}
+
+// addBlockListFlags registers the block list command flags on cmd. It is
+// shared between "blocks list", "block list", and the top-level "list-panes"
+// alias.
+func addBlockListFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&blocksWindowId, "window", "", "restrict to window id")
+	cmd.Flags().StringVar(&blocksWorkspaceId, "workspace", "", "restrict to workspace id")
+	cmd.Flags().StringVar(&blocksTabId, "tab", "", "restrict to specific tab id")
+	cmd.Flags().StringVar(&blocksView, "view", "", "restrict to view type (term/terminal, web/browser, preview/edit, sysinfo)")
+	cmd.Flags().BoolVar(&blocksJSON, "json", false, "output as JSON")
+	cmd.Flags().IntVar(&blocksTimeout, "timeout", 5000, "timeout in milliseconds for RPC calls (default: 5000)")
 }
 
 // blocksListRun implements the 'blocks list' command
@@ -176,9 +191,17 @@ func blocksListRun(cmd *cobra.Command, args []string) error {
 			v := b.Meta.GetString(remotetermobj.MetaKey_View, "")
 			allBlocks = append(allBlocks, BlockDetails{
 				BlockId:     b.BlockId,
+				Id:          "block:" + b.BlockId,
 				WorkspaceId: b.WorkspaceId,
 				TabId:       b.TabId,
 				View:        v,
+				Connection:  b.Meta.GetString(remotetermobj.MetaKey_Connection, ""),
+				Cwd:         b.Meta.GetString(remotetermobj.MetaKey_CmdCwd, ""),
+				Title:       b.Meta.GetString(remotetermobj.MetaKey_FrameTitle, ""),
+				Index:       b.Index,
+				Geometry:    b.Geometry,
+				Focused:     b.Focused,
+				Magnified:   b.Magnified,
 				Meta:        b.Meta,
 			})
 		}

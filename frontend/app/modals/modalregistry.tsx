@@ -8,22 +8,16 @@ import { lazy } from "react";
 import { AboutModal } from "./about";
 import { UserInputPrompt } from "./userinputprompt";
 
-// The onboarding screens run once per install or release but pull in the markdown, syntax
-// highlighting and editor libraries, so they load on first use. Render them inside their own <Suspense>.
+// The onboarding screen runs once per install but pulls in the markdown, syntax
+// highlighting and editor libraries, so it loads on first use. Render it inside its own <Suspense>.
+// RemoteTerm: upstream upgrade modals (UpgradeOnboardingModal / UpgradeOnboardingPatch)
+// are intentionally not registered — they describe Wave's feature history, not the fork's.
 export const NewInstallOnboardingModal = lazy(() =>
     import("@/app/onboarding/onboarding").then((m) => ({ default: m.NewInstallOnboardingModal }))
-);
-export const UpgradeOnboardingModal = lazy(() =>
-    import("@/app/onboarding/onboarding-upgrade").then((m) => ({ default: m.UpgradeOnboardingModal }))
-);
-const UpgradeOnboardingPatch = lazy(() =>
-    import("@/app/onboarding/onboarding-upgrade-patch").then((m) => ({ default: m.UpgradeOnboardingPatch }))
 );
 
 const modalRegistry: { [key: string]: React.ComponentType<any> } = {
     NewInstallOnboardingModal,
-    UpgradeOnboardingModal,
-    UpgradeOnboardingPatch,
     [UserInputPrompt.displayName || "UserInputPrompt"]: UserInputPrompt,
     [AboutModal.displayName || "AboutModal"]: AboutModal,
     [MessageModal.displayName || "MessageModal"]: MessageModal,

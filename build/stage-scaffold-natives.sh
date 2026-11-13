@@ -51,6 +51,12 @@ for pkg in "@tailwindcss/oxide-$os-$cpu" "lightningcss-$os-$cpu" "@parcel/watche
 done
 [ "$missing" -eq 0 ] || exit 1
 
+# @tailwindcss/oxide >= 4.3.4 (2026-11-02) ships its wasm32-wasi fallback without
+# os/cpu gating, so npm installs it on every platform. It is a portable fallback,
+# not a wrong-arch native, and the staged scaffold always carries the real native
+# for its platform - prune it instead of failing the stray check below.
+find "$dst/nm" -maxdepth 2 -type d -name '*wasm32-wasi*' -exec rm -rf {} +
+
 # Nothing for another platform may ride along: a wrong-arch native is only found when
 # Tailwind fails on the user's machine.
 stray=$(cd "$dst/nm" && ls -d @tailwindcss/oxide-* lightningcss-* @parcel/watcher-* 2>/dev/null | grep -v -e "oxide-$os-$cpu" -e "lightningcss-$os-$cpu" -e "watcher-$os-$cpu" || true)

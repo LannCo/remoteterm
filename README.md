@@ -13,12 +13,6 @@
 
 # RemoteTerm
 
-<div align="center">
-
-[English](README.md) | [한국어](README.ko.md) | [繁體中文](README.zh-TW.md)
-
-</div>
-
 RemoteTerm is an open-source terminal for macOS, Linux, and Windows. No accounts required.
 
 RemoteTerm supports durable SSH sessions that survive network interruptions and restarts, with automatic reconnection. Edit remote files with a built-in graphical editor and preview files inline without leaving the terminal.
@@ -54,6 +48,18 @@ This fork is tuned for developers who work on remote machines, with the local ap
 - Connected file management with `wsh file` - seamlessly copy and sync files between local and remote SSH hosts
 - Inline image rendering - display images directly in the terminal using Sixel, iTerm2, or Kitty protocols
 
+## Download
+
+Pre-built binaries are produced by GitHub Actions CI on the [fork's repo](https://github.com/LannCo/remoteterm) — grab the latest build from [Releases](https://github.com/LannCo/remoteterm/releases) or from the artifacts of a recent successful workflow run.
+
+## Quickstart
+
+1. Add a host to your `~/.ssh/config` (RemoteTerm reads it automatically).
+2. Launch RemoteTerm.
+3. Click the connection dropdown in the terminal header and pick your host.
+
+Port forwarding (`LocalForward` / `RemoteForward`) from your SSH config is applied automatically — no extra setup.
+
 ## Installation
 
 RemoteTerm works on macOS, Linux, and Windows.
@@ -88,3 +94,5 @@ Find more information in our [Contributions Guide](CONTRIBUTING.md), which inclu
 ## License
 
 RemoteTerm is licensed under the Apache-2.0 License. For more information on our dependencies, see [here](./ACKNOWLEDGEMENTS.md).
+
+RemoteTerm is forked from [Wave Terminal](https://github.com/wavetermdev/waveterm) — all credit for the underlying platform goes to the upstream project.
