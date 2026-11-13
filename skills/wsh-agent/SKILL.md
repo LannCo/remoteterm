@@ -17,6 +17,10 @@ You are inside RemoteTerm (Wave Terminal). Control the app with `wsh`. Do not as
    ```
    Context is one shot: this block, focused block, tabs, connections, and blocks (geometry, cwd, best-effort process state).
 
+## Troubleshooting
+
+- `Error: wsh must be run inside a RemoteTerm-managed SSH session (REMOTETERM_JWT not found)` — this shell's startup token swap failed, typically because the app restarted while this shell stayed alive (the one-time swap token was orphaned). **All wsh RPC is dead in this block**, including `wsh setmeta`. Nothing is recoverable from the stale shell: open a fresh block and continue there.
+
 ## Mode A vs Mode B
 
 **Mode A (90%)** — run a command, wait, get the result. Default: **no focus steal**, close the block on exit, 5 minute timeout.
@@ -26,7 +30,7 @@ wsh run --wait --json -- npm test
 wsh run --wait --json --connection prod --timeout 2m -- ./deploy.sh
 ```
 
-JSON fields: `stdout`, `stderr` (always `""`), `exitcode`, `durationms`, `blockid`, `outputmerged` (`true`). A PTY merges streams. `exitcode` is the real process exit code. The command runs through the session shell as a single `-c` payload — pass the whole command as one string (`-c 'npm test'` or `-- npm test`); quoting and shell expansion happen in that shell. On timeout the error names the block id and no result is printed. Use `--focus` only if the user must see the block; `--keep-block` to leave it open.
+JSON fields: `stdout`, `stderr` (always `""`), `exitcode`, `durationms`, `blockid`, `outputmerged` (`true`). A PTY merges streams. `exitcode` is the real process exit code; a **negative** value means the process was killed by a signal or the code could not be determined. The command runs through the session shell as a single `-c` payload — pass the whole command as one string (`-c 'npm test'` or `-- npm test`); quoting and shell expansion happen in that shell. On timeout the error names the block id and no result is printed. Use `--focus` only if the user must see the block; `--keep-block` to leave it open.
 
 **Mode B (10%)** — long-running or interactive (REPL, server, editor). Create/attach a block, type into it, capture, wait, kill.
 
@@ -69,6 +73,8 @@ wsh agent stop <block_ref>     # one owned block; --force for non-owned
 ```
 
 Spawned blocks are tagged `agent:owned`. Prefer `agent stop` over `block kill` for work you created.
+
+`agent list` includes **exited** blocks — ownership outlives the process, and the scrollback stays capturable. Check the `processstate` field (`running` / `exited`) before reusing an idempotency key (a running block with that key is reused; an exited one causes a fresh spawn) or stopping work you thought was still live.
 
 ## tmux aliases
 

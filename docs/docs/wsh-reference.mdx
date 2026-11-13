@@ -435,6 +435,8 @@ wsh agent stop [block_ref]   # omit ref to stop every owned block in the workspa
 wsh agent stop <block_ref> --force   # allow stopping a non-owned block
 ```
 
+The list includes **exited** blocks: ownership outlives the process, and the scrollback stays capturable. Each entry carries `processstate` (`running` / `exited`) — check it before reusing an idempotency key or stopping work you expected to be live.
+
 ---
 
 ## block

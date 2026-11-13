@@ -666,6 +666,7 @@ type agentListEntry struct {
 	Connection     string `json:"connection,omitempty"`
 	Parent         string `json:"parent,omitempty"`
 	IdempotencyKey string `json:"idempotencykey,omitempty"`
+	ProcessState   string `json:"processstate,omitempty"`
 }
 
 func agentListEntryFromBlock(e wshrpc.BlocksListEntry) agentListEntry {
@@ -676,6 +677,7 @@ func agentListEntryFromBlock(e wshrpc.BlocksListEntry) agentListEntry {
 		Connection:     e.Meta.GetString(remotetermobj.MetaKey_Connection, ""),
 		Parent:         e.Meta.GetString(remotetermobj.MetaKey_AgentParent, ""),
 		IdempotencyKey: e.Meta.GetString(remotetermobj.MetaKey_AgentIdempotencyKey, ""),
+		ProcessState:   bestEffortProcessState(e.BlockId),
 	}
 }
 
@@ -702,9 +704,13 @@ func agentListRun(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 	w := tabwriter.NewWriter(WrappedStdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(w, "BLOCKID\tTITLE\tCMD\tCONNECTION\n")
+	fmt.Fprintf(w, "BLOCKID\tTITLE\tCMD\tCONNECTION\tSTATE\n")
 	for _, e := range list {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", e.BlockId, e.Title, e.Cmd, e.Connection)
+		state := e.ProcessState
+		if state == "" {
+			state = "-"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", e.BlockId, e.Title, e.Cmd, e.Connection, state)
 	}
 	return w.Flush()
 }
