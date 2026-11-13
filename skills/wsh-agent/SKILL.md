@@ -9,7 +9,7 @@ You are inside RemoteTerm (Wave Terminal). Control the app with `wsh`. Do not as
 
 ## Detect and orient
 
-1. Check `WAVETERM=1` (also `WAVETERM_BLOCKID`, `WAVETERM_TABID`, `WAVETERM_CONN`, `WAVETERM_VERSION`).
+1. Check `WAVETERM=1` (also `REMOTETERM_BLOCKID`, `REMOTETERM_TABID`, `REMOTETERM_CONN`, `REMOTETERM_VERSION`, `REMOTETERM_WORKSPACEID`; legacy `WAVETERM_*` spellings may also be set).
 2. First commands:
    ```sh
    wsh agent context --json
@@ -26,7 +26,7 @@ wsh run --wait --json -- npm test
 wsh run --wait --json --connection prod --timeout 2m -- ./deploy.sh
 ```
 
-JSON fields: `stdout`, `stderr` (always `""`), `exitcode`, `durationms`, `blockid`, `outputmerged` (`true`). A PTY merges streams. Use `--focus` only if the user must see the block; `--keep-block` to leave it open.
+JSON fields: `stdout`, `stderr` (always `""`), `exitcode`, `durationms`, `blockid`, `outputmerged` (`true`). A PTY merges streams. `exitcode` is the real process exit code. The command runs through the session shell as a single `-c` payload — pass the whole command as one string (`-c 'npm test'` or `-- npm test`); quoting and shell expansion happen in that shell. On timeout the error names the block id and no result is printed. Use `--focus` only if the user must see the block; `--keep-block` to leave it open.
 
 **Mode B (10%)** — long-running or interactive (REPL, server, editor). Create/attach a block, type into it, capture, wait, kill.
 
@@ -39,7 +39,7 @@ wsh block wait claude-prod --until-exit --timeout 60s
 wsh agent stop claude-prod
 ```
 
-Default capture is a **tail of 200 lines**. Pass `--all` for the full buffer. Do not dump unbounded scrollback into context.
+Default capture is a **tail of 200 lines**. Pass `--all` for the full buffer, `--max-bytes N` to cap output (JSON sets `"truncated": true`), and `--since-line N` to read only what is new since your last read (incremental cursor; JSON reports `linestart` / `totallines` / `lastupdated`). Do not dump unbounded scrollback into context.
 
 ## Do not steal focus
 
