@@ -74,13 +74,13 @@ func TestBuildShellCommandLine(t *testing.T) {
 
 func TestSessionWrapExitCode(t *testing.T) {
 	t.Run("nil wait error means exit 0", func(t *testing.T) {
-		sw := SessionWrap{WaitOnce: &sync.Once{}}
+		sw := &SessionWrap{WaitOnce: &sync.Once{}}
 		if code := sw.ExitCode(); code != 0 {
 			t.Fatalf("expected 0 for nil WaitErr, got %d", code)
 		}
 	})
 	t.Run("unknown wait error returns -1", func(t *testing.T) {
-		sw := SessionWrap{WaitOnce: &sync.Once{}, WaitErr: errors.New("connection reset")}
+		sw := &SessionWrap{WaitOnce: &sync.Once{}, WaitErr: errors.New("connection reset")}
 		if code := sw.ExitCode(); code != -1 {
 			t.Fatalf("expected -1 for unknown error, got %d", code)
 		}
@@ -94,7 +94,7 @@ func TestSessionWrapExitCode(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected non-zero exit from test command")
 		}
-		sw := SessionWrap{WaitOnce: &sync.Once{}, WaitErr: err}
+		sw := &SessionWrap{WaitOnce: &sync.Once{}, WaitErr: err}
 		if code := sw.ExitCode(); code != 7 {
 			t.Fatalf("expected 7, got %d", code)
 		}

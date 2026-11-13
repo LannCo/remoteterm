@@ -41,6 +41,14 @@ type CmdWrap struct {
 	pty.Pty
 }
 
+// compile-time checks: SessionWrap methods use pointer receivers (Wait must
+// persist WaitErr on the shared struct for ExitCode to see it), so only
+// *SessionWrap satisfies ConnInterface.
+var (
+	_ ConnInterface = (*SessionWrap)(nil)
+	_ ConnInterface = CmdWrap{}
+)
+
 func MakeCmdWrap(cmd *exec.Cmd, cmdPty pty.Pty, isShell bool) CmdWrap {
 	return CmdWrap{
 		Cmd:      cmd,
@@ -150,8 +158,8 @@ type SessionWrap struct {
 	pty.Pty
 }
 
-func MakeSessionWrap(session *ssh.Session, startCmd string, sessionPty pty.Pty) SessionWrap {
-	return SessionWrap{
+func MakeSessionWrap(session *ssh.Session, startCmd string, sessionPty pty.Pty) *SessionWrap {
+	return &SessionWrap{
 		Session:  session,
 		StartCmd: startCmd,
 		Tty:      sessionPty,
@@ -160,19 +168,19 @@ func MakeSessionWrap(session *ssh.Session, startCmd string, sessionPty pty.Pty) 
 	}
 }
 
-func (sw SessionWrap) Kill() {
+func (sw *SessionWrap) Kill() {
 	sw.Tty.Close()
 	sw.Session.Close()
 }
 
-func (sw SessionWrap) KillGraceful(timeout time.Duration) {
+func (sw *SessionWrap) KillGraceful(timeout time.Duration) {
 	sw.Kill()
 }
 
 // ExitCode is only valid once Wait() has returned. A nil WaitErr means the remote
 // command exited 0; *ssh.ExitError carries the real exit status; anything else is
 // unknown (-1).
-func (sw SessionWrap) ExitCode() int {
+func (sw *SessionWrap) ExitCode() int {
 	waitErr := sw.WaitErr
 	if waitErr == nil {
 		return 0
@@ -183,7 +191,7 @@ func (sw SessionWrap) ExitCode() int {
 	return ExitCodeFromWaitErr(waitErr)
 }
 
-func (sw SessionWrap) ExitSignal() string {
+func (sw *SessionWrap) ExitSignal() string {
 	if sw.WaitErr == nil {
 		return ""
 	}
@@ -196,22 +204,22 @@ func (sw SessionWrap) ExitSignal() string {
 	return ""
 }
 
-func (sw SessionWrap) Wait() error {
+func (sw *SessionWrap) Wait() error {
 	sw.WaitOnce.Do(func() {
 		sw.WaitErr = sw.Session.Wait()
 	})
 	return sw.WaitErr
 }
 
-func (sw SessionWrap) Start() error {
+func (sw *SessionWrap) Start() error {
 	return sw.Session.Start(sw.StartCmd)
 }
 
-func (sw SessionWrap) StdinPipe() (io.WriteCloser, error) {
+func (sw *SessionWrap) StdinPipe() (io.WriteCloser, error) {
 	return sw.Session.StdinPipe()
 }
 
-func (sw SessionWrap) StdoutPipe() (io.ReadCloser, error) {
+func (sw *SessionWrap) StdoutPipe() (io.ReadCloser, error) {
 	stdoutReader, err := sw.Session.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -219,7 +227,7 @@ func (sw SessionWrap) StdoutPipe() (io.ReadCloser, error) {
 	return io.NopCloser(stdoutReader), nil
 }
 
-func (sw SessionWrap) StderrPipe() (io.ReadCloser, error) {
+func (sw *SessionWrap) StderrPipe() (io.ReadCloser, error) {
 	stderrReader, err := sw.Session.StderrPipe()
 	if err != nil {
 		return nil, err
@@ -227,7 +235,7 @@ func (sw SessionWrap) StderrPipe() (io.ReadCloser, error) {
 	return io.NopCloser(stderrReader), nil
 }
 
-func (sw SessionWrap) SetSize(h int, w int) error {
+func (sw *SessionWrap) SetSize(h int, w int) error {
 	return sw.Session.WindowChange(h, w)
 }
 
