@@ -83,12 +83,6 @@ var globalLock = &sync.Mutex{}
 var clientControllerMap = make(map[remote.SSHOpts]*SSHConn)
 var activeConnCounter = &atomic.Int32{}
 
-// test hook for connectInternal — allows mocking SSH connection in tests
-var connectInternalTestHook func(conn *SSHConn, ctx context.Context, connFlags *rtconfig.ConnKeywords) error
-
-// test hook for getConnectionConfig — allows mocking per-connection settings in tests
-var getConnectionConfigTestHook func(conn *SSHConn) (rtconfig.ConnKeywords, bool)
-
 // ErrAutoReconnectSuppressed is returned by AttemptReconnect when the sticky
 // SuppressAutoReconnect flag is set (user Disconnect, Stop auto-retry, password
 // Cancel, or permanent failure). Callers must treat this as a clean stop, not a
@@ -160,6 +154,12 @@ type SSHConn struct {
 	CachedPassword   *string // cached password for reconnect (in-memory only)
 	LastConnectTryAt int64   // UnixMilli of last Connect() attempt (cooldown guard)
 	LastErrorCode    string  // error code from last failed Connect() (e.g., "auth-failed")
+
+	// Per-conn test hooks (unexported, nil in production). Stored on the conn
+	// instance rather than package globals so parallel tests don't race on a
+	// shared var. See testGetConfigHook / testConnectInternalHook callers.
+	testGetConfigHook       func(conn *SSHConn) (rtconfig.ConnKeywords, bool)
+	testConnectInternalHook func(conn *SSHConn, ctx context.Context, connFlags *rtconfig.ConnKeywords) error
 
 	// SuppressAutoReconnect is a sticky "do not auto-reconnect" flag. Set by
 	// user-initiated Disconnect (Close), Stop auto-retry (PauseAutoReconnect),
@@ -2036,8 +2036,8 @@ func (conn *SSHConn) tryEnableWsh(ctx context.Context, clientDisplayName string)
 }
 
 func (conn *SSHConn) getConnectionConfig() (rtconfig.ConnKeywords, bool) {
-	if getConnectionConfigTestHook != nil {
-		return getConnectionConfigTestHook(conn)
+	if conn.testGetConfigHook != nil {
+		return conn.testGetConfigHook(conn)
 	}
 	config := rtconfig.GetWatcher().GetFullConfig()
 	connSettings, ok := config.Connections[conn.GetName()]
@@ -2451,8 +2451,8 @@ func (conn *SSHConn) startRemoteForwardTCP(ctx context.Context, client *ssh.Clie
 
 // returns (connect-error)
 func (conn *SSHConn) connectInternal(ctx context.Context, connFlags *rtconfig.ConnKeywords) error {
-	if connectInternalTestHook != nil {
-		return connectInternalTestHook(conn, ctx, connFlags)
+	if conn.testConnectInternalHook != nil {
+		return conn.testConnectInternalHook(conn, ctx, connFlags)
 	}
 	conn.Infof(ctx, "connectInternal %s\n", conn.GetName())
 	// Inject connection name into context so GetUserInput can set request.ConnName
