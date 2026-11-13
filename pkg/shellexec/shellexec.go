@@ -110,6 +110,18 @@ func ExitCodeFromWaitErr(err error) int {
 
 }
 
+// buildShellCommandLine joins shellPath and shellOpts into a single command line
+// that a remote login shell will parse (SSH exec request, or "sh -c" under WSL).
+// When cmdStr is non-empty it is appended after "-c" and hard-quoted, so the login
+// shell passes it to the session shell as a single word instead of word-splitting
+// it. Shell expansion therefore happens in the session shell, not the login shell.
+func buildShellCommandLine(shellPath string, shellOpts []string, cmdStr string) string {
+	if cmdStr != "" {
+		shellOpts = append(shellOpts, "-c", shellutil.HardQuote(cmdStr))
+	}
+	return fmt.Sprintf("%s %s", shellPath, strings.Join(shellOpts, " "))
+}
+
 func checkCwd(cwd string) error {
 	if cwd == "" {
 		return fmt.Errorf("cwd is empty")
@@ -252,9 +264,7 @@ func StartWslShellProc(ctx context.Context, termSize remotetermobj.TermSize, cmd
 		}
 		cmdCombined = fmt.Sprintf("%s %s", shellPath, strings.Join(shellOpts, " "))
 	} else {
-		// TODO check quoting of cmdStr
-		shellOpts = append(shellOpts, "-c", cmdStr)
-		cmdCombined = fmt.Sprintf("%s %s", shellPath, strings.Join(shellOpts, " "))
+		cmdCombined = buildShellCommandLine(shellPath, shellOpts, cmdStr)
 	}
 	conn.Infof(ctx, "starting shell, using command: %s\n", cmdCombined)
 	conn.Infof(ctx, "WSL-NEWSESSION (StartWslShellProc)\n")
@@ -425,9 +435,7 @@ func StartRemoteShellProc(ctx context.Context, logCtx context.Context, termSize 
 		}
 		cmdCombined = fmt.Sprintf("%s %s", shellPath, strings.Join(shellOpts, " "))
 	} else {
-		// TODO check quoting of cmdStr
-		shellOpts = append(shellOpts, "-c", cmdStr)
-		cmdCombined = fmt.Sprintf("%s %s", shellPath, strings.Join(shellOpts, " "))
+		cmdCombined = buildShellCommandLine(shellPath, shellOpts, cmdStr)
 	}
 	conn.Infof(logCtx, "starting shell, using command: %s\n", cmdCombined)
 	conn.Infof(logCtx, "SSH-NEWSESSION (StartRemoteShellProc)\n")

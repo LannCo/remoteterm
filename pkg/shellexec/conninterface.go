@@ -169,10 +169,16 @@ func (sw SessionWrap) KillGraceful(timeout time.Duration) {
 	sw.Kill()
 }
 
+// ExitCode is only valid once Wait() has returned. A nil WaitErr means the remote
+// command exited 0; *ssh.ExitError carries the real exit status; anything else is
+// unknown (-1).
 func (sw SessionWrap) ExitCode() int {
 	waitErr := sw.WaitErr
 	if waitErr == nil {
-		return -1
+		return 0
+	}
+	if exitErr, ok := waitErr.(*ssh.ExitError); ok {
+		return exitErr.ExitStatus()
 	}
 	return ExitCodeFromWaitErr(waitErr)
 }
