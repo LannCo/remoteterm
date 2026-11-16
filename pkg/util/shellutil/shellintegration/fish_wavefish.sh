@@ -2,8 +2,16 @@
 # Add Wave binary directory to PATH
 set -x PATH {{.WSHBINDIR}} $PATH
 
-# Source dynamic script from wsh token (the echo is to prevent fish from complaining about empty input)
-wsh token "$REMOTETERM_SWAPTOKEN" fish 2>/dev/null | source
+# Source dynamic script from wsh token; warn interactively if the swap fails
+# (one-time token orphaned by an app restart) instead of failing silently.
+set -l _rt_swap_out (wsh token "$REMOTETERM_SWAPTOKEN" fish 2>/dev/null)
+if not set -q _rt_swap_out[1]; and status is-interactive
+    echo "[remoteterm] wsh RPC disabled in this shell (token swap failed — app restarted while this shell was alive?). Open a new block to restore it." >&2
+end
+if set -q _rt_swap_out[1]
+    printf '%s\n' $_rt_swap_out | source
+end
+set -e _rt_swap_out
 set -e REMOTETERM_SWAPTOKEN
 
 # Load Wave completions

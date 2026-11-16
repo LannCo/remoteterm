@@ -1,8 +1,16 @@
 # add wsh to path, source dynamic script from wsh token
 REMOTETERM_WSHBINDIR={{.WSHBINDIR}}
 export PATH="$REMOTETERM_WSHBINDIR:$PATH"
-source <(wsh token "$REMOTETERM_SWAPTOKEN" zsh 2>/dev/null)
-unset REMOTETERM_SWAPTOKEN
+# source dynamic script from wsh token; if the swap fails (e.g. the app
+# restarted while this shell was alive, orphaning the one-time token), say so
+# on interactive shells instead of failing silently.
+_rt_swap_out="$(wsh token "$REMOTETERM_SWAPTOKEN" zsh 2>/dev/null)"
+_rt_swap_st=$?
+if [[ $_rt_swap_st -ne 0 && -o interactive ]]; then
+    printf '%s\n' "[remoteterm] wsh RPC disabled in this shell (token swap failed — app restarted while this shell was alive?). Open a new block to restore it." >&2
+fi
+eval "$_rt_swap_out"
+unset REMOTETERM_SWAPTOKEN _rt_swap_out _rt_swap_st
 
 # Source the original zshrc only if ZDOTDIR has not been changed
 if [ "$ZDOTDIR" = "$REMOTETERM_ZDOTDIR" ]; then

@@ -1,8 +1,12 @@
 # We source this file with -NoExit -File
 $env:PATH = {{.WSHBINDIR_PWSH}} + "{{.PATHSEP}}" + $env:PATH
 
-# Source dynamic script from wsh token
+# Source dynamic script from wsh token; warn if the swap fails (one-time token
+# orphaned by an app restart) instead of failing silently.
 $waveterm_swaptoken_output = wsh token $env:REMOTETERM_SWAPTOKEN pwsh 2>$null | Out-String
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[remoteterm] wsh RPC disabled in this shell (token swap failed — app restarted while this shell was alive?). Open a new block to restore it."
+}
 if ($waveterm_swaptoken_output -and $waveterm_swaptoken_output -ne "") {
     Invoke-Expression $waveterm_swaptoken_output
 }
