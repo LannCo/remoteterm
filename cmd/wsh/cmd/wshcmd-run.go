@@ -95,6 +95,14 @@ func runRun(cmd *cobra.Command, args []string) error {
 		shellCmd = commandArg
 		useShell = true
 	}
+	// argv-form validation: after `--`, the first token is the executable and the
+	// rest are literal args (no shell). A single argument containing whitespace can
+	// never run that way — the backend rejects it ("cmd should not have spaces") and
+	// the block previously stalled in init with the error only in the app log. Fail
+	// here, before creating the block, and point at the -c form.
+	if !useShell && len(cmdArgs) == 0 && strings.ContainsAny(shellCmd, " \t\n") {
+		return fmt.Errorf("command after -- contains spaces; it would run as a literal executable name with no shell. Use -c %q for shell semantics (pipes, &&, expansion), or pass args separately: -- cmd arg1 arg2", shellCmd)
+	}
 
 	// Get current working directory
 	if cwd == "" {

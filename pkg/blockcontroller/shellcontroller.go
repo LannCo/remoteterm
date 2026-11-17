@@ -241,6 +241,35 @@ func (sc *ShellController) DoRunShellCommand(logCtx context.Context, rc *RunShel
 	return sc.manageRunningShellProcess(shellProc, rc, blockMeta)
 }
 
+// shellSetupFailedExitCode marks a cmd/shell block whose process never started
+// (setup failure). POSIX shells use 127 for "command not found / could not execute";
+// here the process never ran at all, so any code is synthetic — 127 keeps wsh run
+// --wait reporting a nonzero exit instead of hanging on a stuck init controller.
+const shellSetupFailedExitCode = 127
+
+// recordShellSetupError handles a DoRunShellCommand failure that left the block
+// stuck in init: the process never ran, so nothing else will move the status, and
+// wsh run --wait polls until its timeout with the error visible only in the app
+// log. Transitions the controller to done (shellSetupFailedExitCode) so waiters
+// see the failure immediately, and writes the error into the block output so it
+// is visible where the user or agent is actually looking. No-op when the process
+// did run (the wait loop owns the status from there).
+func (sc *ShellController) recordShellSetupError(err error) {
+	transitioned := false
+	sc.WithLock(func() {
+		if sc.ProcStatus != Status_Init {
+			return
+		}
+		sc.ProcStatus = Status_Done
+		sc.ProcExitCode = shellSetupFailedExitCode
+		transitioned = true
+		sc.sendUpdate_nolock()
+	})
+	if transitioned {
+		sc.writeMutedMessageToTerminal(fmt.Sprintf("error running shell: %v", err))
+	}
+}
+
 // [Continue with all other methods, replacing bc with sc throughout...]
 
 func (sc *ShellController) LockRunLock() bool {
@@ -312,6 +341,7 @@ func (sc *ShellController) run(logCtx context.Context, bdata *remotetermobj.Bloc
 			err := sc.DoRunShellCommand(logCtx, &RunShellOpts{TermSize: termSize}, bdata.Meta)
 			if err != nil {
 				debugLog(logCtx, "error running shell: %v\n", err)
+				sc.recordShellSetupError(err)
 			}
 		}()
 	}

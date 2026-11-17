@@ -904,3 +904,85 @@ func TestStartupReconnectDurableShellsSkipsSchedulerForInteractiveAuth(t *testin
 	// Note: StartupReconnectDurableShells goroutine continues in background.
 	_ = done
 }
+
+// recordShellSetupError must transition a controller stuck in init (shell/cmd
+// setup failed before any process ran) to done with the synthetic 127 exit code,
+// so `wsh run --wait` reports the failure instead of polling until timeout.
+// When the process did run (status past init), it must not touch the status —
+// the shellproc wait loop owns it from there.
+func TestShellControllerRecordShellSetupError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("init_transitions_to_done_127", func(t *testing.T) {
+		t.Parallel()
+
+		sc := &ShellController{
+			Lock:           &sync.Mutex{},
+			ControllerType: BlockController_Cmd,
+			TabId:          "test-tab",
+			BlockId:        "test-block-setup-err-init",
+			ConnName:       "",
+			RunLock:        &atomic.Bool{},
+			ProcStatus:     Status_Init,
+			VersionTs:      utilds.VersionTs{},
+		}
+
+		sc.recordShellSetupError(errors.New("cmd should not have spaces if cmd:shell is false"))
+
+		if sc.ProcStatus != Status_Done {
+			t.Errorf("ProcStatus = %q; expected %q", sc.ProcStatus, Status_Done)
+		}
+		if sc.ProcExitCode != shellSetupFailedExitCode {
+			t.Errorf("ProcExitCode = %d; expected %d", sc.ProcExitCode, shellSetupFailedExitCode)
+		}
+	})
+
+	t.Run("running_status_untouched", func(t *testing.T) {
+		t.Parallel()
+
+		sc := &ShellController{
+			Lock:           &sync.Mutex{},
+			ControllerType: BlockController_Cmd,
+			TabId:          "test-tab",
+			BlockId:        "test-block-setup-err-running",
+			ConnName:       "",
+			RunLock:        &atomic.Bool{},
+			ProcStatus:     Status_Running,
+			VersionTs:      utilds.VersionTs{},
+		}
+
+		sc.recordShellSetupError(errors.New("some late error"))
+
+		if sc.ProcStatus != Status_Running {
+			t.Errorf("ProcStatus = %q; expected %q (wait loop owns the status)", sc.ProcStatus, Status_Running)
+		}
+		if sc.ProcExitCode != 0 {
+			t.Errorf("ProcExitCode = %d; expected 0", sc.ProcExitCode)
+		}
+	})
+
+	t.Run("done_status_untouched", func(t *testing.T) {
+		t.Parallel()
+
+		sc := &ShellController{
+			Lock:           &sync.Mutex{},
+			ControllerType: BlockController_Cmd,
+			TabId:          "test-tab",
+			BlockId:        "test-block-setup-err-done",
+			ConnName:       "",
+			RunLock:        &atomic.Bool{},
+			ProcStatus:     Status_Done,
+			ProcExitCode:   3,
+			VersionTs:      utilds.VersionTs{},
+		}
+
+		sc.recordShellSetupError(errors.New("late error after real run"))
+
+		if sc.ProcStatus != Status_Done {
+			t.Errorf("ProcStatus = %q; expected %q", sc.ProcStatus, Status_Done)
+		}
+		if sc.ProcExitCode != 3 {
+			t.Errorf("ProcExitCode = %d; expected the real exit code 3 to survive", sc.ProcExitCode)
+		}
+	})
+}

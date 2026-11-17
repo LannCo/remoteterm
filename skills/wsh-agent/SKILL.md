@@ -30,7 +30,13 @@ wsh run --wait --json -- npm test
 wsh run --wait --json --connection prod --timeout 2m -- ./deploy.sh
 ```
 
-JSON fields: `stdout`, `stderr` (always `""`), `exitcode`, `durationms`, `blockid`, `outputmerged` (`true`). A PTY merges streams. `exitcode` is the real process exit code; a **negative** value means the process was killed by a signal or the code could not be determined. The command runs through the session shell as a single `-c` payload — pass the whole command as one string (`-c 'npm test'` or `-- npm test`); quoting and shell expansion happen in that shell. On timeout the error names the block id and no result is printed. Use `--focus` only if the user must see the block; `--keep-block` to leave it open.
+JSON fields: `stdout`, `stderr` (always `""`), `exitcode`, `durationms`, `blockid`, `outputmerged` (`true`). A PTY merges streams. `exitcode` is the real process exit code; a **negative** value means the process was killed by a signal or the code could not be determined. On timeout the error names the block id and no result is printed. Use `--focus` only if the user must see the block; `--keep-block` to leave it open.
+
+Two command forms, different semantics — pick deliberately:
+- `-c 'npm test && npm lint'` — runs through the session shell: pipes, `&&`, env expansion, quoting all work. Use this for anything with shell syntax or spaces.
+- `-- npm test arg1` — argv-style, **no shell**: the first token is the executable, the rest are literal args (`$VAR` and globs stay unexpanded). A single argument containing spaces is rejected with an error — use `-c` for that.
+
+Agent default: `-c '…'` for composed commands, `--` only when you specifically want literal-arg semantics.
 
 **Mode B (10%)** — long-running or interactive (REPL, server, editor). Create/attach a block, type into it, capture, wait, kill.
 
