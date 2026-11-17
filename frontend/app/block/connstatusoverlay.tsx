@@ -3,6 +3,7 @@
 
 import { Button } from "@/app/element/button";
 import { CopyButton } from "@/app/element/copybutton";
+import { useConnReconnectAction } from "@/app/hook/useConnReconnect";
 import { useDimensionsWithCallbackRef } from "@/app/hook/useDimensions";
 import { modalsModel } from "@/app/store/modalmodel";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -198,12 +199,14 @@ const DisconnectedOverlay = React.memo(
         overlayRefCallback,
         onReconnect,
         onStopAutoRetry,
+        actionError,
     }: {
         connName: string;
         connStatus: ConnStatus;
         overlayRefCallback: (el: HTMLDivElement | null) => void;
         onReconnect: () => void;
         onStopAutoRetry?: () => void;
+        actionError?: string | null;
     }) => {
         const [countdown, setCountdown] = React.useState<string>("");
         const hasCountdown = connStatus.reconnectnextattempt && connStatus.reconnectnextattempt > 0;
@@ -272,6 +275,7 @@ const DisconnectedOverlay = React.memo(
                                             credentials
                                         </div>
                                     )}
+                                {actionError && <div className="text-[10px] text-error mt-0.5">{actionError}</div>}
                             </>
                         )}
                     </div>
@@ -304,7 +308,8 @@ const RetryingOverlay = React.memo(
         onStopAutoRetry,
     }: {
         connName: string;
-        attempt: number;
+        // Absent for a manual reconnect click, where no scheduler attempt number exists.
+        attempt?: number;
         overlayRefCallback: (el: HTMLDivElement | null) => void;
         onStopAutoRetry?: () => void;
     }) => {
@@ -313,7 +318,9 @@ const RetryingOverlay = React.memo(
                 <div className="flex items-center gap-3 w-full pt-2.5 pb-2.5 pr-2 pl-3">
                     <i className="fa-solid fa-spinner fa-spin text-warning text-base shrink-0" title="Connecting"></i>
                     <div className="text-[11px] font-semibold leading-4 tracking-[0.11px] text-primary min-w-0 flex-1 break-words @max-xxs:hidden">
-                        Attempt {attempt} — connecting to "{connName}"…
+                        {attempt != null
+                            ? `Attempt ${attempt} — connecting to "${connName}"…`
+                            : `Reconnecting to "${connName}"…`}
                     </div>
                     <div className="flex-1 hidden @max-xxs:block"></div>
                     {onStopAutoRetry && <StopAutoRetryButton onStop={onStopAutoRetry} compact />}
@@ -331,12 +338,14 @@ const CountdownOverlay = React.memo(
         overlayRefCallback,
         onReconnectNow,
         onStopAutoRetry,
+        actionError,
     }: {
         connName: string;
         connStatus: ConnStatus;
         overlayRefCallback: (el: HTMLDivElement | null) => void;
         onReconnectNow: () => void;
         onStopAutoRetry?: () => void;
+        actionError?: string | null;
     }) => {
         const [countdown, setCountdown] = React.useState<string>("");
 
@@ -363,6 +372,7 @@ const CountdownOverlay = React.memo(
                             </div>
                         )}
                         <div>{countdown === "now" ? "Retrying now…" : `Retrying in ${countdown}`}</div>
+                        {actionError && <div className="text-[10px] text-error mt-0.5">{actionError}</div>}
                     </div>
                     <div className="flex-1 hidden @max-xxs:block"></div>
                     <div className="flex items-center gap-1.5 shrink-0">
@@ -494,11 +504,13 @@ const GaveUpOverlay = React.memo(
         connStatus,
         overlayRefCallback,
         onReconnect,
+        actionError,
     }: {
         connName: string;
         connStatus: ConnStatus;
         overlayRefCallback: (el: HTMLDivElement | null) => void;
         onReconnect: () => void;
+        actionError?: string | null;
     }) => {
         const stopReason = connStatus.reconnectstopreason ?? "";
         let icon = "fa-solid fa-circle-pause text-grey-text";
@@ -539,6 +551,7 @@ const GaveUpOverlay = React.memo(
                         {stopReason === "auth-failed" && connStatus.error && (
                             <div className="text-[10px] text-primary/70 mt-0.5">{connStatus.error}</div>
                         )}
+                        {actionError && <div className="text-[10px] text-error mt-0.5">{actionError}</div>}
                     </div>
                     <div className="flex-1 hidden @max-xxs:block"></div>
                     <Button
@@ -687,34 +700,15 @@ export const ConnStatusOverlay = React.memo(
             return () => clearInterval(t);
         }, [jobOverlayMode]);
 
-        const handleTryReconnect = React.useCallback(() => {
-            const prtn = waveEnv.rpc.ConnConnectCommand(
-                TabRpcClient,
-                { host: connName, logblockid: nodeModel.blockId },
-                { timeout: 60000 }
-            );
-            prtn.catch((e) => console.log("error reconnecting", connName, e));
-        }, [connName, nodeModel.blockId, waveEnv]);
-
-        // UX-1.3: stalled Reconnect Now must force involuntary close + connect
-        // (preserve password cache). Plain ConnConnect refuses while connected.
-        // Debounce double-clicks until the RPC settles (server also no-ops a
-        // second Force after a healthy heal).
-        const forceReconnectInFlightRef = React.useRef(false);
-        const handleForceReconnect = React.useCallback(() => {
-            if (forceReconnectInFlightRef.current) {
-                return;
-            }
-            forceReconnectInFlightRef.current = true;
-            const prtn = waveEnv.rpc.ConnConnectCommand(
-                TabRpcClient,
-                { host: connName, logblockid: nodeModel.blockId, force: true },
-                { timeout: 60000 }
-            );
-            prtn.catch((e) => console.log("error force-reconnecting", connName, e)).finally(() => {
-                forceReconnectInFlightRef.current = false;
-            });
-        }, [connName, nodeModel.blockId, waveEnv]);
+        // One escalation-aware action for every reconnect button (disconnected,
+        // gave-up, countdown, stalled, legacy shell): always force, debounced
+        // while in flight, outcome surfaced instead of swallowed. See
+        // useConnReconnect for why plain Connect is not good enough here.
+        const {
+            reconnect: handleReconnect,
+            inFlight: reconnectInFlight,
+            error: reconnectError,
+        } = useConnReconnectAction(connName, nodeModel.blockId, connStatus);
 
         const handleStopAutoRetry = React.useCallback(() => {
             const prtn = waveEnv.rpc.ConnStopAutoRetryCommand(TabRpcClient, connName, { timeout: 5000 });
@@ -819,6 +813,12 @@ export const ConnStatusOverlay = React.memo(
         // Only show retry/countdown overlays if auto-reconnect is possible
         // (password cached or no interactive auth required) and not suppressed
         const canAutoReconnect = connStatus.canautoreconnect && !connStatus.suppressautoreconnect;
+        // A manual reconnect click is acknowledged immediately: while its RPC is
+        // pending and the backend has not yet flipped to connecting (the click
+        // may be queued behind an in-flight attempt holding the connect lock),
+        // show a spinner instead of leaving the click visibly unanswered.
+        const manualReconnectPending =
+            reconnectInFlight && connStatus.status != "connecting" && connStatus.status != "connected";
         const isFlapping = connStatus.flappingmode === true;
         const showRetrying =
             !isFlapping &&
@@ -889,6 +889,7 @@ export const ConnStatusOverlay = React.memo(
         if (
             !showWshError &&
             !showStalled &&
+            !manualReconnectPending &&
             !showRetrying &&
             !showCountdown &&
             !showGaveUp &&
@@ -912,7 +913,7 @@ export const ConnStatusOverlay = React.memo(
                     connName={connName}
                     connStatus={connStatus}
                     overlayRefCallback={overlayRefCallback}
-                    onReconnect={handleForceReconnect}
+                    onReconnect={handleReconnect}
                 />
             );
         }
@@ -944,6 +945,10 @@ export const ConnStatusOverlay = React.memo(
             );
         }
 
+        if (manualReconnectPending) {
+            return <RetryingOverlay connName={connName} overlayRefCallback={overlayRefCallback} />;
+        }
+
         if (isFlapping) {
             return (
                 <FlappingOverlay
@@ -971,8 +976,9 @@ export const ConnStatusOverlay = React.memo(
                     connName={connName}
                     connStatus={connStatus}
                     overlayRefCallback={overlayRefCallback}
-                    onReconnectNow={handleTryReconnect}
+                    onReconnectNow={handleReconnect}
                     onStopAutoRetry={handleStopAutoRetry}
+                    actionError={reconnectError}
                 />
             );
         }
@@ -984,7 +990,8 @@ export const ConnStatusOverlay = React.memo(
                     connName={connName}
                     connStatus={connStatus}
                     overlayRefCallback={overlayRefCallback}
-                    onReconnect={handleTryReconnect}
+                    onReconnect={handleReconnect}
+                    actionError={reconnectError}
                 />
             );
         }
@@ -995,7 +1002,8 @@ export const ConnStatusOverlay = React.memo(
                     connName={connName}
                     connStatus={connStatus}
                     overlayRefCallback={overlayRefCallback}
-                    onReconnect={handleTryReconnect}
+                    onReconnect={handleReconnect}
+                    actionError={reconnectError}
                     onStopAutoRetry={canAutoReconnect || (connStatus.reconnectnextattempt ?? 0) > 0 ? handleStopAutoRetry : undefined}
                 />
             );
@@ -1027,7 +1035,7 @@ export const ConnStatusOverlay = React.memo(
                     </div>
                     {showReconnect ? (
                         <div className="connstatus-actions">
-                            <Button className={reconClassName} onClick={handleTryReconnect}>
+                            <Button className={reconClassName} onClick={handleReconnect}>
                                 {reconDisplay}
                             </Button>
                         </div>
